@@ -88,6 +88,8 @@
 %
 % Authored by
 %	2025/05/19, williameclee@arizona.edu (@williameclee)
+% Last modified by
+%	2025/05/19, williameclee@arizona.edu (@williameclee)
 
 function varargout = ssh2xyz(varargin)
     [product, intpDuration, timelim, intpMthd, timeFmt, ...
@@ -97,15 +99,9 @@ function varargout = ssh2xyz(varargin)
     outputFolder = fullfile(getenv('IFILES'), product);
     inputFolder = fullfile(outputFolder, 'raw');
 
+    %% No interpolation
     if isempty(intpDuration)
         % No interpolation duration given, load the raw data
-
-        if ~beQuiet
-            loadingMsg = ...
-                sprintf('%s: loading %s (this may take a while)\n', ...
-                upper(mfilename), outputFolder);
-        end
-
         [sshs, sshErrors, dates, lon, lat] = ...
             loadAggregatedRawData(product, ...
             forceNew, beQuiet, saveData, outputFolder, inputFolder);
@@ -114,21 +110,17 @@ function varargout = ssh2xyz(varargin)
             formatoutput(sshs, sshErrors, dates, lon, lat, timelim, timeFmt);
 
         varargout = {sshs, sshErrors, dates, lon, lat};
-
-        if ~beQuiet
-            fprintf(repmat('\b', 1, length(loadingMsg)));
-            fprintf('%s: loaded %s\n', upper(mfilename), outputFolder);
-        end
-
         return
 
     end
 
+    %% With interpolation
     intpOutputFile = sprintf('%s-It%s.mat', ...
         product, erase(sprintf('%s', intpDuration), ' '));
     intpOutputPath = fullfile(outputFolder, intpOutputFile);
 
-    if exist(intpOutputPath, 'file') && forceNew <= 1
+    if exist(intpOutputPath, 'file') && ...
+            (forceNew == 0 || (forceNew == 1 && isolder(inputFolder, intpOutputPath, true)))
 
         if beQuiet <= 1
             loadingMsg = ...
@@ -154,6 +146,12 @@ function varargout = ssh2xyz(varargin)
     [sshs, sshErrors, dates, lon, lat] = ...
         loadAggregatedRawData(product, ...
         forceNew, beQuiet + (beQuiet == 1), saveData, outputFolder, inputFolder);
+
+    if mean(diff(dates)) > intpDuration
+        warning(sprintf('%s:InterpolationStepTooSmall', upper(mfilename)), ...
+        'The interpolation step is smaller than data resolution');
+    end
+
     intpDates = dates(1):intpDuration:dates(end);
 
     flatSshs = reshape(sshs, [prod(size(sshs, 1:2)), size(sshs, 3)])';
@@ -236,52 +234,31 @@ function varargout = loadAggregatedRawData( ...
     outputPath = fullfile(outputFolder, outputFile);
 
     %% Checking output file
-    if exist(outputPath, 'file') && forceNew <= 1
-        % Output file exists and not forced to recompute
-        outputDate = datetime(dir(outputPath).date, ...
-            "InputFormat", 'dd-MMM-yyyy HH:mm:ss');
+    if exist(outputPath, 'file') && ...
+            (forceNew == 0 || (forceNew == 1 && isolder(inputFolder, outputPath, true)))
 
-        if exist(inputFolder, 'dir')
-            dirInfo = dir(inputFolder);
-            inputDate = datetime(dirInfo(strcmp({dirInfo.name}, '.')).date, ...
-                "InputFormat", 'dd-MMM-yyyy HH:mm:ss');
-        else
-            inputDate = datetime('now');
-        end
-
-        disp(outputDate) % DEBUG
-        disp(inputDate) % DEBUG
-
-        if ~(forceNew == 1 && outputDate >= inputDate)
-            % Passed or skipped the time check
-
-            if beQuiet <= 1
-                loadingMsg = ...
-                    sprintf('%s: Loading %s (this may take a while)\n', ...
-                    upper(mfilename), outputPath);
-                fprintf(loadingMsg);
-            end
-
-            load(outputPath, 'sshs', 'sshErrors', 'dates', 'lon', 'lat');
-            varargout = {sshs, sshErrors, dates, lon, lat};
-
-            if beQuiet <= 1
-                fprintf(repmat('\b', 1, length(loadingMsg)));
-                fprintf('%s: Loaded %s\n', upper(mfilename), outputPath);
-            end
-
-            return
-        elseif beQuiet <= 1
-            fprintf('%s: %s out of date, recomputing...\n', ...
+        if beQuiet <= 1
+            loadingMsg = ...
+                sprintf('%s: Loading %s (this may take a while)\n', ...
                 upper(mfilename), outputPath);
+            fprintf(loadingMsg);
         end
+
+        load(outputPath, 'sshs', 'sshErrors', 'dates', 'lon', 'lat');
+        varargout = {sshs, sshErrors, dates, lon, lat};
+
+        if beQuiet <= 1
+            fprintf(repmat('\b', 1, length(loadingMsg)));
+            fprintf('%s: Loaded %s\n', upper(mfilename), outputPath);
+        end
+
+        return
 
     end
 
     if ~exist(inputFolder, 'dir')
         error(sprintf('%s:InputNotFound', upper(mfilename)), ...
-            '%s: Input folder not found at %s\n', ...
-            upper(mfilename), inputFolder);
+            'Input folder not found at %s\n', inputFolder);
     end
 
     inputFileTemplate = 'ssh_grids_*.nc';
@@ -289,8 +266,8 @@ function varargout = loadAggregatedRawData( ...
 
     if isempty(inputFiles)
         error(sprintf('%s:InputNotFound', upper(mfilename)), ...
-            '%s: No input files found at %s, data can be accessed from %s\n', ...
-            upper(mfilename), inputFolder, 'https://podaac.jpl.nasa.gov/dataset/SEA_SURFACE_HEIGHT_ALT_GRIDS_L4_2SATS_5DAY_6THDEG_V_JPL2205');
+            'No input files found at %s, data can be accessed from %s\n', ...
+            inputFolder, 'https://podaac.jpl.nasa.gov/dataset/SEA_SURFACE_HEIGHT_ALT_GRIDS_L4_2SATS_5DAY_6THDEG_V_JPL2205');
     end
 
     inputFiles = sort(inputFiles);
@@ -325,7 +302,7 @@ function varargout = loadAggregatedRawData( ...
         if getappdata(wbar, 'canceling')
             delete(wbar);
             warning(sprintf('%s:ProcessCancelledByUser', upper(mfilename)), ...
-                '%s: Processing cancelled\n', upper(mfilename));
+                'Processing cancelled');
             return
         end
 
@@ -353,7 +330,7 @@ function varargout = loadAggregatedRawData( ...
     if getappdata(wbar, 'canceling')
         delete(wbar);
         warning(sprintf('%s:ProcessCancelledByUser', upper(mfilename)), ...
-            '%s: Saving cancelled\n', upper(mfilename));
+            'Saving cancelled');
         return
     end
 
@@ -417,5 +394,51 @@ function varargout = formatoutput(sshs, sshErrors, dates, lon, lat, timelim, tim
     end
 
     varargout = {sshs, sshErrors, dates, lon, lat};
+
+end
+
+% Compare the date of two directories or files
+function isolder = isolder(dir1, dir2, checkContent)
+
+    dirDates = NaT([2, 1]);
+
+    for iDir = 1:2
+
+        if iDir == 1
+            dirPath = dir1;
+        else
+            dirPath = dir2;
+        end
+
+        dirState = exist(dirPath, 'file');
+
+        switch dirState
+            case 2 % is a file
+                dirDate = datetime(dir(dirPath).date, ...
+                    "InputFormat", 'dd-MMM-yyyy HH:mm:ss');
+            case 7 % is a folder
+                dirInfo = dir(dirPath);
+
+                if ~checkContent
+                    dirDate = datetime(dirInfo(strcmp({dirInfo.name}, '.')).date, ...
+                        "InputFormat", 'dd-MMM-yyyy HH:mm:ss');
+                else
+                    disDates = ...
+                        datetime({dirInfo(~ismember({dirInfo.name}, {'.', '..', '.DS_Store'})).date}, ...
+                        "InputFormat", 'dd-MMM-yyyy HH:mm:ss');
+                    dirDate = max(disDates);
+                end
+
+            case 0 % does not exist
+                dirDate = datetime('now');
+            otherwise
+                error('Unknown file type for %s, EXIST output: %d', dirPath, dirState);
+        end
+
+        dirDates(iDir) = dirDate;
+
+    end
+
+    isolder = dirDates(1) < dirDates(2);
 
 end
