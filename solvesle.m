@@ -90,7 +90,8 @@ function varargout = solvesle(varargin)
     % Parse input arguments
     [forcingLoadPlm, forcingLoadStdPlm, includesDO, computeError, ...
          L, ocean, frame, doRotationFeedback, maxIter, ...
-         oceanKernel, oceanFunPlm, kernelOrder, beQuiet] = parseinputs(varargin{:});
+         oceanKernel, oceanFunPlm, kernelOrder, initialPlm, beQuiet] = ...
+        parseinputs(varargin{:});
 
     if ~beQuiet
         wbar = waitbar(0, 'Initialising', ...
@@ -119,6 +120,8 @@ function varargout = solvesle(varargin)
         oceanKernel = kernelcp_new(L, ocean, "BeQuiet", true);
     end
 
+    oceanKernelSquare = oceanKernel .^ 2;
+
     if isempty(kernelOrder)
         kernelOrder = kernelorder(L);
     end
@@ -131,29 +134,37 @@ function varargout = solvesle(varargin)
         if size(forcingLoadPlm, 1) < addmup(L)
             forcingLoadPlm(addmup(L), 2) = 0;
             forcingLoadStdPlm(addmup(L), 2) = 0;
+            initialPlm(addmup(L), 2) = 0;
         elseif size(forcingLoadPlm, 1) > addmup(L)
             forcingLoadPlm = forcingLoadPlm(1:addmup(L), :);
             forcingLoadStdPlm = forcingLoadStdPlm(1:addmup(L), :);
+            initialPlm = initialPlm(1:addmup(L), :);
         end
 
         forcingLoadPlms = forcingLoadPlm(kernelOrder);
         forcingLoadStdPlms = forcingLoadStdPlm(kernelOrder);
+        initialPlms = initialPlm(kernelOrder);
     else
 
         if size(forcingLoadPlm, 1) < addmup(L)
             forcingLoadPlm(addmup(L), 2, 1) = 0;
             forcingLoadStdPlm(addmup(L), 2, 1) = 0;
+            initialPlm(addmup(L), 2, 1) = 0;
         elseif size(forcingLoadPlm, 1) > addmup(L)
             forcingLoadPlm = forcingLoadPlm(1:addmup(L), :, 1);
             forcingLoadStdPlm = forcingLoadStdPlm(1:addmup(L), :, 1);
+            initialPlm = initialPlm(1:addmup(L), :, 1);
         end
 
         forcingLoadPlm = reshape(forcingLoadPlm, ...
             [prod(size(forcingLoadPlm, 1:2)), size(forcingLoadPlm, 3)]);
         forcingLoadStdPlm = reshape(forcingLoadStdPlm, ...
             [prod(size(forcingLoadStdPlm, 1:2)), size(forcingLoadStdPlm, 3)]);
+        initialPlm = reshape(initialPlm, ...
+            [prod(size(initialPlm, 1:2)), size(initialPlm, 3)]);
         forcingLoadPlms = forcingLoadPlm(kernelOrder, :);
         forcingLoadStdPlms = forcingLoadStdPlm(kernelOrder, :);
+        initialPlms = initialPlm(kernelOrder, :);
     end
 
     oceanFunPlms = oceanFunPlm(kernelOrder);
@@ -208,7 +219,13 @@ function varargout = solvesle(varargin)
 
     %% Iteration
     gmsl =- forcingLoadPlms(1, :) / oceanFunPlms(1, :) / WATER_DENSITY;
-    rslPlms = oceanFunPlms * gmsl;
+
+    if ~isempty(initialPlm)
+        rslPlms = initialPlms;
+    else
+        rslPlms = oceanFunPlms * gmsl;
+    end
+
     rslOceanPlms = rslPlms;
 
     if computeError
@@ -247,7 +264,7 @@ function varargout = solvesle(varargin)
         loadStdPlms = sqrt( ...
             forcingLoadStdPlms .^ 2 + (rslOceanStdPlms * WATER_DENSITY) .^ 2);
         rslStdPlms = sqrt((sleKernel .^ 2) * (loadStdPlms .^ 2));
-        rslOceanStdPlms = sqrt((oceanKernel .^ 2) * (rslStdPlms .^ 2));
+        rslOceanStdPlms = sqrt(oceanKernelSquare * (rslStdPlms .^ 2));
         rslOceanStdPlms(1, :) = -forcingLoadStdPlms(1, :) / WATER_DENSITY;
         rslStdPlms(1, :) = rslOceanStdPlms(1, :) ./ oceanFunPlms(1, :);
 
@@ -347,6 +364,7 @@ function varargout = parseinputs(varargin)
     addParameter(ip, 'OceanKernel', [], @(x) isnumeric(x));
     addParameter(ip, 'OceanFunction', [], @(x) isnumeric(x));
     addParameter(ip, 'KernelOrder', [], @(x) isnumeric(x));
+    addParameter(ip, 'InitialCondition', [], @(x) isnumeric(x));
     addParameter(ip, 'BeQuiet', false, @(x) (isnumeric(x) || islogical(x)) && isscalar(x));
     parse(ip, varargin{:});
     forcingPlm = squeeze(ip.Results.ForcingPlm);
@@ -359,6 +377,7 @@ function varargout = parseinputs(varargin)
     oceanKernel = ip.Results.OceanKernel;
     oceanFunSph = ip.Results.OceanFunction;
     kernelOrder = ip.Results.KernelOrder;
+    initialPlm = ip.Results.InitialCondition;
     beQuiet = logical(ip.Results.BeQuiet);
 
     % Check input sizes
@@ -382,6 +401,21 @@ function varargout = parseinputs(varargin)
 
     end
 
+    if isempty(initialPlm) || ...
+            all(initialPlm(:, end - 1:end) == 0, "all")
+        initialPlm = zeros(size(forcingPlm));
+    else
+
+        if ~isequal(size(initialPlm), size(forcingPlm))
+            error( ...
+                sprintf('%s:InvalidInput:InputSizeNotMatch', upper(mfilename)), ...
+                'Input size of INITIAL CONDITION ([%s]) does not match FORCINGPLM ([%s])', ...
+                strjoin(string(size(initialPlm)), ', '), ...
+                strjoin(string(size(forcingPlm)), ', '));
+        end
+
+    end
+
     % Find the degree of the spherical harmonic coefficients
     if includesDO
 
@@ -391,6 +425,11 @@ function varargout = parseinputs(varargin)
 
         forcingPlm = forcingPlm(:, 3:4, :);
         forcingStdPlm = forcingStdPlm(:, 3:4, :);
+
+        if ~isempty(initialPlm)
+            initialPlm = initialPlm(:, 3:4, :);
+        end
+
     elseif isempty(L)
         L = finddegree(forcingPlm(:, :, 1));
     end
@@ -398,7 +437,7 @@ function varargout = parseinputs(varargin)
     varargout = ...
         {forcingPlm, forcingStdPlm, includesDO, computeError, ...
          L, ocean, frame, doRotationFeedback, maxIter, ...
-         oceanKernel, oceanFunSph, kernelOrder, beQuiet};
+         oceanKernel, oceanFunSph, kernelOrder, initialPlm, beQuiet};
 end
 
 % Find the degree of the spherical harmonic coefficients based on the

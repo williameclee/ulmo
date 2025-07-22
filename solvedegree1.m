@@ -3,7 +3,7 @@
 % Sun et al. (2016) with the specified GIA model.
 %
 % Syntax
-%   [coeffs, coeffStds, dates] = SOLVEDEGREE1(...
+%   [coeffs, coeffStd, dates] = SOLVEDEGREE1(...
 %       pcenter, rlevel, Ldata, Lsle, GIAModel, oceanDomain)
 %   [__] = SOLVEDEGREE1(__, ...
 %       "ReplaceWithGAD", rwGad, "IncludeC20", includeC20, "TimeRange", timelim)
@@ -30,6 +30,9 @@
 %       centre (such as BA 60 or BB 96 standard L2 products) this allows
 %       you to choose between them.
 %       The default L is 60.
+%       Data type: [NUMERIC]
+%   Ltruncation - Bandwidth to truncate the date product
+%       The default option is no truncation.
 %       Data type: [NUMERIC]
 %   Lsle - Bandwidth used to solve the sea level equation
 %       The default Lsle is 96.
@@ -97,19 +100,19 @@
 %   2025/03/18, williameclee@arizona.edu (@williameclee)
 %
 % Last modified by
-%   2025/05/29, williameclee@arizona.edu (@williameclee)
+%   2025/07/21, williameclee@arizona.edu (@williameclee)
 
 function varargout = solvedegree1(varargin)
     %% Initialisation
     % Parse inputs
     [pcenter, rlevel, Ldata, Ltruncation, Lsle, giaModel, oceanDomain, ...
-         includeC20, replaceWGad, method, timelim, unit, ...
+         includeC20, includeC30, replaceWGad, method, timelim, unit, ...
          forceNew, saveData, beQuiet, onlyId] = ...
         parseinputs(varargin);
 
     [dataPath, ~, outputId] = ...
         getoutputfile(pcenter, rlevel, Ldata, replaceWGad, giaModel, ...
-        includeC20, Ltruncation, Lsle, oceanDomain, method);
+        includeC20, includeC30, Ltruncation, Lsle, oceanDomain, method);
 
     if onlyId
         varargout = {outputId};
@@ -125,7 +128,7 @@ function varargout = solvedegree1(varargin)
                 fprintf('%s loaded %s\n', upper(mfilename), dataPath)
             end
 
-            varargout = formatoutput(coeffs, coeffStds, dates, timelim, unit, nargout, ...
+            varargout = formatoutput(coeffs, coeffStds, dates, timelim, unit, nargout, [includeC20, includeC30], ...
                 {pcenter, rlevel, Ldata}, beQuiet);
 
             return
@@ -137,8 +140,9 @@ function varargout = solvedegree1(varargin)
 
     end
 
-    [coeffs, coeffStds, dates] = solvedegree1Core(pcenter, rlevel, Ldata, Ltruncation, Lsle, replaceWGad, ...
-        giaModel, includeC20, oceanDomain, method, beQuiet);
+    [coeffs, coeffStds, dates] = ...
+        solvedegree1Core(pcenter, rlevel, Ldata, Ltruncation, Lsle, replaceWGad, ...
+        giaModel, includeC20, includeC30, oceanDomain, method, beQuiet);
 
     if saveData
         save(dataPath, 'coeffs', 'coeffStds', 'dates')
@@ -149,7 +153,7 @@ function varargout = solvedegree1(varargin)
 
     end
 
-    varargout = formatoutput(coeffs, coeffStds, dates, timelim, unit, nargout, ...
+    varargout = formatoutput(coeffs, coeffStds, dates, timelim, unit, nargout, [includeC20, includeC30], ...
         {pcenter, rlevel, Ldata}, beQuiet);
 
 end
@@ -157,7 +161,7 @@ end
 %% Subfunctions
 % Heart of the programme
 function [coeffs, coeffStds, dates] = ...
-        solvedegree1Core(pcenter, rlevel, Ldata, Ltruncation, Lsle, rwGad, giaModel, includeC20, oceanDomain, method, beQuiet)
+        solvedegree1Core(pcenter, rlevel, Ldata, Ltruncation, Lsle, rwGad, giaModel, includeC20, includeC30, oceanDomain, method, beQuiet)
     %% Loading data
     wbar = waitbar(0, 'Loading GRACE data', ...
         "Name", upper(mfilename), "CreateCancelBtn", 'setappdata(gcbf,''canceling'',1)');
@@ -201,23 +205,38 @@ function [coeffs, coeffStds, dates] = ...
         'Processing cancelled');
     end
 
-    % Whether to also reestimate C20
-    nCoeffs = 3 + includeC20;
+    % Whether to also reestimate C20 and C30
+    nCoeffs = 3 + includeC20 + includeC30; % C10, C11, S11, (C20), (C30)
     coeffs = nan([length(dates), nCoeffs]);
 
     % Precompute kernels
     coeffLocs = [2, 1; 3, 1; 3, 2];
+    coeffIds = [2, 3, 4];
 
     if includeC20
         coeffLocs = [coeffLocs; 4, 1];
+        coeffIds = [coeffIds, 5];
+    end
+
+    if includeC30
+        coeffLocs = [coeffLocs; 7, 1];
+        coeffIds = [coeffIds, 10];
     end
 
     % Note: Converting to SINGLE does not work because it is not compatible with the sparse SLE kernel
     oceanKernelSle = kernelcp_new(Lsle, oceanDomain, ...
         "BeQuiet", beQuiet);
     landKernelSle = eye(size(oceanKernelSle)) - oceanKernelSle;
-    coeffsKernel = ...
-        oceanKernelSle((1:nCoeffs) + 1, (1:nCoeffs) + 1);
+    coeffsKernel = nan([nCoeffs, nCoeffs]);
+
+    for iCoeff = 1:nCoeffs
+
+        for jCoeff = 1:nCoeffs
+            coeffsKernel(iCoeff, jCoeff) = oceanKernelSle(coeffIds(iCoeff), coeffIds(jCoeff));
+        end
+
+    end
+
     [~, ~, ~, ~, ~, oceanFunPlm] = ...
         geoboxcap(Lsle, oceanDomain, "BeQuiet", beQuiet);
     kernelOrder = kernelorder(Lsle);
@@ -238,7 +257,7 @@ function [coeffs, coeffStds, dates] = ...
 
     for iIter = 1:maxIter
         waitbar((iIter - 1) / maxIter, wbar, ...
-        sprintf('Solving degree-1 coefficients iteratively (%d/%d)', iIter, maxIter));
+            sprintf('Solving degree-1 coefficients iteratively (%d/%d)', iIter, maxIter));
 
         if getappdata(wbar, 'canceling')
             delete(wbar);
@@ -254,8 +273,8 @@ function [coeffs, coeffStds, dates] = ...
                 [oceanPlmt, oceanStdPlmt] = ...
                     solvesle(landPlmt, landStdPlmt, Lsle, oceanDomain, ...
                     "OceanKernel", oceanKernelSle, "OceanFunction", oceanFunPlm, ...
-                    "KernelOrder", kernelOrder, ...
-                    "RotationFeedback", true, "BeQuiet", true);
+                    "KernelOrder", kernelOrder, "InitialCondition", gracePlmt, ...
+                    "RotationFeedback", true, "MaxIter", 5 + (5 * (iIter == maxIter)), "BeQuiet", true);
                 oceanPlmt = localise(oceanPlmt, "L", Lsle, "K", oceanKernelSle);
                 oceanStdPlmt = localise(oceanStdPlmt, "L", Lsle, "K", oceanKernelSle, "IsError", true);
                 oceanCoeffs = extractcoeffs(oceanPlmt, coeffLocs);
@@ -294,9 +313,17 @@ function [coeffs, coeffStds, dates] = ...
     end
 
     % Restore GIA signal for C20
-    if includeC20
+    if includeC20 && includeC30
         coeffs(:, 4) = coeffs(:, 4) + ...
             squeeze(giaPlmt(:, 4, 3));
+        coeffs(:, 5) = coeffs(:, 5) + ...
+            squeeze(giaPlmt(:, 7, 3));
+    elseif includeC20
+        coeffs(:, 4) = coeffs(:, 4) + ...
+            squeeze(giaPlmt(:, 4, 3));
+    elseif includeC30
+        coeffs(:, 5) = coeffs(:, 5) + ...
+            squeeze(giaPlmt(:, 7, 3));
     end
 
     delete(wbar);
@@ -306,21 +333,22 @@ end
 % Parse input arguments
 function varargout = parseinputs(inputs)
     % Set default parameters
-    deOpt.Pcenter = 'CSR';
-    deOpt.Rlevel = 'RL06';
+    dfOpt.Pcenter = 'CSR';
+    dfOpt.Rlevel = 'RL06';
     dfOpt.Ldata = 60;
     dfOpt.Ltruncation = [];
     dfOpt.Lsle = 96;
     dfOpt.GiaModel = 'ice6gd';
     dfOpt.OceanDomain = GeoDomain('alloceans', "Buffer", 0.5); % Sun et al. (2016)
     dfOpt.IncludeC20 = false;
+    dfOpt.IncludeC30 = false;
     dfOpt.RwGAD = true;
     dfOpt.Method = 'fingerprint';
     % Construct input parser
     ip = inputParser;
-    addOptional(ip, 'Pcenter', deOpt.Pcenter, ...
+    addOptional(ip, 'Pcenter', dfOpt.Pcenter, ...
         @(x) ischar(validatestring(x, {'CSR', 'GFZ', 'JPL'})));
-    addOptional(ip, 'Rlevel', deOpt.Rlevel, ...
+    addOptional(ip, 'Rlevel', dfOpt.Rlevel, ...
         @(x) ischar(validatestring(x, {'RL04', 'RL05', 'RL06'})));
     addOptional(ip, 'Ldata', dfOpt.Ldata, ...
         @(x) isscalar(x) && isnumeric(x) && x > 0);
@@ -333,6 +361,8 @@ function varargout = parseinputs(inputs)
     addOptional(ip, 'OceanDomain', dfOpt.OceanDomain, ...
         @(x) isa(x, 'GeoDomain'));
     addOptional(ip, 'IncludeC20', dfOpt.IncludeC20, ...
+        @(x) islogical(x) || isnumeric(x));
+    addOptional(ip, 'IncludeC30', dfOpt.IncludeC30, ...
         @(x) islogical(x) || isnumeric(x));
     addOptional(ip, 'ReplaceWithGAD', dfOpt.RwGAD, ...
         @(x) islogical(x) || isnumeric(x));
@@ -365,6 +395,7 @@ function varargout = parseinputs(inputs)
     giaModel = ip.Results.GiaModel;
     oceanDomain = ip.Results.OceanDomain;
     includeC20 = logical(ip.Results.IncludeC20);
+    includeC30 = logical(ip.Results.IncludeC30);
     replaceWGad = logical(ip.Results.ReplaceWithGAD);
     method = ip.Results.Method;
     timelim = ip.Results.TimeRange;
@@ -376,14 +407,14 @@ function varargout = parseinputs(inputs)
 
     varargout = ...
         {pcenter, rlevel, Ldata, Ltruncation, Lsle, giaModel, oceanDomain, ...
-         includeC20, replaceWGad, method, timelim, unit, ...
+         includeC20, includeC30, replaceWGad, method, timelim, unit, ...
          forceNew, saveData, beQuiet, onlyId};
 end
 
 % Get the input and output file names
 function [outputPath, outputFile, deg1Id] = ...
         getoutputfile(pcenter, rlevel, Ldata, replaceWGad, giaModel, ...
-        includeC20, Ltruncation, Lsle, oceanDomain, method)
+        includeC20, includeC30, Ltruncation, Lsle, oceanDomain, method)
     outputFolder = fullfile(getenv('GRACEDATA'), 'Degree1', 'new');
 
     if ~exist(outputFolder, 'dir')
@@ -399,8 +430,12 @@ function [outputPath, outputFile, deg1Id] = ...
 
     includeC20Flag = '';
 
-    if includeC20
+    if includeC20 && includeC30
+        includeC20Flag = '-WC2030';
+    elseif includeC20
         includeC20Flag = '-WC20';
+    elseif includeC30
+        includeC20Flag = '-WC30';
     end
 
     switch method
@@ -421,17 +456,33 @@ function [outputPath, outputFile, deg1Id] = ...
 end
 
 % Format the output
-function output = formatoutput(coeffs, coeffStds, dates, timelim, unit, nOut, product, beQuiet)
+function output = formatoutput(coeffs, coeffStds, dates, timelim, unit, nOut, includeC2030, product, beQuiet)
     coeffs(:, 1:3) = convertgravity(coeffs(:, 1:3), 'SD', unit, ...
         "InputFormat", 'L', "L", 1);
     coeffStds(:, 1:3) = convertgravity(coeffStds(:, 1:3), 'SD', unit, ...
         "InputFormat", 'L', "L", 1);
 
     if size(coeffs, 2) == 4
+
+        if includeC2030(1)
+            L = 2;
+        else
+            L = 3;
+        end
+
+        coeffs(:, 4) = convertgravity(coeffs(:, 4), 'SD', unit, ...
+            "InputFormat", 'L', "L", L);
+        coeffStds(:, 4) = convertgravity(coeffStds(:, 4), 'SD', unit, ...
+            "InputFormat", 'L', "L", L);
+    elseif size(coeffs, 2) == 5
         coeffs(:, 4) = convertgravity(coeffs(:, 4), 'SD', unit, ...
             "InputFormat", 'L', "L", 2);
         coeffStds(:, 4) = convertgravity(coeffStds(:, 4), 'SD', unit, ...
             "InputFormat", 'L', "L", 2);
+        coeffs(:, 5) = convertgravity(coeffs(:, 5), 'SD', unit, ...
+            "InputFormat", 'L', "L", 3);
+        coeffStds(:, 5) = convertgravity(coeffStds(:, 5), 'SD', unit, ...
+            "InputFormat", 'L', "L", 3);
     end
 
     if ~isempty(timelim)

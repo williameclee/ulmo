@@ -2,13 +2,17 @@
 %
 % Authored by:
 %   2025/06/03, williameclee@arizona.edu (@williameclee)
+%
+% Last modified by:
+%   2025/07/19, williameclee@arizona.edu (@williameclee)
 
-function [polyCoeffs, periodicCoeffs, dataFit] = periodictimeseries(t, varargin)
+function varargout = periodictimeseries(t, varargin)
     ip = inputParser;
     ip.addRequired('t', ...
         @(x) (isnumeric(x) && (isvector(x) || ismatrix(x))) || ...
         ((isdatetime(x) || isduration(x)) && isvector(x)));
     ip.addOptional('x', [], @(x) isnumeric(x) && isvector(x));
+    ip.addOptional('sigma', [], @(x) isnumeric(x) && isvector(x));
     ip.addOptional('p', 2, @(x) isnumeric(x) && isscalar(x));
     ip.addOptional('periods', [], @(x) isnumeric(x) || isduration(x));
     ip.addParameter('PeriodicFormat', 'cos-sin', @(x) ischar(validatestring(x, {'sin-cos', 'cos-sin', 'amp-phase'})));
@@ -16,18 +20,29 @@ function [polyCoeffs, periodicCoeffs, dataFit] = periodictimeseries(t, varargin)
 
     t = ip.Results.t;
     x = ip.Results.x;
+    sigma = ip.Results.sigma;
     p = ip.Results.p;
     periods = ip.Results.periods;
     periodicFormat = ip.Results.PeriodicFormat;
 
-    if isempty(x) && isnumeric(t) && any(size(t) == 2)
+    if (isempty(x) || isempty(sigma)) && isnumeric(t) && any((size(t) == 2 | size(t) == 3))
 
-        if size(t, 2) == 2
+        if (size(t, 2) == 2 || size(t, 2) == 3)
             x = t(:, 2);
             t = t(:, 1);
-        elseif size(t, 1) == 2
+
+            if size(t, 2) == 3
+                sigma = t(:, 3);
+            end
+
+        elseif (size(t, 1) == 2 || size(t, 1) == 3)
             x = t(2, :);
             t = t(1, :);
+
+            if size(t, 1) == 3
+                sigma = t(3, :);
+            end
+
         else
             error('Invalid input dimensions');
         end
@@ -44,6 +59,11 @@ function [polyCoeffs, periodicCoeffs, dataFit] = periodictimeseries(t, varargin)
 
     t = t(:);
     x = x(:);
+    sigma = sigma(:);
+
+    if ~isempty(sigma) && any(sigma <= 0)
+        error('sigma must be positive');
+    end
 
     isTime = false;
 
@@ -72,11 +92,23 @@ function [polyCoeffs, periodicCoeffs, dataFit] = periodictimeseries(t, varargin)
 
     end
 
-    coeffs = X \ x;
+    if ~isempty(sigma)
+        W = diag(1 ./ sigma .^ 2);
+        coeffs = (X' * W * X) \ (X' * W * x);
+        coeffSigmas = sqrt(diag(inv(X' * W * X)));
+    else
+        coeffs = X \ x;
+    end
+
     dataFit = X * coeffs;
 
     polyCoeffs = coeffs(1:p + 1);
     periodicCoeffs = coeffs(p + 2:end);
+
+    if ~isempty(sigma)
+        polyCoeffSigmas = coeffSigmas(1:p + 1);
+        periodicCoeffSigmas = coeffSigmas(p + 2:end);
+    end
 
     if strcmp(periodicFormat, "amp-phase")
         periodicCoeffs = reshape(periodicCoeffs, [2, numel(periods)]);
@@ -90,5 +122,26 @@ function [polyCoeffs, periodicCoeffs, dataFit] = periodictimeseries(t, varargin)
         end
 
     end
+
+    if isempty(sigma)
+        varargout = {polyCoeffs, periodicCoeffs, dataFit};
+        return;
+    end
+
+    if strcmp(periodicFormat, "amp-phase")
+
+        periodicCoeffSigmas = reshape(periodicCoeffSigmas, [2, numel(periods)]);
+        periodicCoeffSigmas = ...
+            [sqrt(sum(periodicCoeffSigmas .^ 2, 1)); ...
+             wrapTo2Pi(atan2(periodicCoeffSigmas(2, :), periodicCoeffSigmas(1, :)))];
+        periodicCoeffSigmas = periodicCoeffSigmas';
+
+        if isTime
+            periodicCoeffSigmas(:, 2) = periodicCoeffSigmas(:, 2) / (2 * pi) * days(years(1));
+        end
+
+    end
+
+    varargout = {polyCoeffs, periodicCoeffs, dataFit, polyCoeffSigmas, periodicCoeffSigmas};
 
 end

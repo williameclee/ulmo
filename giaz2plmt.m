@@ -54,7 +54,7 @@
 %       PANGAEA, doi: 10.1594/PANGAEA.932462
 %
 % Last modified by
-%   2025/06/02, williameclee@arizona.edu (@williameclee)
+%   2025/07/21, williameclee@arizona.edu (@williameclee)
 
 function varargout = giaz2plmt(varargin)
     %% Initialisation
@@ -87,7 +87,7 @@ function varargout = giaz2plmt(varargin)
         wUPlmt = [];
         wLPlmt = [];
     else
-        error('Unrecognised model name %s', upper(model));
+        error('GIAZ2PLMT:LoadData:ModelDataNotFound', 'Unrecognised model name %s', upper(model));
     end
 
     if (size(wPlmt, 1) < addmup(L) || ...

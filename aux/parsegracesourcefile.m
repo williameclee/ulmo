@@ -11,7 +11,7 @@
 %   2025/05/20, williameclee@arizona.edu (@williameclee)
 %
 % Last modified by
-%   2025/05/28, williameclee@arizona.edu (@williameclee)
+%   2025/07/21, williameclee@arizona.edu (@williameclee)
 
 function varargout = parsegracesourcefile(dataPath)
     %% Loading data
@@ -41,7 +41,7 @@ function varargout = parsegracesourcefile(dataPath)
 
     if gravityStdSph(1, 1) == 2
         gravityStdSph = ...
-            [[0, 0, 1, 0; 1, 0, 0, 0; 1, 1, 0, 0]; gravityStdSph];
+            [[0, 0, 0, 0; 1, 0, 0, 0; 1, 1, 0, 0]; gravityStdSph];
     end
 
     %% Quality check

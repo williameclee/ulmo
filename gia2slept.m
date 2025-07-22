@@ -70,7 +70,7 @@
 %   By default, if the output unit is geoid (POT), it is shifted vertically to represent the sea surface height change to conserve the ocean mass. To remove such effect, simply set the degree-0 coefficient to zero.
 %
 % Last modified by
-%   2025/03/28, williameclee@arizona.edu (@williameclee)
+%   2025/07/21, williameclee@arizona.edu (@williameclee)
 
 function varargout = gia2slept(varargin)
     %% Initialisation
@@ -86,12 +86,18 @@ function varargout = gia2slept(varargin)
     switch units
         case {'massdensity', 'SD'}
         case {'geoid', 'POT'}
-            oceanDomain = GeoDomain('alloceans', "Buffer", 0.5);
-            zplm = giaz2plmt(model, L, "BeQuiet", beQuiet);
-            plmLcl = localise(plm, oceanDomain, L);
-            zplm = localise(zplm, oceanDomain, L);
-            zOffset = plmLcl(1, 3) - zplm(1, 3) / 1e3;
-            plm(1, 3) = plm(1, 3) - zOffset / oceanDomain.SphArea;
+
+            try
+                oceanDomain = GeoDomain('alloceans', "Buffer", 0.5);
+                zplm = giaz2plmt(model, L, "BeQuiet", beQuiet);
+                plmLcl = localise(plm, oceanDomain, L);
+                zplm = localise(zplm, oceanDomain, L);
+                zOffset = plmLcl(1, 3) - zplm(1, 3) / 1e3;
+                plm(1, 3) = plm(1, 3) - zOffset / oceanDomain.SphArea;
+            catch
+                warning('Failed to apply the degree-0 correction for geoid unit');
+            end
+
     end
 
     hasBounds = ~isempty(plmU) && ~isempty(plmL);
