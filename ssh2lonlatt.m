@@ -92,7 +92,7 @@
 %	2025/07/22, williameclee@arizona.edu (@williameclee)
 
 function varargout = ssh2lonlatt(varargin)
-    [product, timeStep, meshSize, timelim, lonOrigin, intpMthd, timeFmt, ...
+    [product, timeStep, meshSize, timelim, lonOrigin, intpMthd, timeFmt, unit, ...
          forceNew, beQuiet, saveData] = ...
         parseInputs(varargin{:});
 
@@ -107,7 +107,7 @@ function varargout = ssh2lonlatt(varargin)
             forceNew, beQuiet, saveData, outputFolder, inputFolder);
 
         [sshs, sshErrors, dates, lon, lat] = ...
-            formatoutput(sshs, sshErrors, dates, lon, lat, timelim, timeFmt);
+            formatoutput(sshs, sshErrors, dates, lon, lat, timelim, timeFmt, unit);
 
         varargout = {sshs, sshErrors, dates, lon, lat};
         return
@@ -117,26 +117,25 @@ function varargout = ssh2lonlatt(varargin)
     %% With interpolation
     intpOutputPath = outputpath(product, intpMthd, timeStep, meshSize, lonOrigin, outputFolder);
 
-    if exist(intpOutputPath, 'file') && ...
-            (forceNew == 0 || (forceNew == 1 && isolder(inputFolder, intpOutputPath, true)))
+    if exist(intpOutputPath, 'file') && ~forceNew
 
         if beQuiet <= 1
             loadingMsg = ...
-                sprintf('%s: loading %s (this may take a while)\n', ...
+                sprintf('%s: loading %s, this may take a while...\n', ...
                 upper(mfilename), intpOutputPath);
             fprintf(loadingMsg);
         end
 
         load(intpOutputPath, 'intpSshs', 'intpSshErrors', 'intpDates', 'intpLon', 'intpLat');
 
-        [intpSshs, intpSshErrors, intpDates, intpLon, intpLat] = ...
-            formatoutput(intpSshs, intpSshErrors, intpDates, intpLon, intpLat, timelim, timeFmt);
-        varargout = {intpSshs, intpSshErrors, intpDates, intpLon, intpLat};
-
         if beQuiet <= 1
             fprintf(repmat('\b', 1, length(loadingMsg)));
             fprintf('%s: loaded %s\n', upper(mfilename), intpOutputPath);
         end
+
+        [intpSshs, intpSshErrors, intpDates, intpLon, intpLat] = ...
+            formatoutput(intpSshs, intpSshErrors, intpDates, intpLon, intpLat, timelim, timeFmt, unit);
+        varargout = {intpSshs, intpSshErrors, intpDates, intpLon, intpLat};
 
         return
     end
@@ -212,10 +211,10 @@ function varargout = ssh2lonlatt(varargin)
 
         for iDate = 1:size(intpSshs, 3)
             intpSshs(:, :, iDate) = ...
-                interp2(lonn, latt, squeeze(sshsPad(:, :, 1)), ...
+                interp2(lonn, latt, squeeze(sshsPad(:, :, iDate)), ...
                 mod(intpLonn, 360), intpLatt, intpMthd);
             intpSshErrors(:, :, iDate) = ...
-                interp2(lonn, latt, squeeze(sshErrorsPad(:, :, 1)), ...
+                interp2(lonn, latt, squeeze(sshErrorsPad(:, :, iDate)), ...
                 mod(intpLonn, 360), intpLatt, intpMthd);
         end
 
@@ -227,20 +226,19 @@ function varargout = ssh2lonlatt(varargin)
         intpLat = lat;
     end
 
+    if saveData
+        save(intpOutputPath, ...
+            'intpSshs', 'intpSshErrors', 'intpDates', 'intpLon', 'intpLat');
+
+        if beQuiet <= 1
+            fprintf('%s: saved %s\n', upper(mfilename), intpOutputPath);
+        end
+
+    end
+
     [intpSshs, intpSshErrors, intpDates, intpLon, intpLat] = ...
-        formatoutput(intpSshs, intpSshErrors, intpDates, intpLon, intpLat, timelim, timeFmt);
+        formatoutput(intpSshs, intpSshErrors, intpDates, intpLon, intpLat, timelim, timeFmt, unit);
     varargout = {intpSshs, intpSshErrors, intpDates, intpLon, intpLat};
-
-    if ~saveData
-        return
-    end
-
-    save(intpOutputPath, ...
-        'intpSshs', 'intpSshErrors', 'intpDates', 'intpLon', 'intpLat', '-v7.3');
-
-    if beQuiet <= 1
-        fprintf('%s: saved %s\n', upper(mfilename), intpOutputPath);
-    end
 
 end
 
@@ -261,7 +259,9 @@ function varargout = parseInputs(varargin)
     addParameter(ip, 'InterpolationMethod', 'linear', @ischar);
     addParameter(ip, 'TimeFormat', 'datetime', ...
         @(x) ischar(validatestring(x, {'datetime', 'datenum'})));
-    addParameter(ip, 'ForceNew', 0.5, ...
+    addParameter(ip, 'Unit', 'm', ...
+        @(x) ischar(validatestring(x, {'mm', 'm'})));
+    addParameter(ip, 'ForceNew', false, ...
         @(x) (islogical(x) || isnumeric(x)) && isscalar(x));
     addParameter(ip, 'BeQuiet', 0.5, ...
         @(x) (islogical(x) || isnumeric(x)) && isscalar(x));
@@ -269,17 +269,18 @@ function varargout = parseInputs(varargin)
         @(x) (islogical(x) || isnumeric(x)) && isscalar(x));
 
     parse(ip, varargin{:});
+
     product = ip.Results.Product;
+    timelim = ip.Results.TimeRange;
+
     timeStep = ip.Results.TimeStep;
     meshSize = ip.Results.MeshSize;
     lonOrigin = ip.Results.LonOrigin;
-
-    timelim = ip.Results.TimeRange;
-
     intpMthd = ip.Results.InterpolationMethod;
 
     timeFmt = ip.Results.TimeFormat;
-    forceNew = uint8(double(ip.Results.ForceNew) * 2);
+    unit = lower(ip.Results.Unit);
+    forceNew = logical(ip.Results.ForceNew);
     beQuiet = uint8(double(ip.Results.BeQuiet) * 2);
     saveData = logical(ip.Results.SaveData);
 
@@ -292,7 +293,7 @@ function varargout = parseInputs(varargin)
     end
 
     varargout = ...
-        {product, timeStep, meshSize, timelim, lonOrigin, intpMthd, timeFmt, forceNew, beQuiet, saveData};
+        {product, timeStep, meshSize, timelim, lonOrigin, intpMthd, timeFmt, unit, forceNew, beQuiet, saveData};
 end
 
 % Load the aggregated raw data (i.e. data from all time stamps in the same array)
@@ -448,7 +449,7 @@ function varargout = readRawData(inputPath)
 end
 
 % Format the output
-function varargout = formatoutput(sshs, sshErrors, dates, lon, lat, timelim, timeFmt)
+function varargout = formatoutput(sshs, sshErrors, dates, lon, lat, timelim, timeFmt, unit)
 
     if ~isempty(timelim)
         isValidTime = ...
@@ -460,6 +461,16 @@ function varargout = formatoutput(sshs, sshErrors, dates, lon, lat, timelim, tim
 
     if strcmp(timeFmt, 'datenum')
         dates = datenum(dates); %#ok<DATNM>
+    end
+
+    switch unit
+        case 'm'
+        case 'mm'
+            sshs = sshs * 1e3;
+            sshErrors = sshErrors * 1e3;
+        otherwise
+            error(sprintf('%s:InvalidUnit', upper(mfilename)), ...
+                'Unrecognised unit for sea surface height %s', unit);
     end
 
     varargout = {sshs, sshErrors, dates, lon, lat};
