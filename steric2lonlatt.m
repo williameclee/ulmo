@@ -1,3 +1,10 @@
+%% STERIC2LONLATT 
+%
+% Authored by
+%	2025/07/22, williameclee@arizona.edu (@williameclee)
+% Last modified by
+%	2025/07/25, williameclee@arizona.edu (@williameclee)
+
 function varargout = steric2lonlatt(varargin)
     [product, timelim, timeStep, meshSize, lonOrigin, intpMthd, timeFmt, unit, ...
          forceNew, beQuiet, saveData] = ...
@@ -40,6 +47,15 @@ function varargout = steric2lonlatt(varargin)
     end
 
     if ~(isempty(meshSize) && isempty(lonOrigin))
+
+        if isempty(meshSize)
+            meshSize = 1/2;
+        end
+
+        if isempty(lonOrigin)
+            lonOrigin = 180;
+        end
+
         [stericSl, lon, lat] = ...
             interpspatial(lon, lat, stericSl, meshSize, lonOrigin, intpMthd, beQuiet);
     end
@@ -101,14 +117,6 @@ function [meshIntp, lonIntp, latIntp] = ...
             upper(mfilename));
     end
 
-    if isempty(meshSize)
-        meshSize = 1/2;
-    end
-
-    if isempty(lonOrigin)
-        lonOrigin = 180;
-    end
-
     ogLonOrigin = 200;
     lonIntp = (-180:meshSize:180) + lonOrigin;
     latIntp = -90:meshSize:90;
@@ -127,9 +135,6 @@ function [meshIntp, lonIntp, latIntp] = ...
         meshIntp(:, :, iDate) = ...
             interp2(lonn, latt, squeeze(meshPad(:, :, iDate)), ...
             lonnIntp, lattIntp, intpMthd);
-        % meshIntp(:, :, iDate) = ...
-        %     interp2(lonn, latt, squeeze(meshPad(:, :, iDate)), ...
-        %     mod(lonnIntp, 360), lattIntp, intpMthd);
     end
 
     meshIntp = permute(meshIntp, [2, 1, 3]);

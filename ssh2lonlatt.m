@@ -126,16 +126,16 @@ function varargout = ssh2lonlatt(varargin)
             fprintf(loadingMsg);
         end
 
-        load(intpOutputPath, 'intpSshs', 'intpSshErrors', 'intpDates', 'intpLon', 'intpLat');
+        load(intpOutputPath, 'sshs', 'sshErrors', 'dates', 'lon', 'lat');
 
         if beQuiet <= 1
             fprintf(repmat('\b', 1, length(loadingMsg)));
             fprintf('%s: loaded %s\n', upper(mfilename), intpOutputPath);
         end
 
-        [intpSshs, intpSshErrors, intpDates, intpLon, intpLat] = ...
-            formatoutput(intpSshs, intpSshErrors, intpDates, intpLon, intpLat, timelim, timeFmt, unit);
-        varargout = {intpSshs, intpSshErrors, intpDates, intpLon, intpLat};
+        [sshs, sshErrors, dates, lon, lat] = ...
+            formatoutput(sshs, sshErrors, dates, lon, lat, timelim, timeFmt, unit);
+        varargout = {sshs, sshErrors, dates, lon, lat};
 
         return
     end
@@ -145,47 +145,13 @@ function varargout = ssh2lonlatt(varargin)
         forceNew, beQuiet, saveData, outputFolder, inputFolder);
 
     if ~isempty(timeStep)
-
-        if beQuiet <= 1
-            fprintf('%s: Interpolating temporally, this may take a while...\n', ...
-                upper(mfilename));
-        end
-
-        if ischar(timeStep) && strcmpi(timeStep, 'midmonth')
-            startDate = datetime(year(dates(1)), month(dates(1)), 1, 0, 0, 0);
-            endDate = datetime(year(dates(end)), month(dates(end)), 1, 0, 0, 0) + calmonths(1);
-            dmonths = ceil((endDate - startDate) / days(28));
-            startDates = startDate + calmonths(0:dmonths - 1);
-            endDates = startDate + calmonths(1:dmonths);
-            intpDates = startDates + (endDates - startDates) / 2;
-            intpDates = intpDates(intpDates >= dates(1) & intpDates <= dates(end));
-        else
-
-            if mean(diff(dates)) > timeStep
-                warning(sprintf('%s:InterpolationStepTooSmall', upper(mfilename)), ...
-                    'The interpolation time step (%s) is smaller than the mean data resolution (%s)', timeStep, mean(diff(dates)));
-            end
-
-            intpDates = dates(1):timeStep:dates(end);
-        end
-
-        flatSshs = reshape(sshs, [prod(size(sshs, 1:2)), size(sshs, 3)])';
-        intpSshs = interp1(dates, flatSshs, intpDates, intpMthd)';
-        intpSshs = reshape(intpSshs, [size(sshs, 1:2), length(intpDates)]);
-
-        flatSshErrors = ...
-            reshape(sshErrors, [prod(size(sshErrors, 1:2)), size(sshErrors, 3)])';
-        intpSshErrors = interp1(dates, flatSshErrors, intpDates, intpMthd)';
-        intpSshErrors = ...
-            reshape(intpSshErrors, [size(sshErrors, 1:2), length(intpDates)]);
+        sshs = ...
+            interptemporal(dates, sshs, timeStep, intpMthd, beQuiet);
+        [sshErrors, dates] = ...
+            interptemporal(dates, sshErrors, timeStep, intpMthd, beQuiet);
     end
 
     if ~isempty(meshSize) || ~isempty(lonOrigin)
-
-        if beQuiet <= 1
-            fprintf('%s: Interpolating spatially, this may take a while...\n', ...
-                upper(mfilename));
-        end
 
         if isempty(meshSize)
             meshSize = 1/6;
@@ -195,40 +161,14 @@ function varargout = ssh2lonlatt(varargin)
             lonOrigin = 180;
         end
 
-        intpLon = (-180:meshSize:180) + lonOrigin;
-        intpLat = -90:meshSize:90;
-        [intpLonn, intpLatt] = meshgrid(intpLon, intpLat);
-        lonPad = [lon(end) - 360; lon; lon(1) + 360];
-        sshsPad = cat(1, sshs(end, :, :), sshs, sshs(1, :, :));
-        sshErrorsPad = cat(1, sshErrors(end, :, :), sshErrors, sshErrors(1, :, :));
-        [lonn, latt] = meshgrid(lonPad, lat);
-
-        sshsPad = permute(sshsPad, [2, 1, 3]);
-        sshErrorsPad = permute(sshErrorsPad, [2, 1, 3]);
-
-        intpSshs = nan([length(intpLat), length(intpLon), size(intpSshs, 3)], 'single');
-        intpSshErrors = nan([length(intpLat), length(intpLon), size(intpSshs, 3)], 'single');
-
-        for iDate = 1:size(intpSshs, 3)
-            intpSshs(:, :, iDate) = ...
-                interp2(lonn, latt, squeeze(sshsPad(:, :, iDate)), ...
-                mod(intpLonn, 360), intpLatt, intpMthd);
-            intpSshErrors(:, :, iDate) = ...
-                interp2(lonn, latt, squeeze(sshErrorsPad(:, :, iDate)), ...
-                mod(intpLonn, 360), intpLatt, intpMthd);
-        end
-
-        intpSshs = permute(intpSshs, [2, 1, 3]);
-        intpSshErrors = permute(intpSshErrors, [2, 1, 3]);
-
-    else
-        intpLon = lon;
-        intpLat = lat;
+        sshs = interpspatial(lon, lat, sshs, meshSize, lonOrigin, intpMthd, beQuiet);
+        [sshErrors, lon, lat] = ...
+            interpspatial(lon, lat, sshErrors, meshSize, lonOrigin, intpMthd, beQuiet);
     end
 
     if saveData
         save(intpOutputPath, ...
-            'intpSshs', 'intpSshErrors', 'intpDates', 'intpLon', 'intpLat');
+            'sshs', 'sshErrors', 'dates', 'lon', 'lat', '-v7.3');
 
         if beQuiet <= 1
             fprintf('%s: saved %s\n', upper(mfilename), intpOutputPath);
@@ -236,13 +176,76 @@ function varargout = ssh2lonlatt(varargin)
 
     end
 
-    [intpSshs, intpSshErrors, intpDates, intpLon, intpLat] = ...
-        formatoutput(intpSshs, intpSshErrors, intpDates, intpLon, intpLat, timelim, timeFmt, unit);
-    varargout = {intpSshs, intpSshErrors, intpDates, intpLon, intpLat};
+    [sshs, sshErrors, dates, lon, lat] = ...
+        formatoutput(sshs, sshErrors, dates, lon, lat, timelim, timeFmt, unit);
+    varargout = {sshs, sshErrors, dates, lon, lat};
 
 end
 
 %% Subfunctions
+% Interpolation
+function [meshIntp, datesIntp] = ...
+        interptemporal(dates, mesh, timeStep, intpMthd, beQuiet)
+
+    if beQuiet <= 1
+        fprintf('%s: Interpolating temporally, this may take a while...\n', ...
+            upper(mfilename));
+    end
+
+    if ischar(timeStep) && strcmpi(timeStep, 'midmonth')
+        startDate = datetime(year(dates(1)), month(dates(1)), 1, 0, 0, 0);
+        endDate = datetime(year(dates(end)), month(dates(end)), 1, 0, 0, 0) + calmonths(1);
+        dmonths = ceil((endDate - startDate) / days(28));
+        startDates = startDate + calmonths(0:dmonths - 1);
+        endDates = startDate + calmonths(1:dmonths);
+        datesIntp = startDates + (endDates - startDates) / 2;
+        datesIntp = datesIntp(datesIntp >= dates(1) & datesIntp <= dates(end));
+    else
+
+        if mean(diff(dates)) > timeStep
+            warning(sprintf('%s:InterpolationStepTooSmall', upper(mfilename)), ...
+                'The interpolation time step (%s) is smaller than the mean data resolution (%s)', timeStep, mean(diff(dates)));
+        end
+
+        datesIntp = dates(1):timeStep:dates(end);
+    end
+
+    meshFlat = reshape(mesh, [prod(size(mesh, 1:2)), size(mesh, 3)])';
+    meshIntp = interp1(dates, meshFlat, datesIntp, intpMthd)';
+    meshIntp = reshape(meshIntp, [size(mesh, 1:2), length(datesIntp)]);
+end
+
+function [meshIntp, lonIntp, latIntp] = ...
+        interpspatial(lon, lat, mesh, meshSize, lonOrigin, intpMthd, beQuiet)
+
+    if beQuiet <= 1
+        fprintf('%s: Interpolating spatially, this may take a while...\n', ...
+            upper(mfilename));
+    end
+
+    ogLonOrigin = 180;
+    lonIntp = (-180:meshSize:180) + lonOrigin;
+    latIntp = -90:meshSize:90;
+    [lonnIntp, lattIntp] = meshgrid(lonIntp, latIntp);
+    lonnIntp(lonnIntp < ogLonOrigin - 180) = lonnIntp(lonnIntp < ogLonOrigin - 180) + 360;
+    lonnIntp(lonnIntp > ogLonOrigin + 180) = lonnIntp(lonnIntp > ogLonOrigin + 180) - 360;
+    lonPad = [lon(end) - 360; lon; lon(1) + 360];
+    meshPad = cat(1, mesh(end, :, :), mesh, mesh(1, :, :));
+    [lonn, latt] = meshgrid(lonPad, lat);
+
+    meshPad = permute(meshPad, [2, 1, 3]);
+
+    meshIntp = nan([length(latIntp), length(lonIntp), size(mesh, 3)], 'single');
+
+    for iDate = 1:size(meshIntp, 3)
+        meshIntp(:, :, iDate) = ...
+            interp2(lonn, latt, squeeze(meshPad(:, :, iDate)), ...
+            lonnIntp, lattIntp, intpMthd);
+    end
+
+    meshIntp = permute(meshIntp, [2, 1, 3]);
+end
+
 % Parse input arguments
 function varargout = parseInputs(varargin)
     ip = inputParser;
