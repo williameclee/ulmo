@@ -1,16 +1,17 @@
-%% STERIC2LONLATT 
+%% STERIC2LONLATT
 %
 % Authored by
 %	2025/07/22, williameclee@arizona.edu (@williameclee)
 % Last modified by
-%	2025/07/25, williameclee@arizona.edu (@williameclee)
+%	2025/07/28, williameclee@arizona.edu (@williameclee)
 
 function varargout = steric2lonlatt(varargin)
-    [product, timelim, timeStep, meshSize, lonOrigin, intpMthd, timeFmt, unit, ...
+    [product, timelim, timeStep, meshSize, lonOrigin, intpMthd, timeFmt, outputFmt, unit, ...
          forceNew, beQuiet, saveData] = ...
         parseinputs(varargin);
 
-    outputPath = outputpath(product, timeStep, meshSize, lonOrigin, intpMthd);
+    outputPath = ...
+        outputpath(product, timeStep, meshSize, lonOrigin, intpMthd);
 
     if exist(outputPath, 'file') && ~forceNew
         load(outputPath, 'lon', 'lat', 'dates', 'stericSl');
@@ -20,7 +21,7 @@ function varargout = steric2lonlatt(varargin)
         end
 
         [stericSl, dates, lon, lat] = ...
-            formatoutput(squeeze(stericSl), dates, lon, lat, timelim, timeFmt, unit);
+            formatoutput(squeeze(stericSl), dates, lon, lat, timelim, timeFmt, outputFmt, unit);
         varargout = {stericSl, dates, lon, lat};
 
         return
@@ -70,7 +71,7 @@ function varargout = steric2lonlatt(varargin)
     end
 
     [stericSl, dates, lon, lat] = ...
-        formatoutput(stericSl, dates, lon, lat, timelim, timeFmt, unit);
+        formatoutput(stericSl, dates, lon, lat, timelim, timeFmt, outputFmt, unit);
 
     varargout = {stericSl, dates, lon, lat};
 
@@ -141,7 +142,8 @@ function [meshIntp, lonIntp, latIntp] = ...
 end
 
 % Format output
-function varargout = formatoutput(stericSl, dates, lon, lat, timelim, timeFmt, unit)
+function varargout = ...
+        formatoutput(stericSl, dates, lon, lat, timelim, timeFmt, outputFmt, unit)
 
     if ~isempty(timelim)
         isValidTime = (dates >= timelim(1)) & (dates <= timelim(2));
@@ -151,6 +153,16 @@ function varargout = formatoutput(stericSl, dates, lon, lat, timelim, timeFmt, u
 
     if strcmpi(timeFmt, 'datenum')
         dates = datenum(dates); %#ok<DATNM>
+    end
+
+    switch outputFmt
+        case 'meshgrid'
+            lon = lon(:)';
+            lat = lat(:);
+            stericSl = permute(stericSl, [2, 1, 3]);
+        case 'ndgrid'
+            lon = lon(:);
+            lat = lat(:)';
     end
 
     if strcmpi(unit, 'mm')
@@ -176,6 +188,8 @@ function varargout = parseinputs(inputs)
     addParameter(ip, 'InterpolationMethod', 'linear', @ischar);
     addParameter(ip, 'TimeFormat', 'datetime', ...
         @(x) ischar(validatestring(x, {'datetime', 'datenum'})));
+    addParameter(ip, 'OutputFormat', 'meshgrid', ...
+        @(x) ischar(validatestring(x, {'meshgrid', 'ndgrid'})));
     addParameter(ip, 'Unit', 'm', ...
         @(x) ischar(validatestring(x, {'mm', 'm'})));
     addParameter(ip, 'ForceNew', false, ...
@@ -195,6 +209,7 @@ function varargout = parseinputs(inputs)
     intpMthd = ip.Results.InterpolationMethod;
 
     timeFmt = lower(ip.Results.TimeFormat);
+    outputFmt = lower(ip.Results.OutputFormat);
     unit = lower(ip.Results.Unit);
 
     forceNew = logical(ip.Results.ForceNew);
@@ -215,13 +230,14 @@ function varargout = parseinputs(inputs)
     end
 
     varargout = ...
-        {product, timelim, timeStep, meshSize, lonOrigin, intpMthd, timeFmt, unit, ...
+        {product, timelim, timeStep, meshSize, lonOrigin, intpMthd, timeFmt, outputFmt, unit, ...
          forceNew, beQuiet, saveData};
 
 end
 
 % Find output path
-function outputPath = outputpath(product, timeStep, meshSize, lonOrigin, intpMthd)
+function outputPath = ...
+        outputpath(product, timeStep, meshSize, lonOrigin, intpMthd)
     outputFolder = fullfile(getenv("IFILES"), 'HoMAGE', product);
 
     timeStepStr = '';

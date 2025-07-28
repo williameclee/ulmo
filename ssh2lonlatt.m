@@ -89,10 +89,10 @@
 % Authored by
 %	2025/05/19, williameclee@arizona.edu (@williameclee)
 % Last modified by
-%	2025/07/22, williameclee@arizona.edu (@williameclee)
+%	2025/07/28, williameclee@arizona.edu (@williameclee)
 
 function varargout = ssh2lonlatt(varargin)
-    [product, timeStep, meshSize, timelim, lonOrigin, intpMthd, timeFmt, unit, ...
+    [product, timeStep, meshSize, timelim, lonOrigin, intpMthd, timeFmt, outputFmt, unit, ...
          forceNew, beQuiet, saveData] = ...
         parseInputs(varargin{:});
 
@@ -107,7 +107,7 @@ function varargout = ssh2lonlatt(varargin)
             forceNew, beQuiet, saveData, outputFolder, inputFolder);
 
         [sshs, sshErrors, dates, lon, lat] = ...
-            formatoutput(sshs, sshErrors, dates, lon, lat, timelim, timeFmt, unit);
+            formatoutput(sshs, sshErrors, dates, lon, lat, timelim, timeFmt, outputFmt, unit);
 
         varargout = {sshs, sshErrors, dates, lon, lat};
         return
@@ -115,7 +115,8 @@ function varargout = ssh2lonlatt(varargin)
     end
 
     %% With interpolation
-    intpOutputPath = outputpath(product, intpMthd, timeStep, meshSize, lonOrigin, outputFolder);
+    intpOutputPath = ...
+        outputpath(product, intpMthd, timeStep, meshSize, lonOrigin, outputFolder);
 
     if exist(intpOutputPath, 'file') && ~forceNew
 
@@ -134,7 +135,7 @@ function varargout = ssh2lonlatt(varargin)
         end
 
         [sshs, sshErrors, dates, lon, lat] = ...
-            formatoutput(sshs, sshErrors, dates, lon, lat, timelim, timeFmt, unit);
+            formatoutput(sshs, sshErrors, dates, lon, lat, timelim, timeFmt, outputFmt, unit);
         varargout = {sshs, sshErrors, dates, lon, lat};
 
         return
@@ -177,7 +178,7 @@ function varargout = ssh2lonlatt(varargin)
     end
 
     [sshs, sshErrors, dates, lon, lat] = ...
-        formatoutput(sshs, sshErrors, dates, lon, lat, timelim, timeFmt, unit);
+        formatoutput(sshs, sshErrors, dates, lon, lat, timelim, timeFmt, outputFmt, unit);
     varargout = {sshs, sshErrors, dates, lon, lat};
 
 end
@@ -262,6 +263,8 @@ function varargout = parseInputs(varargin)
     addParameter(ip, 'InterpolationMethod', 'linear', @ischar);
     addParameter(ip, 'TimeFormat', 'datetime', ...
         @(x) ischar(validatestring(x, {'datetime', 'datenum'})));
+    addParameter(ip, 'OutputFormat', 'meshgrid', ...
+        @(x) ischar(validatestring(x, {'meshgrid', 'ndgrid'})));
     addParameter(ip, 'Unit', 'm', ...
         @(x) ischar(validatestring(x, {'mm', 'm'})));
     addParameter(ip, 'ForceNew', false, ...
@@ -282,6 +285,7 @@ function varargout = parseInputs(varargin)
     intpMthd = ip.Results.InterpolationMethod;
 
     timeFmt = ip.Results.TimeFormat;
+    outputFmt = ip.Results.OutputFormat;
     unit = lower(ip.Results.Unit);
     forceNew = logical(ip.Results.ForceNew);
     beQuiet = uint8(double(ip.Results.BeQuiet) * 2);
@@ -296,7 +300,7 @@ function varargout = parseInputs(varargin)
     end
 
     varargout = ...
-        {product, timeStep, meshSize, timelim, lonOrigin, intpMthd, timeFmt, unit, forceNew, beQuiet, saveData};
+        {product, timeStep, meshSize, timelim, lonOrigin, intpMthd, timeFmt, outputFmt, unit, forceNew, beQuiet, saveData};
 end
 
 % Load the aggregated raw data (i.e. data from all time stamps in the same array)
@@ -452,7 +456,8 @@ function varargout = readRawData(inputPath)
 end
 
 % Format the output
-function varargout = formatoutput(sshs, sshErrors, dates, lon, lat, timelim, timeFmt, unit)
+function varargout = ...
+        formatoutput(sshs, sshErrors, dates, lon, lat, timelim, timeFmt, outputFmt, unit)
 
     if ~isempty(timelim)
         isValidTime = ...
@@ -464,6 +469,17 @@ function varargout = formatoutput(sshs, sshErrors, dates, lon, lat, timelim, tim
 
     if strcmp(timeFmt, 'datenum')
         dates = datenum(dates); %#ok<DATNM>
+    end
+
+    switch outputFmt
+        case 'meshgrid'
+            lon = lon(:)';
+            lat = lat(:);
+            sshs = permute(sshs, [2, 1, 3]);
+            sshErrors = permute(sshErrors, [2, 1, 3]);
+        case 'ndgrid'
+            lon = lon(:);
+            lat = lat(:)';
     end
 
     switch unit
@@ -527,7 +543,8 @@ function isolder = isolder(dir1, dir2, checkContent)
 end
 
 % Get output path for interpolated data
-function outputPath = outputpath(product, intpMthd, timeStep, meshSize, lonOrigin, outputFolder)
+function outputPath = ...
+        outputpath(product, intpMthd, timeStep, meshSize, lonOrigin, outputFolder)
     timeStepStr = '';
 
     if ~isempty(timeStep)
