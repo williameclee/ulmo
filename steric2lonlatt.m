@@ -3,7 +3,7 @@
 % Authored by
 %	2025/07/22, williameclee@arizona.edu (@williameclee)
 % Last modified by
-%	2025/07/28, williameclee@arizona.edu (@williameclee)
+%	2025/07/29, williameclee@arizona.edu (@williameclee)
 
 function varargout = steric2lonlatt(varargin)
     [product, timelim, timeStep, meshSize, lonOrigin, intpMthd, timeFmt, outputFmt, unit, ...
@@ -15,6 +15,10 @@ function varargout = steric2lonlatt(varargin)
 
     if exist(outputPath, 'file') && ~forceNew
         load(outputPath, 'lon', 'lat', 'dates', 'stericSl');
+
+        if strcmpi(product, 'CMEMS')
+            stericSl = permute(stericSl, [2, 1, 3]);
+        end
 
         if beQuiet <= 1
             fprintf('%s loaded %s\n', upper(mfilename), outputPath);
@@ -37,6 +41,10 @@ function varargout = steric2lonlatt(varargin)
 
     load(inputPath, 'lon', 'lat', 'dates', 'stericSl');
     stericSl = squeeze(stericSl);
+
+    if strcmpi(product, 'CMEMS')
+        stericSl = permute(stericSl, [2, 1, 3]);
+    end
 
     if beQuiet <= 1
         fprintf('%s loaded %s\n', upper(mfilename), outputPath);
@@ -88,8 +96,8 @@ function [meshIntp, datesIntp] = ...
     end
 
     if ischar(timeStep) && strcmpi(timeStep, 'midmonth')
-        startDate = datetime(year(dates(1)), month(dates(1)), 1, 0, 0, 0);
-        endDate = datetime(year(dates(end)), month(dates(end)), 1, 0, 0, 0) + calmonths(1);
+        startDate = datetime(year(dates(1)), month(dates(1)), 1);
+        endDate = datetime(year(dates(end)), month(dates(end)), 1) + calmonths(1);
         dmonths = ceil((endDate - startDate) / days(28));
         startDates = startDate + calmonths(0:dmonths - 1);
         endDates = startDate + calmonths(1:dmonths);
@@ -105,6 +113,11 @@ function [meshIntp, datesIntp] = ...
         datesIntp = dates(1):timeStep:dates(end);
     end
 
+    if isequal(datesIntp, dates)
+        meshIntp = mesh;
+        return
+    end
+
     meshFlat = reshape(mesh, [prod(size(mesh, 1:2)), size(mesh, 3)])';
     meshIntp = interp1(dates, meshFlat, datesIntp, intpMthd)';
     meshIntp = reshape(meshIntp, [size(mesh, 1:2), length(datesIntp)]);
@@ -118,7 +131,7 @@ function [meshIntp, lonIntp, latIntp] = ...
             upper(mfilename));
     end
 
-    ogLonOrigin = 200;
+    ogLonOrigin = (min(lon) + max(lon)) / 2;
     lonIntp = (-180:meshSize:180) + lonOrigin;
     latIntp = -90:meshSize:90;
     [lonnIntp, lattIntp] = meshgrid(lonIntp, latIntp);
@@ -130,7 +143,7 @@ function [meshIntp, lonIntp, latIntp] = ...
 
     meshPad = permute(meshPad, [2, 1, 3]);
 
-    meshIntp = nan([length(latIntp), length(lonIntp), size(mesh, 3)], 'single');
+    meshIntp = nan([length(latIntp), length(lonIntp), size(mesh, 3)], "like", mesh);
 
     for iDate = 1:size(meshIntp, 3)
         meshIntp(:, :, iDate) = ...
@@ -159,10 +172,19 @@ function varargout = ...
         case 'meshgrid'
             lon = lon(:)';
             lat = lat(:);
-            stericSl = permute(stericSl, [2, 1, 3]);
+
+            if size(stericSl, 1) ~= length(lat)
+                stericSl = permute(stericSl, [2, 1, 3]);
+            end
+
         case 'ndgrid'
             lon = lon(:);
             lat = lat(:)';
+
+            if size(stericSl, 1) ~= length(lon)
+                stericSl = permute(stericSl, [2, 1, 3]);
+            end
+
     end
 
     if strcmpi(unit, 'mm')
@@ -176,7 +198,7 @@ end
 function varargout = parseinputs(inputs)
     ip = inputParser;
     addOptional(ip, 'Product', 'SIO', ...
-        @(x) ischar(validatestring(x, {'SIO', 'EN4'})));
+        @(x) ischar(validatestring(x, {'SIO', 'EN4', 'CMEMS'})));
     addOptional(ip, 'TimeRange', [], ...
         @(x) isempty(x) || ((isnumeric(x) || isdatetime(x)) && length(x) == 2));
     addOptional(ip, 'TimeStep', [], ...
@@ -224,9 +246,9 @@ function varargout = parseinputs(inputs)
         timeStep = days(timeStep);
     end
 
-    if ~strcmpi(product, 'SIO')
+    if ~strcmpi(product, {'SIO', 'CMEMS'})
         error(sprintf('%s:LoadData:ProductNotImplemented', upper(mfilename)), ...
-            'Unsupported product: %s. Currently only SIO is supported', upper(product));
+            'Unsupported product: %s. Currently only SIO and CMEMS is supported', upper(product));
     end
 
     varargout = ...
@@ -273,7 +295,7 @@ function outputPath = ...
         intpMethodStr = ['-', lower(intpMthd)];
     end
 
-    outputFile = sprintf('%s_StericSeaLevel%s%s%s.mat', ...
+    outputFile = sprintf('%s-StericSeaLevel%s%s%s.mat', ...
         product, timeStepStr, spaceIntpStr, intpMethodStr);
 
     outputPath = fullfile(outputFolder, outputFile);
