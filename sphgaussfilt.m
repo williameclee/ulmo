@@ -32,19 +32,10 @@ function Plm = sphgaussfilt(Plm, sigma, unit, options)
         Plm (:, 4, :) {isnumeric}
         sigma (1, 1) {mustBeNumeric, mustBePositive} = 5
         unit (1, :) {mustBeMember(unit, {'degree', 'radian', 'km'})} = 'degree'
-        options.Lmin (1, 1) {mustBeNumeric, mustBeNonnegative} = NaN
+        options.Lmin (1, 1) {mustBeNumeric, mustBeNonnegative} = Inf
     end
 
     lmin = options.Lmin;
-
-    % ip = inputParser;
-    % addRequired(ip, 'Plm', @(x) (isnumeric(x) && size(x, 2) == 4));
-    % addOptional(ip, 'Sigma', 5, @isnumeric);
-    % addOptional(ip, 'Unit', 'degree', @(x) ischar(validatestring(x, {'degree', 'radian', 'km'})));
-    % parse(ip, Plm, varargin{:});
-    % Plm = ip.Results.Plm;
-    % sigma = ip.Results.Sigma;
-    % unit = ip.Results.Unit;
 
     if ismatrix(Plm)
         l = Plm(:, 1);
@@ -63,7 +54,7 @@ function Plm = sphgaussfilt(Plm, sigma, unit, options)
             gfilter = exp(- l .* (l + 1) * (sigma / 6371) ^ 2 / (4 * log(2)));
     end
 
-    if ~isnan(lmin)
+    if lmin < Inf
         gfilter(l < lmin) = 1;
     end
 

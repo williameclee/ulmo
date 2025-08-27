@@ -101,7 +101,7 @@
 %       integrals.
 %
 % Last modified by
-%   2026/06/02, williameclee@arizona.edu (@williameclee)
+%   2025/06/02, williameclee@arizona.edu (@williameclee)
 %   2012/06/26, charig@princeton.edu (@harig00)
 
 function varargout = slept2resid_new(varargin)

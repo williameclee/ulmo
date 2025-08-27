@@ -75,17 +75,17 @@
 function varargout = gia2slept(varargin)
     %% Initialisation
     % Parse inputs
-    [date, model, domain, L, phi, theta, omega, units, beQuiet] = ...
+    [date, model, domain, L, phi, theta, omega, unit, beQuiet] = ...
         parseinputs(varargin{:});
 
     %% Loading the model
     warning('off', 'SLEPIAN:gia2plmt:noBoundsToReturn');
     [plm, plmU, plmL] = gia2plmt( ...
-        [], model, L, "Unit", units, "BeQuiet", beQuiet);
+        [], model, L, "Unit", unit, "BeQuiet", beQuiet);
 
-    switch units
-        case {'massdensity', 'SD'}
-        case {'geoid', 'POT'}
+    switch unit
+        case 'SD'
+        case 'POT'
 
             try
                 oceanDomain = GeoDomain('alloceans', "Buffer", 0.5);
@@ -142,10 +142,10 @@ function varargout = gia2slept(varargin)
 
     eigfunINT = eigfunINT(1:truncation);
 
-    switch units
-        case {'massdensity', 'SD'}
+    switch unit
+        case 'SD'
             eigfunINT = eigfunINT * (4 * pi * 6370e3 ^ 2) / 1e12;
-        case {'geoid', 'POT'}
+        case 'POT'
             eigfunINT = eigfunINT * 1e3 / domain.SphArea;
     end
 
@@ -178,7 +178,7 @@ end
 %% Subfunctions
 function varargout = parseinputs(varargin)
     % Fallback values
-    modelD = 'Steffen_ice6g_vm5a';
+    modelD = 'Caron18';
     domainD = {'greenland', 0.5};
     phiD = 0;
     thetaD = 0;
@@ -218,7 +218,7 @@ function varargout = parseinputs(varargin)
     phi = conddefval(p.Results.phi, phiD);
     theta = conddefval(p.Results.theta, thetaD);
     omega = conddefval(p.Results.omega, omegaD);
-    units = p.Results.Unit;
+    unit = p.Results.Unit;
     beQuiet = uint8(double(p.Results.BeQuiet) * 2);
 
     if isnumeric(time)
@@ -235,7 +235,14 @@ function varargout = parseinputs(varargin)
         domain = GeoDomain(domain{:});
     end
 
-    varargout = {time, model, domain, L, phi, theta, omega, units, beQuiet};
+    switch unit
+        case {'massdensity', 'SD'}
+            unit = 'SD';
+        case {'geoid', 'POT'}
+            unit = 'POT';
+    end
+
+    varargout = {time, model, domain, L, phi, theta, omega, unit, beQuiet};
 
 end
 

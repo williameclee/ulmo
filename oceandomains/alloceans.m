@@ -72,7 +72,7 @@
 %   2024/11/20, williameclee@arizona.edu (@williameclee)
 %
 % Last modified by
-%   2025/06/02, williameclee@arizona.edu (@williameclee)
+%   2025/08/03, williameclee@arizona.edu (@williameclee)
 
 function varargout = alloceans(varargin)
     %% Initialisation
@@ -108,7 +108,9 @@ function varargout = alloceans(varargin)
 
             if lonOrigin ~= lonOriginD
                 [Y, X] = flatearthpoly(XY(:, 2), XY(:, 1), lonOrigin);
+                warning('off', 'all');
                 p = polyshape(X, Y);
+                warning('on', 'all');
                 XY = poly2xy(p);
             end
 

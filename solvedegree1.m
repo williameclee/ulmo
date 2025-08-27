@@ -100,7 +100,7 @@
 %   2025/03/18, williameclee@arizona.edu (@williameclee)
 %
 % Last modified by
-%   2025/07/21, williameclee@arizona.edu (@williameclee)
+%   2025/08/13, williameclee@arizona.edu (@williameclee)
 
 function varargout = solvedegree1(varargin)
     %% Initialisation
@@ -404,6 +404,14 @@ function varargout = parseinputs(inputs)
     saveData = logical(ip.Results.SaveData);
     beQuiet = double(ip.Results.BeQuiet) * 2;
     onlyId = logical(ip.Results.OnlyId);
+
+    if ~isempty(regexp(lower(giaModel), '^ice[-]?6g[_-]?d$', 'once'))
+        giaModel = 'ICE6GD';
+    elseif contains(lower(giaModel), 'caron')
+        giaModel = replace(giaModel, 'caron', 'Caron');
+    elseif contains(lower(giaModel), 'paulson')
+        giaModel = replace(giaModel, 'paulson', 'Paulson');
+    end
 
     varargout = ...
         {pcenter, rlevel, Ldata, Ltruncation, Lsle, giaModel, oceanDomain, ...

@@ -23,7 +23,7 @@
 %   2024/11/20, williameclee@arizona.edu (@williameclee)
 %
 % Last modified by
-%   2025/05/27, williameclee@arizona.edu (@williameclee)
+%   2025/08/03, williameclee@arizona.edu (@williameclee)
 
 function ln = lovenumber(l, varargin)
     %% Initialisation
@@ -83,5 +83,6 @@ function ln = lovenumber(l, varargin)
     end
 
     ln = ln(l + 1); % l starts at 0
+    ln = reshape(ln, size(l)); 
 
 end

@@ -83,7 +83,7 @@
 %   2024/11/20, williameclee@arizona.edu (@williameclee)
 %
 % Last modified by
-%   2025/05/28, williameclee@arizona.edu (@williameclee)
+%   2025/08/14, williameclee@arizona.edu (@williameclee)
 
 function varargout = solvesle(varargin)
     %% Initialisation
@@ -237,7 +237,7 @@ function varargout = solvesle(varargin)
     for iIter = 1:maxIter
 
         if ~beQuiet
-            waitbar((iIter - 1) / maxIter, wbar, ...
+            waitbar(iIter / maxIter, wbar, ...
                 sprintf('Solving SLE iteratively (%d/%d)', iIter, maxIter));
 
             if getappdata(wbar, 'canceling')
