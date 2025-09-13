@@ -1,87 +1,229 @@
 %% STERIC2LONLATT
+% Loads steric sea level data and interpolate to regular latitude-longitude mesh.
+%
+% Syntax
+%   [mesh, dates, lon, lat] = STERIC2LONLATT(product)
+%   [mesh, dates, lon, lat] = STERIC2LONLATT(product, timestep, meshsize)
+%   [mesh, dates, lon, lat] = STERIC2LONLATT(product, timestep, meshsize, timelim)
+%   [mesh, dates, lon, lat] = STERIC2LONLATT(product, timestep, meshsize, timelim)
+%   [mesh, dates, lon, lat] = STERIC2LONLATT(product, "Name", Value)
+%   STERIC2LONLATT(___)
+%
+% Input arguments
+%   product - Name of the steric sea level product
+%       - 'SIO' : Scripps Argo steric sea level, only include the upper 
+%           ocean
+%       - 'EN4' : Met Office multi-mission EN4.2.2 steric sea level, 
+%           includes full depth
+%       - 'CMEMS' : Copernicus Marine Environment Monitoring Service steric 
+%           sea level, includes full depth
+%       - 'ORAS5' : ECMWF Ocean ReAnalysis System 5 steric sea level, 
+%           includes full depth
+%       - 'NOAA' : NOAA steric sea level
+%       The default product is 'EN4'.
+%   timestep - Temporal interpolation time step
+%       - Numeric or duration scalar, in units of days
+%       - Character vector, 'midmonth'
+%       When not specified, no temporal interpolation is performed.
+%   meshsize - Spatial interpolation grid size in degrees
+%       - Real scalar, in units of degrees
+%       When not specified, no spatial interpolation is performed.
+%   timelim - Time range of interest
+%       - Datetime vector
+%       - Numeric vector, in units of datenum
+%       When not specified, the full time range of the data is returned.
+%   LonOrigin - Longitude origin of the output mesh
+%       - Real scalar, in units of degrees, e.g. 0, 180, -180
+%       When not specified, the midpoint of the input longitude range is 
+%       used.
+%   Interpolation - Interpolation method
+%       - Character vector, a valid method for INTERP1
+%       The default is 'linear'.
+%   OutputFormat - Format of the output mesh
+%       - 'meshgrid' : Meshgrid format, lon and lat are row and column 
+%           vectors
+%       - 'ndgrid' : Ndgrid format, lon and lat are column and row vectors
+%       The default is 'meshgrid'.
+%   TimeFormat - Format of the output time vector
+%       - 'datetime' : Datetime format
+%       - 'datenum' : Datenum format
+%       The default is 'datetime'.
+%   Unit - Unit of the output steric sea level data
+%       - 'm' : metres
+%       - 'mm' : millimetres
+%       The default is 'm'.
+%   Depth - Depth range of the steric sea level data
+%       - 'full' : Full depth steric sea level
+%       - 'shallow' : Upper ocean steric sea level
+%       - 'deep' : Deep ocean steric sea level
+%       The default is 'full'.
+%	ForceNew - Logical flag to force reprocess of the data
+%		- true: Reprocess the data
+%		- false: Only reprocess if previous output is not found
+%		The default option is 'soft true', only reprocessing the data if
+%       the output file is older than the input files. This option is not
+%       explicitly exposed; to enforce this option, set it to 0.5.
+%	SaveData - Logical flag to save the data
+%		- true: Save the data to disk.
+%		- false: Do not save the data to disk.
+%		The default option is true.
+%	BeQuiet - Logical flag to print messages
+%		- true: Suppress all messages.
+%		- false: Print all messages (usually for debugging).
+%		The default option is 'soft true', only printing important 
+%       messages.
 %
 % Authored by
 %	2025/07/22, williameclee@arizona.edu (@williameclee)
 % Last modified by
-%	2025/07/29, williameclee@arizona.edu (@williameclee)
+%	2025/09/12, williameclee@arizona.edu (@williameclee)
 
-function varargout = steric2lonlatt(varargin)
-    [product, timelim, timeStep, meshSize, lonOrigin, intpMthd, timeFmt, outputFmt, unit, ...
-         forceNew, beQuiet, saveData] = ...
-        parseinputs(varargin);
-
-    outputPath = ...
-        outputpath(product, timeStep, meshSize, lonOrigin, intpMthd);
-
-    if exist(outputPath, 'file') && ~forceNew
-        load(outputPath, 'lon', 'lat', 'dates', 'stericSl');
-
-        if strcmpi(product, 'CMEMS')
-            stericSl = permute(stericSl, [2, 1, 3]);
-        end
-
-        if beQuiet <= 1
-            fprintf('%s loaded %s\n', upper(mfilename), outputPath);
-        end
-
-        [stericSl, dates, lon, lat] = ...
-            formatoutput(squeeze(stericSl), dates, lon, lat, timelim, timeFmt, outputFmt, unit);
-        varargout = {stericSl, dates, lon, lat};
-
-        return
+function [steric, dates, lon, lat] = steric2lonlatt(product, timestep, meshsize, timelim, options)
+    %% Initialisation
+    arguments (Input)
+        product StericProduct {mustBeScalarOrEmpty} = 'EN4'
+        timestep {mustBeTimeStep} = []
+        meshsize {mustBePositive} = []
+        timelim {mustBeTimeRange} = []
+        options.LonOrigin {mustBeFinite, mustBeReal} = []
+        options.Interpolation (1, :) char ...
+            {mustBeMember(options.Interpolation, {'linear', 'nearest', 'next', 'previous', 'spline', 'pchip'})} = 'linear'
+        options.TimeFormat (1, :) DateFormat = 'datetime'
+        options.OutputFormat (1, :) MeshFormat = 'meshgrid'
+        options.Unit (1, :) char {mustBeMember(options.Unit, {'mm', 'm'})} = 'm'
+        options.Depth (1, :) char ...
+            {mustBeMember(options.Depth, {'full', 'shallow', 'deep'})} = 'full'
+        options.ForceNew (1, 1) {mustBeNumericOrLogical} = false
+        options.BeQuiet (1, 1) {mustBeNumericOrLogical} = 0.5
+        options.SaveData (1, 1) {mustBeNumericOrLogical} = true
     end
 
-    %% Compute data
+    arguments (Output)
+        steric (:, :, :) {mustBeReal}
+        dates (:, 1)
+        lon (:, :) {mustBeReal, mustBeVector}
+        lat (:, :) {mustBeReal, mustBeVector}
+    end
+
+    lonOrigin = options.LonOrigin;
+    intpMthd = lower(options.Interpolation);
+    timeFmt = lower(options.TimeFormat);
+    outputFmt = lower(options.OutputFormat);
+    unit = options.Unit;
+    depth = options.Depth;
+    forceNew = options.ForceNew;
+    beQuiet = uint8(double(options.BeQuiet) * 2);
+    saveData = options.SaveData;
+
+    if ~isempty(timelim) && isnumeric(timelim)
+        timelim = datetime(timelim, 'ConvertFrom', 'datenum');
+    end
+
+    if ~isempty(timestep) && isnumeric(timestep)
+        timestep = days(timestep);
+    end
+
+    switch depth
+        case 'shallow'
+
+            if ismember(product, {'SIO', 'NOAA'})
+                stericVar = 'stericSl';
+            else
+                stericVar = 'shallowStericSl';
+            end
+
+        case 'deep'
+            stericVar = 'deepStericSl';
+        otherwise
+            stericVar = 'stericSl';
+    end
+
+    %% Check for existing file
+    outputPath = ...
+        outputpath(product, timestep, meshsize, lonOrigin, intpMthd);
+
+    if ~forceNew && exist(outputPath, 'file') && ...
+            all(ismember({'lon', 'lat', 'dates', stericVar}, who('-file', outputPath)))
+        data = load(outputPath, 'lon', 'lat', 'dates', stericVar);
+
+        if beQuiet <= 1
+            fprintf('[ULMO><a href="matlab: open(''%s'')">%s</a>] Loaded <a href="matlab: fprintf(''%s\\n'');open(''%s'')">steric product</a>.\n', ...
+                mfilename("fullpath"), mfilename, outputPath, outputPath);
+        end
+
+        [steric, dates, lon, lat] = ...
+            formatoutput(data.(stericVar), data.dates, data.lon, data.lat, timelim, timeFmt, outputFmt, unit);
+
+        if nargout == 0
+            plotsealeveltseries(dates, steric, lon, lat, product, unit);
+        end
+
+        return
+
+    end
+
+    %% Main
     inputPath = outputpath(product, [], [], [], []);
 
     if ~exist(inputPath, 'file')
-        error(sprintf('%s:LoadData:MethodNotImplemented', upper(mfilename)), ...
-            'Input file %s not found', inputPath);
+        error('ULMO:LoadData:MethodNotImplemented', ...
+            'Input file %s not found.', inputPath);
     end
 
-    load(inputPath, 'lon', 'lat', 'dates', 'stericSl');
-    stericSl = squeeze(stericSl);
+    requiredVars = {'lon', 'lat', 'dates', stericVar};
 
-    if strcmpi(product, 'CMEMS')
-        stericSl = permute(stericSl, [2, 1, 3]);
+    if any(~ismember({'lon', 'lat', 'dates', stericVar}, who('-file', inputPath)))
+        error('ULMO:LoadData:VariableNotFound', ...
+            'Some Variables not found in %s:\n''%s''', inputPath, strjoin(requiredVars, ''', '''));
     end
 
-    if beQuiet <= 1
-        fprintf('%s loaded %s\n', upper(mfilename), outputPath);
+    data = load(inputPath, 'lon', 'lat', 'dates', stericVar);
+
+    if beQuiet == 0
+        fprintf('[ULMO><a href="matlab: open(''%s'')">%s</a>] Loaded uninterpolated <a href="matlab: fprintf(''%s\\n'');open(''%s'')">steric product</a>.\n', ...
+            mfilename("fullpath"), mfilename, outputPath, outputPath);
     end
 
-    if ~isempty(timeStep)
-        [stericSl, dates] = ...
-            interptemporal(dates, stericSl, timeStep, intpMthd, beQuiet);
+    if ~isempty(timestep)
+        [data.(stericVar), data.dates] = ...
+            interptemporal(data.dates, data.(stericVar), timestep, intpMthd, beQuiet);
     end
 
-    if ~(isempty(meshSize) && isempty(lonOrigin))
+    if ~(isempty(meshsize) && isempty(lonOrigin))
 
-        if isempty(meshSize)
-            meshSize = 1/2;
+        if isempty(meshsize)
+            meshsize = 1/2;
         end
 
         if isempty(lonOrigin)
             lonOrigin = 180;
         end
 
-        [stericSl, lon, lat] = ...
-            interpspatial(lon, lat, stericSl, meshSize, lonOrigin, intpMthd, beQuiet);
+        [data.(stericVar), data.lon, data.lat] = ...
+            interpspatial(data.lon, data.lat, data.(stericVar), meshsize, lonOrigin, intpMthd, beQuiet);
     end
 
     if saveData
-        save(outputPath, 'lon', 'lat', 'dates', 'stericSl', '-v7.3');
+
+        try
+            save(outputPath, '-struct', 'data', 'lon', 'lat', 'dates', stericVar, '-append');
+        catch
+            save(outputPath, '-struct', 'data', 'lon', 'lat', 'dates', stericVar, '-v7.3');
+        end
 
         if beQuiet <= 1
-            fprintf('%s saved %s\n', upper(mfilename), outputPath);
+            fprintf('[ULMO><a href="matlab: open(''%s'')">%s</a>] Saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">steric product</a>.\n', ...
+                mfilename("fullpath"), mfilename, outputPath, outputPath);
         end
 
     end
 
-    [stericSl, dates, lon, lat] = ...
-        formatoutput(stericSl, dates, lon, lat, timelim, timeFmt, outputFmt, unit);
+    [steric, dates, lon, lat] = ...
+        formatoutput(data.(stericVar), data.dates, data.lon, data.lat, timelim, timeFmt, outputFmt, unit);
 
-    varargout = {stericSl, dates, lon, lat};
+    if nargout == 0
+        plotsealeveltseries(dates, steric, lon, lat, product, unit);
+    end
 
 end
 
@@ -90,24 +232,13 @@ end
 function [meshIntp, datesIntp] = ...
         interptemporal(dates, mesh, timeStep, intpMthd, beQuiet)
 
-    if beQuiet <= 1
-        fprintf('%s: Interpolating temporally, this may take a while...\n', ...
-            upper(mfilename));
-    end
-
     if ischar(timeStep) && strcmpi(timeStep, 'midmonth')
-        startDate = datetime(year(dates(1)), month(dates(1)), 1);
-        endDate = datetime(year(dates(end)), month(dates(end)), 1) + calmonths(1);
-        dmonths = ceil((endDate - startDate) / days(28));
-        startDates = startDate + calmonths(0:dmonths - 1);
-        endDates = startDate + calmonths(1:dmonths);
-        datesIntp = startDates + (endDates - startDates) / 2;
-        datesIntp = datesIntp(datesIntp >= dates(1) & datesIntp <= dates(end));
+        datesIntp = midmonth([dates(1), dates(end)]);
     else
 
         if mean(diff(dates)) > timeStep
-            warning(sprintf('%s:InterpolationStepTooSmall', upper(mfilename)), ...
-                'The interpolation time step (%s) is smaller than the mean data resolution (%s)', timeStep, mean(diff(dates)));
+            warning(sprintf('ULMO:%s:InterpolationStepTooSmall', upper(mfilename)), ...
+                'The interpolation time step (%s) is smaller than the mean data resolution (%s).', timeStep, mean(diff(dates)));
         end
 
         datesIntp = dates(1):timeStep:dates(end);
@@ -118,40 +249,63 @@ function [meshIntp, datesIntp] = ...
         return
     end
 
-    meshFlat = reshape(mesh, [prod(size(mesh, 1:2)), size(mesh, 3)])';
+    if beQuiet == 0
+        t = tic;
+        templine = 'this may take a while...';
+        fprintf('[ULMO><a href="matlab: open(''%s'')">%s</a>] Interpolating temporally, %s\n', ...
+            mfilename("fullpath"), mfilename, templine);
+    end
+
+    meshFlat = reshape(mesh, [], size(mesh, 3))';
     meshIntp = interp1(dates, meshFlat, datesIntp, intpMthd)';
-    meshIntp = reshape(meshIntp, [size(mesh, 1:2), length(datesIntp)]);
+    meshIntp = reshape(meshIntp, size(mesh, 1:2), length(datesIntp));
+
+    if beQuiet == 0
+        fprintf(repmat('\b', 1, length(templine) + 1));
+        fprintf('took %.1f seconds.\n', toc(t));
+    end
+
 end
 
 function [meshIntp, lonIntp, latIntp] = ...
         interpspatial(lon, lat, mesh, meshSize, lonOrigin, intpMthd, beQuiet)
 
-    if beQuiet <= 1
-        fprintf('%s: Interpolating spatially, this may take a while...\n', ...
-            upper(mfilename));
-    end
-
     ogLonOrigin = (min(lon) + max(lon)) / 2;
     lonIntp = (-180:meshSize:180) + lonOrigin;
     latIntp = -90:meshSize:90;
+
+    if isequal(lonIntp(:), lon(:)) && isequal(latIntp(:), lat(:))
+        meshIntp = mesh;
+        return
+    end
+
+    if beQuiet == 0
+        t = tic;
+        templine = 'this may take a while...';
+        fprintf('[ULMO><a href="matlab: open(''%s'')">%s</a>] Interpolating spatially, %s\n', ...
+            mfilename("fullpath"), mfilename, templine);
+    end
+
     [lonnIntp, lattIntp] = meshgrid(lonIntp, latIntp);
     lonnIntp(lonnIntp < ogLonOrigin - 180) = lonnIntp(lonnIntp < ogLonOrigin - 180) + 360;
     lonnIntp(lonnIntp > ogLonOrigin + 180) = lonnIntp(lonnIntp > ogLonOrigin + 180) - 360;
-    lonPad = [lon(end) - 360; lon; lon(1) + 360];
-    meshPad = cat(1, mesh(end, :, :), mesh, mesh(1, :, :));
+    lonPad = [lon(end) - 360; lon(:); lon(1) + 360];
+    meshPad = cat(2, mesh(:, end, :), mesh, mesh(:, 1, :));
     [lonn, latt] = meshgrid(lonPad, lat);
-
-    meshPad = permute(meshPad, [2, 1, 3]);
 
     meshIntp = nan([length(latIntp), length(lonIntp), size(mesh, 3)], "like", mesh);
 
-    for iDate = 1:size(meshIntp, 3)
+    parfor iDate = 1:size(meshIntp, 3)
         meshIntp(:, :, iDate) = ...
             interp2(lonn, latt, squeeze(meshPad(:, :, iDate)), ...
             lonnIntp, lattIntp, intpMthd);
     end
 
-    meshIntp = permute(meshIntp, [2, 1, 3]);
+    if beQuiet == 0
+        fprintf(repmat('\b', 1, length(templine) + 1));
+        fprintf('took %.1f seconds.\n', toc(t));
+    end
+
 end
 
 % Format output
@@ -194,73 +348,10 @@ function varargout = ...
     varargout = {stericSl, dates, lon, lat};
 end
 
-% Parse input arguments
-function varargout = parseinputs(inputs)
-    ip = inputParser;
-    addOptional(ip, 'Product', 'SIO', ...
-        @(x) ischar(validatestring(x, {'SIO', 'EN4', 'CMEMS'})));
-    addOptional(ip, 'TimeRange', [], ...
-        @(x) isempty(x) || ((isnumeric(x) || isdatetime(x)) && length(x) == 2));
-    addOptional(ip, 'TimeStep', [], ...
-        @(x) isempty(x) || ((isduration(x) || isnumeric(x)) && isscalar(x)) || ischar(validatestring(x, {'midmonth'})));
-    addOptional(ip, 'MeshSize', [], ...
-        @(x) isempty(x) || (isnumeric(x) && isscalar(x)));
-    addOptional(ip, 'LonOrigin', [], ...
-        @(x) isempty(x) || (isnumeric(x) && isscalar(x)));
-    addParameter(ip, 'InterpolationMethod', 'linear', @ischar);
-    addParameter(ip, 'TimeFormat', 'datetime', ...
-        @(x) ischar(validatestring(x, {'datetime', 'datenum'})));
-    addParameter(ip, 'OutputFormat', 'meshgrid', ...
-        @(x) ischar(validatestring(x, {'meshgrid', 'ndgrid'})));
-    addParameter(ip, 'Unit', 'm', ...
-        @(x) ischar(validatestring(x, {'mm', 'm'})));
-    addParameter(ip, 'ForceNew', false, ...
-        @(x) (islogical(x) || isnumeric(x)) && isscalar(x));
-    addParameter(ip, 'BeQuiet', 0.5, ...
-        @(x) (islogical(x) || isnumeric(x)) && isscalar(x));
-    addParameter(ip, 'SaveData', true, ...
-        @(x) (islogical(x) || isnumeric(x)) && isscalar(x));
-    parse(ip, inputs{:});
-
-    product = upper(ip.Results.Product);
-    timelim = ip.Results.TimeRange;
-
-    timeStep = ip.Results.TimeStep;
-    meshSize = ip.Results.MeshSize;
-    lonOrigin = ip.Results.LonOrigin;
-    intpMthd = ip.Results.InterpolationMethod;
-
-    timeFmt = lower(ip.Results.TimeFormat);
-    outputFmt = lower(ip.Results.OutputFormat);
-    unit = lower(ip.Results.Unit);
-
-    forceNew = logical(ip.Results.ForceNew);
-    beQuiet = uint8(double(ip.Results.BeQuiet) * 2);
-    saveData = logical(ip.Results.SaveData);
-
-    if ~isempty(timelim) && isnumeric(timelim)
-        timelim = datetime(timelim, 'ConvertFrom', 'datenum');
-    end
-
-    if ~isempty(timeStep) && isnumeric(timeStep)
-        timeStep = days(timeStep);
-    end
-
-    if ~strcmpi(product, {'SIO', 'CMEMS'})
-        error(sprintf('%s:LoadData:ProductNotImplemented', upper(mfilename)), ...
-            'Unsupported product: %s. Currently only SIO and CMEMS is supported', upper(product));
-    end
-
-    varargout = ...
-        {product, timelim, timeStep, meshSize, lonOrigin, intpMthd, timeFmt, outputFmt, unit, ...
-         forceNew, beQuiet, saveData};
-
-end
-
 % Find output path
 function outputPath = ...
         outputpath(product, timeStep, meshSize, lonOrigin, intpMthd)
-    outputFolder = fullfile(getenv("IFILES"), 'HoMAGE', product);
+    outputFolder = fullfile(getenv("IFILES"), 'HOMaGE', char(product));
 
     timeStepStr = '';
 
@@ -273,7 +364,7 @@ function outputPath = ...
         elseif isnumeric(timeStep)
             timeStepStr = sprintf('-T%d', timeStep);
         else
-            error(sprintf('%s:InvalidTimeStep', upper(mfilename)), ...
+            error(sprintf('ULMO:%s:InvalidTimeStep', upper(mfilename)), ...
                 'Unrecognised time step input for saving: %s', class(timeStep));
         end
 
@@ -299,4 +390,25 @@ function outputPath = ...
         product, timeStepStr, spaceIntpStr, intpMethodStr);
 
     outputPath = fullfile(outputFolder, outputFile);
+end
+
+function plotsealeveltseries(dates, stericSl, lon, lat, product, unit)
+    domain = GeoDomain('oceans', "Buffer", 0.5, "DefaultParams", true);
+    domainMask = domainmask(domain, lon, lat, "BeQuiet", true);
+    gridWeights = domainMask .* cosd(lat(:));
+    gridWeights(~domainMask) = 0;
+    gridWeights = gridWeights ./ sum(gridWeights, 'all', 'omitmissing');
+    steric = squeeze(sum(stericSl .* gridWeights, [1, 2], 'omitmissing'));
+    steric = steric - mean(steric, 'omitmissing');
+
+    figure()
+    set(gcf, "Name", 'Global mean steric sea level', 'NumberTitle', 'off');
+    clf
+
+    plot(dates, steric, "DisplayName", sprintf('Product: %s', char(product)))
+    ylabel(sprintf('Steric sea level [%s]', unit))
+    title('Steric sea level time series')
+    legend('Location', 'best')
+
+    xlim([min(dates), max(dates)])
 end
