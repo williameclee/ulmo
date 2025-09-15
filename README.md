@@ -4,16 +4,17 @@ A pipeline for using GRACE satellite gravimetry and altimetry-steric (in develop
 
 ![Example of Slepian functions over the Pacific Ocean](images/cover.svg)
 
-## Functionalities and Dependencies
+## Dependencies
 
 Functions in this repository may call or overwrite functions from the following packages. Please ensure they are installed and the paths are configured properly before running the functions in this repository.
 
-- [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git)
-- [slepian_bravo](https://github.com/csdms-contrib/slepian_bravo.git)
-- [slepian_delta](https://github.com/csdms-contrib/slepian_delta.git)
-- [MatlabColourmapGenerator](https://github.com/williameclee/MatlabColourmapGenerator)
+- [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git): Computation of Slepian functions on the sphere
+- [slepian_bravo](https://github.com/csdms-contrib/slepian_bravo.git): Conversion between spherical harmonics and Slepian functions
+- [slepian_delta](https://github.com/csdms-contrib/slepian_delta.git): Processing GRACE data and GIA models
+- [Gibbs Seawater Toolbox (GSW)](https://www.teos-10.org/software.htm): Computation of steric sea level from temperature and salinity profiles
+<!-- - [MatlabColourmapGenerator](https://github.com/williameclee/MatlabColourmapGenerator) -->
 
-[MatlabColourmapGenerator](https://github.com/williameclee/MatlabColourmapGenerator) is not necessary, but it generates better-looking colours and colourmaps (like the one above).
+<!-- [MatlabColourmapGenerator](https://github.com/williameclee/MatlabColourmapGenerator) is not necessary, but it generates better-looking colours and colourmaps (like the one above). -->
 
 ### Geographic domains
 

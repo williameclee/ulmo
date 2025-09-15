@@ -1,48 +1,91 @@
 %% DOMAINMASK
 % Computes the mask for a given domain defined by a polygon over a grid.
+%
+% See also
+%   SSH2LONLATT, STERIC2LONLATT
+%
 % Authored by
 %	2025/07/25, williameclee@arizona.edu (@williameclee)
+%
+% Last modified by
+%	2025/09/15, williameclee@arizona.edu (@williameclee)
 
-function [mask, lon, lat] = domainmask(varargin)
-    [domain, domainPoly, lon, lat, meshSize, lonLim, latLim, ...
+function [mask, lonn, latt] = domainmask(varargin)
+
+    arguments (Output)
+        mask (:, :) logical
+        lonn {mustBeFinite, mustBeMatrix}
+        latt {mustBeFinite, mustBeMatrix}
+    end
+
+    [domain, domainPoly, lonn, latt, meshSize, lonLim, latLim, fmt, ...
          forceNew, beQuiet, saveData] = ...
         parseinputs(varargin);
     dataPath = datapath(domain, meshSize, lonLim, latLim);
 
-    if exist(dataPath, 'file') && ~forceNew
-        load(dataPath, 'mask', 'lon', 'lat');
+    vars = {'mask' 'lon' 'lat'};
+
+    if ~forceNew && ~(isscalar(dataPath) && isnan(dataPath)) && exist(dataPath, 'file') && ...
+            all(ismember(vars, who('-file', dataPath)))
+        data = load(dataPath, vars{:});
 
         if ~beQuiet
-            fprintf('%s loaded %s\n', upper(mfilename), dataPath);
+            fprintf('[ULMO><a href="matlab: open(''%s'')">%s</a>] Loaded <a href="matlab: fprintf(''%s\\n'');open(''%s'')">domain mask</a>.\n', ...
+                mfilename("fullpath"), mfilename, dataPath, dataPath);
+        end
+
+        mask = data.mask;
+        lonn = data.lon;
+        latt = data.lat;
+
+        if strcmpi(fmt, 'ndgrid')
+            mask = mask';
+            lonn = lonn';
+            latt = latt';
         end
 
         return
     end
 
+    if ~beQuiet
+        t = tic;
+        msg = 'computing domain mask, this may take a while ... ';
+        fprintf('[ULMO><a href="matlab: open(''%s'')">%s</a>] %s\n', ...
+            mfilename("fullpath"), mfilename, msg);
+    end
+
     try
-        mask = isinterior(domainPoly, lon(:), lat(:));
-        mask = reshape(mask, size(lon));
+        mask = isinterior(domainPoly, lonn(:), latt(:));
+        mask = reshape(mask, size(lonn));
     catch
-        mask = false(size(lon));
+        mask = false(size(lonn));
         nDiv = 64;
-        divStart = floor((0:nDiv - 1) * numel(lon) / nDiv) + 1;
-        divEnd = [divStart(2:end), numel(lon)];
+        divStart = floor((0:nDiv - 1) * numel(lonn) / nDiv) + 1;
+        divEnd = [divStart(2:end), numel(lonn)];
 
         for i = 1:nDiv
-            mask(divStart(i):divEnd(i)) = ...
-                isinterior(domainPoly, lon(divStart(i):divEnd(i)), lat(divStart(i):divEnd(i)));
-            % fprintf('Processing division %d / %d (%.0f%%)\n', i, nDiv, i / nDiv * 100);
+            iRange = divStart(i):divEnd(i);
+            mask(iRange) = ...
+                isinterior(domainPoly, lonn(iRange), latt(iRange));
         end
 
     end
 
     if ischar(dataPath) && saveData
-        save(dataPath, 'mask', 'lon', 'lat', '-v7.3');
+        save(dataPath, vars{:}, '-v7.3');
 
         if ~beQuiet
-            fprintf('%s saved %s\n', upper(mfilename), dataPath);
+            fprintf(repmat('\b', 1, length(msg) + 1));
+            fprintf('saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">domain mask</a>, took %.1f seconds.', ...
+                dataPath, dataPath, toc(t));
         end
 
+    end
+
+    if strcmpi(fmt, 'ndgrid')
+        mask = mask';
+        lonn = lonn';
+        latt = latt';
     end
 
 end
@@ -59,6 +102,8 @@ function varargout = parseinputs(inputs)
     addParameter(ip, 'MeshSize', nan, @(x) isnumeric(x) && isscalar(x));
     addParameter(ip, 'LonLim', nan, @(x) isnumeric(x) && length(x) <= 2);
     addParameter(ip, 'LatLim', nan, @(x) isnumeric(x) && length(x) <= 2);
+    addParameter(ip, 'Format', 'meshgrid', ...
+        @(x) ischar(x) && ismember(lower(x), {'meshgrid', 'ndgrid'}));
     addParameter(ip, 'ForceNew', false, ...
         @(x) (islogical(x) || isnumeric(x)) && isscalar(x));
     addParameter(ip, 'BeQuiet', false, ...
@@ -73,6 +118,7 @@ function varargout = parseinputs(inputs)
     meshSize = ip.Results.MeshSize;
     lonLim = ip.Results.LonLim;
     latLim = ip.Results.LatLim;
+    fmt = lower(ip.Results.Format);
     forceNew = logical(ip.Results.ForceNew);
     beQuiet = logical(ip.Results.BeQuiet);
     saveData = logical(ip.Results.SaveData);
@@ -125,7 +171,7 @@ function varargout = parseinputs(inputs)
     end
 
     varargout = ...
-        {domain, domainPoly, lon, lat, meshSize, lonLim, latLim, ...
+        {domain, domainPoly, lon, lat, meshSize, lonLim, latLim, fmt, ...
          forceNew, beQuiet, saveData};
 
 end

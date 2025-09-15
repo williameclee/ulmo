@@ -11,13 +11,13 @@
 %
 % Input arguments
 %   product - Name of the steric sea level product
-%       - 'SIO' : Scripps Argo steric sea level, only include the upper 
+%       - 'SIO' : Scripps Argo steric sea level, only include the upper
 %           ocean
-%       - 'EN4' : Met Office multi-mission EN4.2.2 steric sea level, 
+%       - 'EN4' : Met Office multi-mission EN4.2.2 steric sea level,
 %           includes full depth
-%       - 'CMEMS' : Copernicus Marine Environment Monitoring Service steric 
+%       - 'CMEMS' : Copernicus Marine Environment Monitoring Service steric
 %           sea level, includes full depth
-%       - 'ORAS5' : ECMWF Ocean ReAnalysis System 5 steric sea level, 
+%       - 'ORAS5' : ECMWF Ocean ReAnalysis System 5 steric sea level,
 %           includes full depth
 %       - 'NOAA' : NOAA steric sea level
 %       The default product is 'EN4'.
@@ -34,13 +34,13 @@
 %       When not specified, the full time range of the data is returned.
 %   LonOrigin - Longitude origin of the output mesh
 %       - Real scalar, in units of degrees, e.g. 0, 180, -180
-%       When not specified, the midpoint of the input longitude range is 
+%       When not specified, the midpoint of the input longitude range is
 %       used.
 %   Interpolation - Interpolation method
 %       - Character vector, a valid method for INTERP1
 %       The default is 'linear'.
 %   OutputFormat - Format of the output mesh
-%       - 'meshgrid' : Meshgrid format, lon and lat are row and column 
+%       - 'meshgrid' : Meshgrid format, lon and lat are row and column
 %           vectors
 %       - 'ndgrid' : Ndgrid format, lon and lat are column and row vectors
 %       The default is 'meshgrid'.
@@ -70,7 +70,7 @@
 %	BeQuiet - Logical flag to print messages
 %		- true: Suppress all messages.
 %		- false: Print all messages (usually for debugging).
-%		The default option is 'soft true', only printing important 
+%		The default option is 'soft true', only printing important
 %       messages.
 %
 % Authored by
@@ -100,7 +100,7 @@ function [steric, dates, lon, lat] = steric2lonlatt(product, timestep, meshsize,
 
     arguments (Output)
         steric (:, :, :) {mustBeReal}
-        dates (:, 1)
+        dates (:, 1) {mustBeVector}
         lon (:, :) {mustBeReal, mustBeVector}
         lat (:, :) {mustBeReal, mustBeVector}
     end
@@ -144,18 +144,26 @@ function [steric, dates, lon, lat] = steric2lonlatt(product, timestep, meshsize,
 
     if ~forceNew && exist(outputPath, 'file') && ...
             all(ismember({'lon', 'lat', 'dates', stericVar}, who('-file', outputPath)))
+
+        if beQuiet <= 1
+            t = tic;
+            msg = 'this may take a while...';
+            fprintf('[ULMO><a href="matlab: open(''%s'')">%s</a>] Loading <a href="matlab: fprintf(''%s\\n'');open(''%s'')">steric product</a>, %s\n', ...
+                mfilename("fullpath"), mfilename, outputPath, outputPath, msg);
+        end
+
         data = load(outputPath, 'lon', 'lat', 'dates', stericVar);
 
         if beQuiet <= 1
-            fprintf('[ULMO><a href="matlab: open(''%s'')">%s</a>] Loaded <a href="matlab: fprintf(''%s\\n'');open(''%s'')">steric product</a>.\n', ...
-                mfilename("fullpath"), mfilename, outputPath, outputPath);
+            fprintf(repmat('\b', 1, length(msg) + 1));
+            fprintf('took %.1f seconds.\n', toc(t));
         end
 
-        [steric, dates, lon, lat] = ...
-            formatoutput(data.(stericVar), data.dates, data.lon, data.lat, timelim, timeFmt, outputFmt, unit);
-
-        if nargout == 0
-            plotsealeveltseries(dates, steric, lon, lat, product, unit);
+        if nargout > 0
+            [steric, dates, lon, lat] = ...
+                formatoutput(data.(stericVar), data.dates, data.lon, data.lat, timelim, timeFmt, outputFmt, unit);
+        else
+            plotsealeveltseries(data.dates, data.(stericVar), data.lon, data.lat, product, unit, 'Global mean steric sea level');
         end
 
         return
@@ -218,11 +226,11 @@ function [steric, dates, lon, lat] = steric2lonlatt(product, timestep, meshsize,
 
     end
 
-    [steric, dates, lon, lat] = ...
-        formatoutput(data.(stericVar), data.dates, data.lon, data.lat, timelim, timeFmt, outputFmt, unit);
-
-    if nargout == 0
-        plotsealeveltseries(dates, steric, lon, lat, product, unit);
+    if nargout < 0
+        [steric, dates, lon, lat] = ...
+            formatoutput(data.(stericVar), data.dates, data.lon, data.lat, timelim, timeFmt, outputFmt, unit);
+    else
+        plotsealeveltseries(data.dates, data.(stericVar), data.lon, data.lat, product, unit, 'Global mean steric sea level');
     end
 
 end
@@ -390,25 +398,4 @@ function outputPath = ...
         product, timeStepStr, spaceIntpStr, intpMethodStr);
 
     outputPath = fullfile(outputFolder, outputFile);
-end
-
-function plotsealeveltseries(dates, stericSl, lon, lat, product, unit)
-    domain = GeoDomain('oceans', "Buffer", 0.5, "DefaultParams", true);
-    domainMask = domainmask(domain, lon, lat, "BeQuiet", true);
-    gridWeights = domainMask .* cosd(lat(:));
-    gridWeights(~domainMask) = 0;
-    gridWeights = gridWeights ./ sum(gridWeights, 'all', 'omitmissing');
-    steric = squeeze(sum(stericSl .* gridWeights, [1, 2], 'omitmissing'));
-    steric = steric - mean(steric, 'omitmissing');
-
-    figure()
-    set(gcf, "Name", 'Global mean steric sea level', 'NumberTitle', 'off');
-    clf
-
-    plot(dates, steric, "DisplayName", sprintf('Product: %s', char(product)))
-    ylabel(sprintf('Steric sea level [%s]', unit))
-    title('Steric sea level time series')
-    legend('Location', 'best')
-
-    xlim([min(dates), max(dates)])
 end

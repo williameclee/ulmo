@@ -91,95 +91,139 @@
 % Last modified by
 %	2025/07/28, williameclee@arizona.edu (@williameclee)
 
-function varargout = ssh2lonlatt(varargin)
-    [product, timeStep, meshSize, timelim, lonOrigin, intpMthd, timeFmt, outputFmt, unit, ...
-         forceNew, beQuiet, saveData] = ...
-        parseInputs(varargin{:});
+function [ssh, sshSigma, dates, lon, lat] = ssh2lonlatt(product, timestep, meshsize, timelim, options)
 
-    outputFolder = fullfile(getenv('IFILES'), product);
+    arguments (Input)
+        product SSHProduct {mustBeScalarOrEmpty} = 'MEaSUREs'
+        timestep {mustBeTimeStep} = []
+        meshsize {mustBePositive} = []
+        timelim {mustBeTimeRange} = []
+        options.LonOrigin {mustBeFinite, mustBeReal} = []
+        options.Interpolation (1, :) char ...
+            {mustBeMember(options.Interpolation, {'linear', 'nearest', 'next', 'previous', 'spline', 'pchip'})} = 'linear'
+        options.TimeFormat (1, :) DateFormat = 'datetime'
+        options.OutputFormat (1, :) MeshFormat = 'meshgrid'
+        options.Unit (1, :) char {mustBeMember(options.Unit, {'mm', 'm'})} = 'm'
+        options.ForceNew (1, 1) {mustBeNumericOrLogical} = false
+        options.BeQuiet (1, 1) {mustBeNumericOrLogical} = 0.5
+        options.SaveData (1, 1) {mustBeNumericOrLogical} = true
+    end
+
+    arguments (Output)
+        ssh (:, :, :) {mustBeReal}
+        sshSigma (:, :, :) {mustBeReal}
+        dates (:, 1) {mustBeVector}
+        lon (:, :) {mustBeReal, mustBeVector}
+        lat (:, :) {mustBeReal, mustBeVector}
+    end
+
+    lonOrigin = options.LonOrigin;
+    intpMthd = options.Interpolation;
+    timeFmt = char(options.TimeFormat);
+    outputFmt = char(options.OutputFormat);
+    unit = lower(options.Unit);
+    forceNew = logical(options.ForceNew);
+    beQuiet = uint8(double(options.BeQuiet) * 2);
+    saveData = logical(options.SaveData);
+
+    if ~isempty(timestep) && isnumeric(timestep)
+        timestep = days(timestep);
+    end
+
+    if ~isempty(timelim) && isnumeric(timelim)
+        timelim = datetime(timelim, 'ConvertFrom', 'datenum');
+    end
+
+    outputFolder = fullfile(getenv('IFILES'), char(product));
     inputFolder = fullfile(outputFolder, 'raw');
 
     %% No interpolation
-    if isempty(timeStep) && isempty(meshSize) && isempty(lonOrigin)
+    if isempty(timestep) && isempty(meshsize) && isempty(lonOrigin)
         % No interpolation duration given, load the raw data
-        [sshs, sshErrors, dates, lon, lat] = ...
+        [data.sshs, data.sshErrors, data.dates, data.lon, data.lat] = ...
             loadAggregatedRawData(product, ...
             forceNew, beQuiet, saveData, outputFolder, inputFolder);
 
-        [sshs, sshErrors, dates, lon, lat] = ...
-            formatoutput(sshs, sshErrors, dates, lon, lat, timelim, timeFmt, outputFmt, unit);
+        if nargout > 0
+            [ssh, sshSigma, dates, lon, lat] = ...
+                formatoutput(data.sshs, data.sshErrors, data.dates, data.lon, data.lat, timelim, timeFmt, outputFmt, unit);
+        else
+            plotsealeveltseries(data.dates, data.sshs, data.lon, data.lat, product, unit, 'Global mean sea surface height');
+        end
 
-        varargout = {sshs, sshErrors, dates, lon, lat};
         return
 
     end
 
     %% With interpolation
     intpOutputPath = ...
-        outputpath(product, intpMthd, timeStep, meshSize, lonOrigin, outputFolder);
+        outputpath(product, intpMthd, timestep, meshsize, lonOrigin, outputFolder);
 
     if exist(intpOutputPath, 'file') && ~forceNew
 
         if beQuiet <= 1
-            loadingMsg = ...
-                sprintf('%s: loading %s, this may take a while...\n', ...
-                upper(mfilename), intpOutputPath);
-            fprintf(loadingMsg);
+            t = tic;
+            msg = 'this may take a while...';
+            fprintf('[ULMO><a href="matlab: open(''%s'')">%s</a>] Loading <a href="matlab: fprintf(''%s\\n'');open(''%s'')">interpolated SSH product</a>, %s\n', ...
+                mfilename("fullpath"), mfilename, intpOutputPath, intpOutputPath, msg);
         end
 
-        load(intpOutputPath, 'sshs', 'sshErrors', 'dates', 'lon', 'lat');
+        data = load(intpOutputPath, 'sshs', 'sshErrors', 'dates', 'lon', 'lat');
 
         if beQuiet <= 1
-            fprintf(repmat('\b', 1, length(loadingMsg)));
-            fprintf('%s: loaded %s\n', upper(mfilename), intpOutputPath);
+            fprintf(repmat('\b', 1, length(msg) + 1));
+            fprintf('took %.1f seconds.\n', toc(t));
         end
 
-        [sshs, sshErrors, dates, lon, lat] = ...
-            formatoutput(sshs, sshErrors, dates, lon, lat, timelim, timeFmt, outputFmt, unit);
-        varargout = {sshs, sshErrors, dates, lon, lat};
+        if nargout > 0
+            [ssh, sshSigma, dates, lon, lat] = ...
+                formatoutput(data.sshs, data.sshErrors, data.dates, data.lon, data.lat, timelim, timeFmt, outputFmt, unit);
+        else
+            plotsealeveltseries(data.dates, data.sshs, data.lon, data.lat, product, unit, 'Global mean sea surface height');
+        end
 
         return
     end
 
-    [sshs, sshErrors, dates, lon, lat] = ...
+    [data.sshs, data.sshErrors, data.dates, data.lon, data.lat] = ...
         loadAggregatedRawData(product, ...
         forceNew, beQuiet, saveData, outputFolder, inputFolder);
 
-    if ~isempty(timeStep)
-        sshs = ...
-            interptemporal(dates, sshs, timeStep, intpMthd, beQuiet);
-        [sshErrors, dates] = ...
-            interptemporal(dates, sshErrors, timeStep, intpMthd, beQuiet);
+    if ~isempty(timestep)
+        data.sshs = ...
+            interptemporal(data.dates, data.sshs, timestep, intpMthd, beQuiet);
+        [data.sshErrors, data.dates] = ...
+            interptemporal(data.dates, data.sshErrors, timestep, intpMthd, beQuiet);
     end
 
-    if ~isempty(meshSize) || ~isempty(lonOrigin)
+    if ~isempty(meshsize) || ~isempty(lonOrigin)
 
-        if isempty(meshSize)
-            meshSize = 1/6;
+        if isempty(meshsize)
+            meshsize = 1/6;
         end
 
         if isempty(lonOrigin)
             lonOrigin = 180;
         end
 
-        sshs = interpspatial(lon, lat, sshs, meshSize, lonOrigin, intpMthd, beQuiet);
-        [sshErrors, lon, lat] = ...
-            interpspatial(lon, lat, sshErrors, meshSize, lonOrigin, intpMthd, beQuiet);
+        data.sshs = interpspatial(data.lon, data.lat, data.sshs, meshsize, lonOrigin, intpMthd, beQuiet);
+        [data.sshErrors, data.lon, data.lat] = ...
+            interpspatial(data.lon, data.lat, data.sshErrors, meshsize, lonOrigin, intpMthd, beQuiet);
     end
 
     if saveData
         save(intpOutputPath, ...
-            'sshs', 'sshErrors', 'dates', 'lon', 'lat', '-v7.3');
+            '-struct', 'data', 'sshs', 'sshErrors', 'dates', 'lon', 'lat', '-v7.3');
 
         if beQuiet <= 1
-            fprintf('%s: saved %s\n', upper(mfilename), intpOutputPath);
+            fprintf('[ULMO><a href="matlab: open(''%s'')">%s</a>] Saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">SSH product</a>.\n', ...
+                mfilename("fullpath"), mfilename, intpOutputPath, intpOutputPath);
         end
 
     end
 
-    [sshs, sshErrors, dates, lon, lat] = ...
-        formatoutput(sshs, sshErrors, dates, lon, lat, timelim, timeFmt, outputFmt, unit);
-    varargout = {sshs, sshErrors, dates, lon, lat};
+    [ssh, sshSigma, dates, lon, lat] = ...
+        formatoutput(data.sshs, data.sshErrors, data.dates, data.lon, data.lat, timelim, timeFmt, outputFmt, unit);
 
 end
 
@@ -188,9 +232,11 @@ end
 function [meshIntp, datesIntp] = ...
         interptemporal(dates, mesh, timeStep, intpMthd, beQuiet)
 
-    if beQuiet <= 1
-        fprintf('%s: Interpolating temporally, this may take a while...\n', ...
-            upper(mfilename));
+    if beQuiet == 0
+        t = tic;
+        templine = 'this may take a while...';
+        fprintf('[ULMO><a href="matlab: open(''%s'')">%s</a>] Interpolating temporally, %s\n', ...
+            mfilename("fullpath"), mfilename, templine);
     end
 
     if ischar(timeStep) && strcmpi(timeStep, 'midmonth')
@@ -214,14 +260,22 @@ function [meshIntp, datesIntp] = ...
     meshFlat = reshape(mesh, [prod(size(mesh, 1:2)), size(mesh, 3)])';
     meshIntp = interp1(dates, meshFlat, datesIntp, intpMthd)';
     meshIntp = reshape(meshIntp, [size(mesh, 1:2), length(datesIntp)]);
+
+    if beQuiet == 0
+        fprintf(repmat('\b', 1, length(templine) + 1));
+        fprintf('took %.1f seconds.\n', toc(t));
+    end
+
 end
 
 function [meshIntp, lonIntp, latIntp] = ...
         interpspatial(lon, lat, mesh, meshSize, lonOrigin, intpMthd, beQuiet)
 
-    if beQuiet <= 1
-        fprintf('%s: Interpolating spatially, this may take a while...\n', ...
-            upper(mfilename));
+    if beQuiet == 0
+        t = tic;
+        templine = 'this may take a while...';
+        fprintf('[ULMO><a href="matlab: open(''%s'')">%s</a>] Interpolating spatially, %s\n', ...
+            mfilename("fullpath"), mfilename, templine);
     end
 
     ogLonOrigin = 180;
@@ -245,88 +299,43 @@ function [meshIntp, lonIntp, latIntp] = ...
     end
 
     meshIntp = permute(meshIntp, [2, 1, 3]);
-end
 
-% Parse input arguments
-function varargout = parseInputs(varargin)
-    ip = inputParser;
-    addOptional(ip, 'Product', 'MEaSUREs', ...
-        @(x) ischar(validatestring(x, {'MEaSUREs'})));
-    addOptional(ip, 'TimeRange', [], ...
-        @(x) isempty(x) || ((isnumeric(x) || isdatetime(x)) && length(x) == 2));
-    addOptional(ip, 'TimeStep', [], ...
-        @(x) isempty(x) || ((isduration(x) || isnumeric(x)) && isscalar(x)) || ischar(validatestring(x, {'midmonth'})));
-    addOptional(ip, 'MeshSize', [], ...
-        @(x) isempty(x) || (isnumeric(x) && isscalar(x)));
-    addOptional(ip, 'LonOrigin', [], ...
-        @(x) isempty(x) || (isnumeric(x) && isscalar(x)));
-    addParameter(ip, 'InterpolationMethod', 'linear', @ischar);
-    addParameter(ip, 'TimeFormat', 'datetime', ...
-        @(x) ischar(validatestring(x, {'datetime', 'datenum'})));
-    addParameter(ip, 'OutputFormat', 'meshgrid', ...
-        @(x) ischar(validatestring(x, {'meshgrid', 'ndgrid'})));
-    addParameter(ip, 'Unit', 'm', ...
-        @(x) ischar(validatestring(x, {'mm', 'm'})));
-    addParameter(ip, 'ForceNew', false, ...
-        @(x) (islogical(x) || isnumeric(x)) && isscalar(x));
-    addParameter(ip, 'BeQuiet', 0.5, ...
-        @(x) (islogical(x) || isnumeric(x)) && isscalar(x));
-    addParameter(ip, 'SaveData', true, ...
-        @(x) (islogical(x) || isnumeric(x)) && isscalar(x));
-
-    parse(ip, varargin{:});
-
-    product = ip.Results.Product;
-    timelim = ip.Results.TimeRange;
-
-    timeStep = ip.Results.TimeStep;
-    meshSize = ip.Results.MeshSize;
-    lonOrigin = ip.Results.LonOrigin;
-    intpMthd = ip.Results.InterpolationMethod;
-
-    timeFmt = ip.Results.TimeFormat;
-    outputFmt = ip.Results.OutputFormat;
-    unit = lower(ip.Results.Unit);
-    forceNew = logical(ip.Results.ForceNew);
-    beQuiet = uint8(double(ip.Results.BeQuiet) * 2);
-    saveData = logical(ip.Results.SaveData);
-
-    if ~isempty(timeStep) && isnumeric(timeStep)
-        timeStep = days(timeStep);
+    if beQuiet == 0
+        fprintf(repmat('\b', 1, length(templine) + 1));
+        fprintf('took %.1f seconds.\n', toc(t));
     end
 
-    if ~isempty(timelim) && isnumeric(timelim)
-        timelim = datetime(timelim, 'ConvertFrom', 'datenum');
-    end
-
-    varargout = ...
-        {product, timeStep, meshSize, timelim, lonOrigin, intpMthd, timeFmt, outputFmt, unit, forceNew, beQuiet, saveData};
 end
 
 % Load the aggregated raw data (i.e. data from all time stamps in the same array)
-function varargout = loadAggregatedRawData( ...
+function [sshs, sshErrors, dates, lon, lat] = loadAggregatedRawData( ...
         product, forceNew, beQuiet, saveData, outputFolder, inputFolder)
+    vars = {'sshs', 'sshErrors', 'dates', 'lon', 'lat'};
     % Output location
     outputFile = sprintf('%s.mat', product);
     outputPath = fullfile(outputFolder, outputFile);
 
     %% Checking output file
-    if exist(outputPath, 'file') && ...
-            (forceNew == 0 || (forceNew == 1 && isolder(inputFolder, outputPath, true)))
+    if exist(outputPath, 'file') && ~forceNew && ...
+            all(ismember(vars, who('-file', outputPath)))
 
         if beQuiet <= 1
-            loadingMsg = ...
-                sprintf('%s: Loading %s, this may take a while...\n', ...
-                upper(mfilename), outputPath);
-            fprintf(loadingMsg);
+            t = tic;
+            msg = 'this may take a while...';
+            fprintf('[ULMO><a href="matlab: open(''%s'')">%s</a>] Loading <a href="matlab: fprintf(''%s\\n'');open(''%s'')">SSH product</a>, %s\n', ...
+                mfilename("fullpath"), mfilename, outputPath, outputPath, msg);
         end
 
-        load(outputPath, 'sshs', 'sshErrors', 'dates', 'lon', 'lat');
-        varargout = {sshs, sshErrors, dates, lon, lat};
+        data = load(outputPath, vars{:});
+        sshs = data.sshs;
+        sshErrors = data.sshErrors;
+        dates = data.dates;
+        lon = data.lon;
+        lat = data.lat;
 
         if beQuiet <= 1
-            fprintf(repmat('\b', 1, length(loadingMsg)));
-            fprintf('%s: Loaded %s\n', upper(mfilename), outputPath);
+            fprintf(repmat('\b', 1, length(msg) + 1));
+            fprintf('took %.1f seconds.\n', toc(t));
         end
 
         return
@@ -343,7 +352,7 @@ function varargout = loadAggregatedRawData( ...
 
     if isempty(inputFiles)
         error(sprintf('%s:InputNotFound', upper(mfilename)), ...
-            'No input files found at %s, data can be accessed from %s\n', ...
+            'No input files found at %s, data can be accessed from <a href="%s">PO.DAAC</a>\n', ...
             inputFolder, 'https://podaac.jpl.nasa.gov/dataset/SEA_SURFACE_HEIGHT_ALT_GRIDS_L4_2SATS_5DAY_6THDEG_V_JPL2205');
     end
 
@@ -395,8 +404,6 @@ function varargout = loadAggregatedRawData( ...
 
     dates = dateRef + days(dates);
 
-    varargout = {sshs, sshErrors, dates, lon, lat};
-
     if ~saveData
         delete(wbar);
         return
@@ -411,8 +418,7 @@ function varargout = loadAggregatedRawData( ...
         return
     end
 
-    save(outputPath, 'sshs', 'sshErrors', 'dates', ...
-        'lon', 'lat', '-v7.3');
+    save(outputPath, vars{:}, '-v7.3');
     delete(wbar);
 
     if beQuiet <= 1
@@ -422,7 +428,7 @@ function varargout = loadAggregatedRawData( ...
 end
 
 % Read the raw data of a sigle time stamp from the NetCDF file
-function varargout = readRawData(inputPath)
+function [ssh, sshError, time, timeRef, lon, lat] = readRawData(inputPath)
     % Read the data
     ssh = ncread(inputPath, 'SLA');
     sshError = ncread(inputPath, 'SLA_ERR');
@@ -433,7 +439,6 @@ function varargout = readRawData(inputPath)
     sshError = single(sshError);
 
     if nargout <= 3
-        varargout = {ssh, sshError, time};
         return
     end
 
@@ -451,8 +456,6 @@ function varargout = readRawData(inputPath)
     lat = ncread(inputPath, 'Latitude');
     lon = single(lon);
     lat = single(lat);
-
-    varargout = {ssh, sshError, time, timeRef, lon, lat};
 end
 
 % Format the output
@@ -493,52 +496,6 @@ function varargout = ...
     end
 
     varargout = {sshs, sshErrors, dates, lon, lat};
-
-end
-
-% Compare the date of two directories or files
-function isolder = isolder(dir1, dir2, checkContent)
-
-    dirDates = NaT([2, 1]);
-
-    for iDir = 1:2
-
-        if iDir == 1
-            dirPath = dir1;
-        else
-            dirPath = dir2;
-        end
-
-        dirState = exist(dirPath, 'file');
-
-        switch dirState
-            case 2 % is a file
-                dirDate = datetime(dir(dirPath).date, ...
-                    "InputFormat", 'dd-MMM-yyyy HH:mm:ss');
-            case 7 % is a folder
-                dirInfo = dir(dirPath);
-
-                if ~checkContent
-                    dirDate = datetime(dirInfo(strcmp({dirInfo.name}, '.')).date, ...
-                        "InputFormat", 'dd-MMM-yyyy HH:mm:ss');
-                else
-                    disDates = ...
-                        datetime({dirInfo(~ismember({dirInfo.name}, {'.', '..', '.DS_Store'})).date}, ...
-                        "InputFormat", 'dd-MMM-yyyy HH:mm:ss');
-                    dirDate = max(disDates);
-                end
-
-            case 0 % does not exist
-                dirDate = datetime('now');
-            otherwise
-                error('Unknown file type for %s, EXIST output: %d', dirPath, dirState);
-        end
-
-        dirDates(iDir) = dirDate;
-
-    end
-
-    isolder = dirDates(1) < dirDates(2);
 
 end
 
