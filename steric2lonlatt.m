@@ -2,12 +2,12 @@
 % Loads steric sea level data and interpolate to regular latitude-longitude mesh.
 %
 % Syntax
-%   [mesh, dates, lon, lat] = STERIC2LONLATT(product)
-%   [mesh, dates, lon, lat] = STERIC2LONLATT(product, timestep, meshsize)
-%   [mesh, dates, lon, lat] = STERIC2LONLATT(product, timestep, meshsize, timelim)
-%   [mesh, dates, lon, lat] = STERIC2LONLATT(product, timestep, meshsize, timelim)
-%   [mesh, dates, lon, lat] = STERIC2LONLATT(product, "Name", Value)
-%   STERIC2LONLATT(___)
+%   [steric, sigma, dates] = STERIC2LONLATT(product)
+%   [steric, sigma, dates] = STERIC2LONLATT(product, timestep, meshsize)
+%   [steric, sigma, dates] = STERIC2LONLATT(product, timestep, meshsize, timelim)
+%   [steric, sigma, dates] = STERIC2LONLATT(product, timestep, meshsize, timelim)
+%   [steric, sigma, dates] = STERIC2LONLATT(__, "Name", Value)
+%   [steric, sigma, dates, lon, lat] = STERIC2LONLATT(__)
 %
 % Input arguments
 %   product - Name of the steric sea level product
@@ -22,50 +22,42 @@
 %       - 'NOAA' : NOAA steric sea level
 %       The default product is 'EN4'.
 %   timestep - Temporal interpolation time step
-%       - Numeric or duration scalar, in units of days
-%       - Character vector, 'midmonth'
+%       - Numeric or duration scalar, in units of days.
+%       - Character vector, 'midmonth' (at the middle of each month).
 %       When not specified, no temporal interpolation is performed.
 %   meshsize - Spatial interpolation grid size in degrees
-%       - Real scalar, in units of degrees
+%       - Real scalar, in units of degrees.
 %       When not specified, no spatial interpolation is performed.
 %   timelim - Time range of interest
-%       - Datetime vector
-%       - Numeric vector, in units of datenum
+%       - Datetime or numeric vector, in units of datenum
 %       When not specified, the full time range of the data is returned.
-%   LonOrigin - Longitude origin of the output mesh
-%       - Real scalar, in units of degrees, e.g. 0, 180, -180
+%   LonOrigin - Longitudinal centre of the interpolated output mesh
+%       - Real scalar, in units of degrees.
 %       When not specified, the midpoint of the input longitude range is
-%       used.
-%   Interpolation - Interpolation method
-%       - Character vector, a valid method for INTERP1
-%       The default is 'linear'.
+%       used. This option is only relevant when spatial interpolation is
+%       performed.
+%   Interpolation - Interpolation method, for both temporal and spatial
+%       - A string of valid method for INTERP1.
+%       The default intepolation method is 'linear'. This option is only
+%       relevant when temporal or spatial interpolation is performed.
 %   OutputFormat - Format of the output mesh
-%       - 'meshgrid' : Meshgrid format, lon and lat are row and column
-%           vectors
-%       - 'ndgrid' : Ndgrid format, lon and lat are column and row vectors
-%       The default is 'meshgrid'.
+%       - 'meshgrid' or 'ndgrid' for (lat, lon, t) or (lon, lat, t)
+%           ordering.
+%       The default format is 'meshgrid'.
 %   TimeFormat - Format of the output time vector
-%       - 'datetime' : Datetime format
-%       - 'datenum' : Datenum format
-%       The default is 'datetime'.
+%       - 'datetime' or 'datenum'.
+%       The default format is 'datetime'.
 %   Unit - Unit of the output steric sea level data
-%       - 'm' : metres
-%       - 'mm' : millimetres
-%       The default is 'm'.
+%       - 'm' (metres) or 'mm' (millimetres, equivalent to kg/m^2).
+%       The default unit is 'm'.
 %   Depth - Depth range of the steric sea level data
 %       - 'full' : Full depth steric sea level
 %       - 'shallow' : Upper ocean steric sea level
 %       - 'deep' : Deep ocean steric sea level
 %       The default is 'full'.
 %	ForceNew - Logical flag to force reprocess of the data
-%		- true: Reprocess the data
-%		- false: Only reprocess if previous output is not found
-%		The default option is 'soft true', only reprocessing the data if
-%       the output file is older than the input files. This option is not
-%       explicitly exposed; to enforce this option, set it to 0.5.
+%		The default option is false.
 %	SaveData - Logical flag to save the data
-%		- true: Save the data to disk.
-%		- false: Do not save the data to disk.
 %		The default option is true.
 %	BeQuiet - Logical flag to print messages
 %		- true: Suppress all messages.
@@ -73,12 +65,27 @@
 %		The default option is 'soft true', only printing important
 %       messages.
 %
+% Output arguments
+%	ssh - SSH mesh
+%		The dimensions and units depend on the options specified.
+%       The default dimensions are (lat, lon, t) in units of metres.
+%	sigma - Uncertainty or error mesh of the SSH data
+%		The units and dimensions are the same as for SSH.
+%	dates - The time stamps of the data
+%		The data type depends on the TimeFormat option.
+%	lon - Longitude of the mesh
+%		The dimensions (i.e. row or column vector) depend on the
+%       OutputFormat option.
+%	lat - Latitude of the mesh
+%		The dimensions (i.e. row or column vector) depend on the
+%       OutputFormat option.
+%
 % Authored by
 %	2025/07/22, williameclee@arizona.edu (@williameclee)
 % Last modified by
-%	2025/09/12, williameclee@arizona.edu (@williameclee)
+%	2025/09/15, williameclee@arizona.edu (@williameclee)
 
-function [steric, dates, lon, lat] = steric2lonlatt(product, timestep, meshsize, timelim, options)
+function [steric, stericSigma, dates, lon, lat] = steric2lonlatt(product, timestep, meshsize, timelim, options)
     %% Initialisation
     arguments (Input)
         product StericProduct {mustBeScalarOrEmpty} = 'EN4'
@@ -100,6 +107,7 @@ function [steric, dates, lon, lat] = steric2lonlatt(product, timestep, meshsize,
 
     arguments (Output)
         steric (:, :, :) {mustBeReal}
+        stericSigma (:, :, :) {mustBeReal}
         dates (:, 1) {mustBeVector}
         lon (:, :) {mustBeReal, mustBeVector}
         lat (:, :) {mustBeReal, mustBeVector}
@@ -160,10 +168,12 @@ function [steric, dates, lon, lat] = steric2lonlatt(product, timestep, meshsize,
         end
 
         if nargout > 0
-            [steric, dates, lon, lat] = ...
-                formatoutput(data.(stericVar), data.dates, data.lon, data.lat, timelim, timeFmt, outputFmt, unit);
+            [steric, stericSigma, dates, lon, lat] = formatoutput( ...
+                data.(stericVar), data.dates, data.lon, data.lat, ...
+                timelim, timeFmt, outputFmt, unit);
         else
-            plotsealeveltseries(data.dates, data.(stericVar), data.lon, data.lat, product, unit, 'Global mean steric sea level');
+            plotsealeveltseries(data.dates, data.(stericVar), data.lon, data.lat, ...
+                product, unit, 'Global mean steric sea level');
         end
 
         return
@@ -193,8 +203,8 @@ function [steric, dates, lon, lat] = steric2lonlatt(product, timestep, meshsize,
     end
 
     if ~isempty(timestep)
-        [data.(stericVar), data.dates] = ...
-            interptemporal(data.dates, data.(stericVar), timestep, intpMthd, beQuiet);
+        [data.(stericVar), data.dates] = interptemporal( ...
+            data.dates, data.(stericVar), timestep, intpMthd, beQuiet);
     end
 
     if ~(isempty(meshsize) && isempty(lonOrigin))
@@ -207,8 +217,8 @@ function [steric, dates, lon, lat] = steric2lonlatt(product, timestep, meshsize,
             lonOrigin = 180;
         end
 
-        [data.(stericVar), data.lon, data.lat] = ...
-            interpspatial(data.lon, data.lat, data.(stericVar), meshsize, lonOrigin, intpMthd, beQuiet);
+        [data.(stericVar), data.lon, data.lat] = interpspatial( ...
+            data.lon, data.lat, data.(stericVar), meshsize, lonOrigin, intpMthd, beQuiet);
     end
 
     if saveData
@@ -227,10 +237,12 @@ function [steric, dates, lon, lat] = steric2lonlatt(product, timestep, meshsize,
     end
 
     if nargout < 0
-        [steric, dates, lon, lat] = ...
-            formatoutput(data.(stericVar), data.dates, data.lon, data.lat, timelim, timeFmt, outputFmt, unit);
+        [steric, stericSigma, dates, lon, lat] = formatoutput( ...
+            data.(stericVar), data.dates, data.lon, data.lat, ...
+            timelim, timeFmt, outputFmt, unit);
     else
-        plotsealeveltseries(data.dates, data.(stericVar), data.lon, data.lat, product, unit, 'Global mean steric sea level');
+        plotsealeveltseries(data.dates, data.(stericVar), data.lon, data.lat, ...
+            product, unit, 'Global mean steric sea level');
     end
 
 end
@@ -317,12 +329,12 @@ function [meshIntp, lonIntp, latIntp] = ...
 end
 
 % Format output
-function varargout = ...
-        formatoutput(stericSl, dates, lon, lat, timelim, timeFmt, outputFmt, unit)
+function [steric, stericSigma, dates, lon, lat] = ...
+        formatoutput(steric, dates, lon, lat, timelim, timeFmt, outputFmt, unit)
 
     if ~isempty(timelim)
         isValidTime = (dates >= timelim(1)) & (dates <= timelim(2));
-        stericSl = stericSl(:, :, isValidTime);
+        steric = steric(:, :, isValidTime);
         dates = dates(isValidTime);
     end
 
@@ -335,25 +347,27 @@ function varargout = ...
             lon = lon(:)';
             lat = lat(:);
 
-            if size(stericSl, 1) ~= length(lat)
-                stericSl = permute(stericSl, [2, 1, 3]);
+            if size(steric, 1) ~= length(lat)
+                steric = permute(steric, [2, 1, 3]);
             end
 
         case 'ndgrid'
             lon = lon(:);
             lat = lat(:)';
 
-            if size(stericSl, 1) ~= length(lon)
-                stericSl = permute(stericSl, [2, 1, 3]);
+            if size(steric, 1) ~= length(lon)
+                steric = permute(steric, [2, 1, 3]);
             end
 
     end
 
     if strcmpi(unit, 'mm')
-        stericSl = stericSl * 1e3;
+        steric = steric * 1e3;
     end
 
-    varargout = {stericSl, dates, lon, lat};
+    % Currently no sigma data available
+    stericSigma = zeros(size(steric), 'like', steric);
+
 end
 
 % Find output path

@@ -1,83 +1,73 @@
 %% SSH2LONLATT
-% Reads in sea surface height (anomaly) products and converts them to a 3D
-% array.
+% Loads sea surface height (SSH) anomaly data and interpolate to regular latitude-longitude mesh.
 %
 % Syntax
-%	ssh = SSH2LONLATT(product)
-%	ssh = SSH2LONLATT(product, TimeRange, timeStep, meshSize)
-%	ssh = SSH2LONLATT(__, "Name", Value)
-%	[ssh, sshError, dates, lon, lat] = SSH2XYZ(__)
+%   [ssh, sigma, dates] = SSH2LONLATT(product)
+%   [ssh, sigma, dates] = SSH2LONLATT(product, timestep, meshsize)
+%   [ssh, sigma, dates] = SSH2LONLATT(product, timestep, meshsize, timelim)
+%   [ssh, sigma, dates] = SSH2LONLATT(product, timestep, meshsize, timelim)
+%   [ssh, sigma, dates] = SSH2LONLATT(__, "Name", Value)
+%   [ssh, sigma, dates, lon, lat] = SSH2LONLATT(__)
 %
 % Input arguments
-%	product - The product to load
+%	product - Name of the SSH product to load
 %		- 'MEaSUREs': The MEaSUREs Gridded Sea Surface Height Anomalies
 %           Version 2205 product.
-%		The default option is 'MEaSUREs', which is the only option
+%		The default product is 'MEaSUREs', which is the only option
 %       available as of right now.
-%		Data types: char
-%	timeStep - The duration of the interpolation
-% 		When not specified, the default product time grid is used, which is
-%       not necessarily regular (MEaSUREs: 5 days).
-%		When specified (non-empty), the function will interpolate the data
-%       to a regular time grid with the specified duration. The input can
-%       be:
-%		- A DURATION object (e.g. days(5)).
-%		- A numeric value (e.g. 5) interpreted as days.
-%		The default option is empty (no interpolation).
-%		Data types: duration | [numeric]
-%	TimeRange - The time range to load the data
-%		A 2-element vector with the start and end dates of the time range
-%       to load.
-%		The input can be:
-%		- A DATETIME object (e.g. datetime([2002, 2022], 1, 1)).
-%		- A numeric value (e.g. [737791, 737821]) interpreted as DATENUM.
-%		The default option is empty (no time range truncation). No matter
-%       the time range, the full range of data is processed and saved.
-%		Data types: datetime | [numeric]
-%	InterpolationMethod - The interpolation method to use, if interpolation
-%       is requested
-%		The default option is 'linear'. This function does not check the
-%       validity of the method, which is passed to the INTERP1 function.
-%		Data types: char
-%	TimeFormat - The time format to use for the time stamp output
-%		- 'datetime': The time is returned as a DATETIME object.
-%		- 'datenum': The time is returned as a numeric DATENUM object.
-%		The default option is 'datetime'.
-%		Data types: char
-%	ForceNew - Whether to force reprocess of the data
-%		- true: Reprocess the data
-%		- false: Only reprocess if previous output is not found
-%		The default option is 'soft-true', only reprocessing the data if
-%       the output file is older than the input files. This option is not
-%       explicitly exposed; to enforce this option, set it to 0.5.
-%		Data types: logical | [numeric]
-%	BeQuiet - Whether to print messages
+%   timestep - Temporal interpolation time step
+%       - Numeric or duration scalar, in units of days.
+%       - Character vector, 'midmonth' (at the middle of each month).
+%       When not specified, no temporal interpolation is performed.
+%   meshsize - Spatial interpolation grid size in degrees
+%       - Real scalar, in units of degrees.
+%       When not specified, no spatial interpolation is performed.
+%   timelim - Time range of interest
+%       - Datetime or numeric vector, in units of datenum
+%       When not specified, the full time range of the data is returned.
+%   LonOrigin - Longitudinal centre of the interpolated output mesh
+%       - Real scalar, in units of degrees.
+%       When not specified, the midpoint of the input longitude range is
+%       used. This option is only relevant when spatial interpolation is
+%       performed.
+%   Interpolation - Interpolation method, for both temporal and spatial
+%       - A string of valid method for INTERP1.
+%       The default intepolation method is 'linear'. This option is only
+%       relevant when temporal or spatial interpolation is performed.
+%   OutputFormat - Format of the output mesh
+%       - 'meshgrid' or 'ndgrid' for (lat, lon, t) or (lon, lat, t)
+%           ordering.
+%       The default format is 'meshgrid'.
+%   TimeFormat - Format of the output time vector
+%       - 'datetime' or 'datenum'.
+%       The default format is 'datetime'.
+%   Unit - Unit of the output steric sea level data
+%       - 'm' (metres) or 'mm' (millimetres, equivalent to kg/m^2).
+%       The default unit is 'm'.
+%	ForceNew - Logical flag to force reprocess of the data
+%		The default option is false.
+%	SaveData - Logical flag to save the data
+%		The default option is true.
+%	BeQuiet - Logical flag to print messages
 %		- true: Suppress all messages.
 %		- false: Print all messages (usually for debugging).
-%		The default option is 'soft-true', only printing the most important
-%       messages. This option is not explicitly exposed; to enforce this
-%       option, set it to 0.5.
-%		Data types: logical | [numeric]
-%	SaveData - Whether to save the data
-%		- true: Save the data to disk.
-%		- false: Do not save the data to disk.
-%		The default option is true.
-%		Data types: logical | [numeric]
+%		The default option is 'soft true', only printing important
+%       messages.
 %
 % Output arguments
-%	ssh - The sea surface height (anomaly) data
-%		The data is a single-precision 3D array with the dimensions
-%       [lon, lat, time], and the units are in metres [m].
-%	sshError - The sea surface height (anomaly) error data
+%	ssh - SSH mesh
+%		The dimensions and units depend on the options specified.
+%       The default dimensions are (lat, lon, t) in units of metres.
+%	sigma - Uncertainty or error mesh of the SSH data
 %		The units and dimensions are the same as for SSH.
 %	dates - The time stamps of the data
-%		The data is a 1D array with the dimensions [1, time], and the units
-%       are as specified by the TimeFormat input argument.
-%	lon - The longitude of the data
-%		The data is a 1D array with the dimensions [lon], and the units are
-%       in degrees [°].
-%	lat - The latitude of the data
-%		The units and dimensions are the same as for LON.
+%		The data type depends on the TimeFormat option.
+%	lon - Longitude of the mesh
+%		The dimensions (i.e. row or column vector) depend on the
+%       OutputFormat option.
+%	lat - Latitude of the mesh
+%		The dimensions (i.e. row or column vector) depend on the
+%       OutputFormat option.
 %
 % Data sources
 %	MEaSUREs Gridded Sea Surface Height Anomalies Version 2205
@@ -89,7 +79,7 @@
 % Authored by
 %	2025/05/19, williameclee@arizona.edu (@williameclee)
 % Last modified by
-%	2025/07/28, williameclee@arizona.edu (@williameclee)
+%	2025/09/15, williameclee@arizona.edu (@williameclee)
 
 function [ssh, sshSigma, dates, lon, lat] = ssh2lonlatt(product, timestep, meshsize, timelim, options)
 
@@ -145,10 +135,12 @@ function [ssh, sshSigma, dates, lon, lat] = ssh2lonlatt(product, timestep, meshs
             forceNew, beQuiet, saveData, outputFolder, inputFolder);
 
         if nargout > 0
-            [ssh, sshSigma, dates, lon, lat] = ...
-                formatoutput(data.sshs, data.sshErrors, data.dates, data.lon, data.lat, timelim, timeFmt, outputFmt, unit);
+            [ssh, sshSigma, dates, lon, lat] = formatoutput( ...
+                data.sshs, data.sshErrors, data.dates, data.lon, data.lat, ...
+                timelim, timeFmt, outputFmt, unit);
         else
-            plotsealeveltseries(data.dates, data.sshs, data.lon, data.lat, product, unit, 'Global mean sea surface height');
+            plotsealeveltseries(data.dates, data.sshs, data.lon, data.lat, ...
+                product, unit, 'Global mean sea surface height');
         end
 
         return
@@ -176,10 +168,12 @@ function [ssh, sshSigma, dates, lon, lat] = ssh2lonlatt(product, timestep, meshs
         end
 
         if nargout > 0
-            [ssh, sshSigma, dates, lon, lat] = ...
-                formatoutput(data.sshs, data.sshErrors, data.dates, data.lon, data.lat, timelim, timeFmt, outputFmt, unit);
+            [ssh, sshSigma, dates, lon, lat] = formatoutput( ...
+                data.sshs, data.sshErrors, data.dates, data.lon, data.lat, ...
+                timelim, timeFmt, outputFmt, unit);
         else
-            plotsealeveltseries(data.dates, data.sshs, data.lon, data.lat, product, unit, 'Global mean sea surface height');
+            plotsealeveltseries(data.dates, data.sshs, data.lon, data.lat, ...
+                product, unit, 'Global mean sea surface height');
         end
 
         return
@@ -190,10 +184,10 @@ function [ssh, sshSigma, dates, lon, lat] = ssh2lonlatt(product, timestep, meshs
         forceNew, beQuiet, saveData, outputFolder, inputFolder);
 
     if ~isempty(timestep)
-        data.sshs = ...
-            interptemporal(data.dates, data.sshs, timestep, intpMthd, beQuiet);
-        [data.sshErrors, data.dates] = ...
-            interptemporal(data.dates, data.sshErrors, timestep, intpMthd, beQuiet);
+        data.sshs = interptemporal( ...
+            data.dates, data.sshs, timestep, intpMthd, beQuiet);
+        [data.sshErrors, data.dates] = interptemporal( ...
+            data.dates, data.sshErrors, timestep, intpMthd, beQuiet);
     end
 
     if ~isempty(meshsize) || ~isempty(lonOrigin)
@@ -206,9 +200,10 @@ function [ssh, sshSigma, dates, lon, lat] = ssh2lonlatt(product, timestep, meshs
             lonOrigin = 180;
         end
 
-        data.sshs = interpspatial(data.lon, data.lat, data.sshs, meshsize, lonOrigin, intpMthd, beQuiet);
-        [data.sshErrors, data.lon, data.lat] = ...
-            interpspatial(data.lon, data.lat, data.sshErrors, meshsize, lonOrigin, intpMthd, beQuiet);
+        data.sshs = interpspatial( ...
+            data.lon, data.lat, data.sshs, meshsize, lonOrigin, intpMthd, beQuiet);
+        [data.sshErrors, data.lon, data.lat] = interpspatial( ...
+            data.lon, data.lat, data.sshErrors, meshsize, lonOrigin, intpMthd, beQuiet);
     end
 
     if saveData
@@ -222,8 +217,9 @@ function [ssh, sshSigma, dates, lon, lat] = ssh2lonlatt(product, timestep, meshs
 
     end
 
-    [ssh, sshSigma, dates, lon, lat] = ...
-        formatoutput(data.sshs, data.sshErrors, data.dates, data.lon, data.lat, timelim, timeFmt, outputFmt, unit);
+    [ssh, sshSigma, dates, lon, lat] = formatoutput( ...
+        data.sshs, data.sshErrors, data.dates, data.lon, data.lat, ...
+        timelim, timeFmt, outputFmt, unit);
 
 end
 
