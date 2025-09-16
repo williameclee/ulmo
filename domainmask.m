@@ -1,6 +1,47 @@
 %% DOMAINMASK
 % Computes the mask for a given domain defined by a polygon over a grid.
 %
+% Syntax
+%   [mask, lonn, latt] = DOMAINMASK(domain, lon, lat)
+%   [mask, lonn, latt] = DOMAINMASK(domain, lonlim, latlim, meshsize)
+%   [mask, lonn, latt] = DOMAINMASK(__, "Name", Value)
+%
+%Input arguments
+%   domain - Geographic domain to compute the mask for
+%       - GeoDomain object
+%       - Nx2 numeric array of (lon, lat) vertices
+%       - String function name that returns a Nx2 numeric array of 
+%           (lon, lat) vertices
+%       - Cell array with first element as string function name and 
+%           subsequent elements as additional arguments to the function
+%       - PolyShape object
+%       See mustBeGeographicDomain and KERNELCP for more details
+%   lon - Vector or 2D array of longitudes (degrees East)
+%   lat - Vector or 2D array of latitudes (degrees North)
+%   lonlim - 1x2 array specifying the longitude limits [minLon, maxLon] 
+%       (degrees East)
+%   latlim - 1x2 array specifying the latitude limits [minLat, maxLat] 
+%       (degrees North)
+%   meshsize - Scalar specifying the grid spacing (degrees)
+%   Format - Format of the output mesh
+%       - 'meshgrid' or 'ndgrid' for (lat, lon, t) or (lon, lat, t)
+%           ordering.
+%       The default format is 'meshgrid'.
+%	ForceNew - Logical flag to force reprocess of the data
+%		The default option is false.
+%	SaveData - Logical flag to save the data
+%		The default option is true.
+%	BeQuiet - Logical flag to print messages
+%		- true: Suppress all messages.
+%		- false: Print all messages (usually for debugging).
+%		The default option is 'soft true', only printing important
+%       messages.
+%
+% Output arguments
+%   mask - Logical array where true indicates points inside the domain
+%   lonn - 2D array of longitudes corresponding to the mask
+%   latt - 2D array of latitudes corresponding to the mask
+%
 % See also
 %   SSH2LONLATT, STERIC2LONLATT
 %
@@ -10,7 +51,20 @@
 % Last modified by
 %	2025/09/15, williameclee@arizona.edu (@williameclee)
 
-function [mask, lonn, latt] = domainmask(varargin)
+function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshsize, options)
+
+    arguments (Input)
+        domain {mustBeGeographicDomain}
+        lon (:, :) double {mustBeFinite}
+        lat (:, :) double {mustBeFinite}
+        lonlim (1, 2) double {mustBeNumeric} = nan
+        latlim (1, 2) double {mustBeNumeric} = nan
+        meshsize (1, 1) double {mustBeNumeric} = nan
+        options.Format (1, :) char {mustBeMember(options.Format, {'meshgrid', 'ndgrid'})} = 'meshgrid'
+        options.Forcenew (1, 1) logical = false
+        options.BeQuiet (1, 1) logical = false
+        options.SaveData (1, 1) logical = true
+    end
 
     arguments (Output)
         mask (:, :) logical
@@ -18,11 +72,62 @@ function [mask, lonn, latt] = domainmask(varargin)
         latt {mustBeFinite, mustBeMatrix}
     end
 
-    [domain, domainPoly, lonn, latt, meshSize, lonLim, latLim, fmt, ...
-         forceNew, beQuiet, saveData] = ...
-        parseinputs(varargin);
-    dataPath = datapath(domain, meshSize, lonLim, latLim);
+    fmt = lower(options.Format);
+    forceNew = options.Forcenew;
+    beQuiet = options.BeQuiet;
+    saveData = options.SaveData;
 
+    if ~isnan(meshsize)
+
+        if isnan(lonlim)
+            lonlim = [-180, 180] + lonlim;
+        end
+
+        if isnan(latlim)
+            latlim = [-1, 1] * abs(latlim);
+        end
+
+        lon = lonlim(1):meshsize:lonlim(2);
+        lat = latlim(1):meshsize:latlim(2);
+
+    elseif isempty(lon) || isempty(lat)
+        error('Both LON and LAT must be provided');
+    else
+
+        if isscalar(unique([diff(unique(lon(:))); diff(unique(lat(:)))]))
+            meshsize = abs(unique([diff(unique(lon(:))); diff(unique(lat(:)))]));
+            lonlim = [min(lon), max(lon)];
+            latlim = [min(lat), max(lat)];
+            lon = lonlim(1):meshsize:lonlim(2);
+            lat = latlim(1):meshsize:latlim(2);
+        end
+
+    end
+
+    if isa(domain, 'GeoDomain')
+        domainPoly = domain.Lonlat("OutputFormat", 'polyshape');
+    elseif ismatrix(domain) && isnumeric(domain) && size(domain, 2) == 2
+        domainPoly = polyshape(domain);
+    elseif ischar(domain)
+        domainPoly = polyshape(feval(domain));
+    elseif iscell(domain)
+        domainPoly = polyshape(feval(domain{:}));
+    elseif isa(domain, 'polyshape')
+        domainPoly = domain;
+    else
+        error('Unsupported domain type: %s', class(domain));
+    end
+
+    if isvector(lon) && isvector(lat)
+        lon = lon(:)';
+        lat = lat(:);
+        [lonn, latt] = meshgrid(lon, lat);
+    elseif ~(ismatrix(lon) && ismatrix(lat)) || size(lon, 1) ~= size(lat, 1)
+        error('LON and LAT must be vectors or matrices of the same size');
+    end
+
+    %% Main
+    dataPath = datapath(domain, meshsize, lonlim, latlim);
     vars = {'mask' 'lon' 'lat'};
 
     if ~forceNew && ~(isscalar(dataPath) && isnan(dataPath)) && exist(dataPath, 'file') && ...
@@ -38,10 +143,16 @@ function [mask, lonn, latt] = domainmask(varargin)
         lonn = data.lon;
         latt = data.lat;
 
-        if strcmpi(fmt, 'ndgrid')
-            mask = mask';
-            lonn = lonn';
-            latt = latt';
+        if nargout > 0
+
+            if strcmpi(fmt, 'ndgrid')
+                mask = mask';
+                lonn = lonn';
+                latt = latt';
+            end
+
+        else
+            plotdomainmask(mask, lonn, latt)
         end
 
         return
@@ -82,100 +193,21 @@ function [mask, lonn, latt] = domainmask(varargin)
 
     end
 
-    if strcmpi(fmt, 'ndgrid')
-        mask = mask';
-        lonn = lonn';
-        latt = latt';
+    if nargout > 0
+
+        if strcmpi(fmt, 'ndgrid')
+            mask = mask';
+            lonn = lonn';
+            latt = latt';
+        end
+
+    else
+        plotdomainmask(mask, lonn, latt)
     end
 
 end
 
-% Parse input arguments
-function varargout = parseinputs(inputs)
-    ip = inputParser;
-    addRequired(ip, 'Domain', ...
-        @(x) (ismatrix(x) && isnumeric(x) && size(x, 2) == 2) || ...
-        isa(x, 'GeoDomain') || isa(x, 'polyshape') || ...
-        ischar(x) || iscell(x));
-    addOptional(ip, 'Lon', [], @(x) isnumeric(x) && ndims(x) <= 2);
-    addOptional(ip, 'Lat', [], @(x) isnumeric(x) && ndims(x) <= 2);
-    addParameter(ip, 'MeshSize', nan, @(x) isnumeric(x) && isscalar(x));
-    addParameter(ip, 'LonLim', nan, @(x) isnumeric(x) && length(x) <= 2);
-    addParameter(ip, 'LatLim', nan, @(x) isnumeric(x) && length(x) <= 2);
-    addParameter(ip, 'Format', 'meshgrid', ...
-        @(x) ischar(x) && ismember(lower(x), {'meshgrid', 'ndgrid'}));
-    addParameter(ip, 'ForceNew', false, ...
-        @(x) (islogical(x) || isnumeric(x)) && isscalar(x));
-    addParameter(ip, 'BeQuiet', false, ...
-        @(x) (islogical(x) || isnumeric(x)) && isscalar(x));
-    addParameter(ip, 'SaveData', true, ...
-        @(x) (islogical(x) || isnumeric(x)) && isscalar(x));
-    parse(ip, inputs{:});
-
-    domain = ip.Results.Domain;
-    lon = ip.Results.Lon;
-    lat = ip.Results.Lat;
-    meshSize = ip.Results.MeshSize;
-    lonLim = ip.Results.LonLim;
-    latLim = ip.Results.LatLim;
-    fmt = lower(ip.Results.Format);
-    forceNew = logical(ip.Results.ForceNew);
-    beQuiet = logical(ip.Results.BeQuiet);
-    saveData = logical(ip.Results.SaveData);
-
-    if ~isnan(meshSize)
-
-        if isnan(lonLim)
-            lonLim = [-180, 180] + lonLim;
-        end
-
-        if isnan(latLim)
-            latLim = [-1, 1] * abs(latLim);
-        end
-
-        lon = lonLim(1):meshSize:lonLim(2);
-        lat = latLim(1):meshSize:latLim(2);
-
-    elseif isempty(lon) || isempty(lat)
-        error('Both LON and LAT must be provided');
-    else
-
-        if isscalar(unique([diff(unique(lon(:))); diff(unique(lat(:)))]))
-            meshSize = abs(unique([diff(unique(lon(:))); diff(unique(lat(:)))]));
-            lonLim = [min(lon), max(lon)];
-            latLim = [min(lat), max(lat)];
-        end
-
-    end
-
-    if isa(domain, 'GeoDomain')
-        domainPoly = domain.Lonlat("OutputFormat", 'polyshape');
-    elseif ismatrix(domain) && isnumeric(domain) && size(domain, 2) == 2
-        domainPoly = polyshape(domain);
-    elseif ischar(domain)
-        domainPoly = polyshape(feval(domain));
-    elseif iscell(domain)
-        domainPoly = polyshape(feval(domain{:}));
-    elseif isa(domain, 'polyshape')
-        domainPoly = domain;
-    else
-        error('Unsupported domain type: %s', class(domain));
-    end
-
-    if isvector(lon) && isvector(lat)
-        lon = lon(:)';
-        lat = lat(:);
-        [lon, lat] = meshgrid(lon, lat);
-    elseif ~(ismatrix(lon) && ismatrix(lat)) || size(lon, 1) ~= size(lat, 1)
-        error('LON and LAT must be vectors or matrices of the same size');
-    end
-
-    varargout = ...
-        {domain, domainPoly, lon, lat, meshSize, lonLim, latLim, fmt, ...
-         forceNew, beQuiet, saveData};
-
-end
-
+%% Subfunctions
 function dataPath = datapath(domain, meshSize, lonLim, latLim)
 
     if ~(isa(domain, 'GeoDomain') || isa(domain, 'char') || isa(domain, 'cell')) ...
@@ -201,4 +233,16 @@ function dataPath = datapath(domain, meshSize, lonLim, latLim)
         domainName, num2str(meshSize), ...
         num2str(lonLim(1)), num2str(lonLim(2)), num2str(latLim(1)), num2str(latLim(2)));
     dataPath = fullfile(dataFolder, dataFile);
+end
+
+function plotdomainmask(mask, lonn, latt)
+    figure()
+
+    set(gcf, "Name", 'Domain mask', 'NumberTitle', 'off');
+
+    imagesc(lonn(1, :), latt(:, 1), double(mask));
+
+    set(gca, "YDir", 'normal')
+    axis equal tight
+
 end

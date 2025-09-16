@@ -12,6 +12,16 @@
 
 function plotsealeveltseries(dates, sl, lon, lat, product, unit, figtitle)
 
+    arguments (Input)
+        dates datetime {mustBeVector}
+        sl (:, :, :) {mustBeNumeric}
+        lon {mustBeReal, mustBeVector}
+        lat {mustBeReal, mustBeVector}
+        product (1, :) char = ''
+        unit (1, :) char = ''
+        figtitle (1, :) char = ''
+    end
+
     if size(sl, 1) == length(lon)
         % ndgrid -> meshgrid
         sl = permute(sl, [2, 1, 3]);
@@ -26,13 +36,32 @@ function plotsealeveltseries(dates, sl, lon, lat, product, unit, figtitle)
     steric = steric - mean(steric, 'omitmissing');
 
     figure()
-    set(gcf, "Name", figtitle, 'NumberTitle', 'off');
+
+    if ~isempty(figtitle)
+        set(gcf, "Name", figtitle, 'NumberTitle', 'off');
+    end
+
     clf
 
-    plot(dates, steric, "DisplayName", sprintf('Product: %s', char(product)))
-    ylabel(sprintf('Steric sea level [%s]', unit))
-    title(figtitle)
-    legend('Location', 'best')
+    p = plot(dates, steric);
+
+    if ~isempty(product)
+        p.DisplayName = sprintf('Product: %s', char(product));
+    end
+
+    if isempty(unit)
+        ylabel('Sea level [%s]')
+    else
+        ylabel(sprintf('Sea level [%s]', unit))
+    end
+
+    if ~isempty(figtitle)
+        title(figtitle)
+    end
+
+    if ~isempty(product)
+        legend('Location', 'best')
+    end
 
     xlim([min(dates), max(dates)])
 end
