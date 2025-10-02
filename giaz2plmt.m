@@ -54,7 +54,7 @@
 %       PANGAEA, doi: 10.1594/PANGAEA.932462
 %
 % Last modified by
-%   2025/07/21, williameclee@arizona.edu (@williameclee)
+%   2025/08/03, williameclee@arizona.edu (@williameclee)
 
 function varargout = giaz2plmt(varargin)
     %% Initialisation
@@ -79,7 +79,7 @@ function varargout = giaz2plmt(varargin)
         wPlmt = lmcosiM(lmcosiM(:, 1) <= L, :);
         wUPlmt = lmcosiU(lmcosiU(:, 1) <= L, :);
         wLPlmt = lmcosiL(lmcosiL(:, 1) <= L, :);
-    elseif strcmpi(model,'ice6gd') || strcmpi(model, 'ice-6g_d')
+    elseif strcmpi(model, 'ice6gd') || strcmpi(model, 'ice-6g_d')
         inputFolder = fullfile(getenv('IFILES'), 'GIA', 'ICE-6G_D');
         inputPath = fullfile(inputFolder, 'ICE-6G_D_VLM.mat');
         load(inputPath, 'wSph');
@@ -87,7 +87,7 @@ function varargout = giaz2plmt(varargin)
         wUPlmt = [];
         wLPlmt = [];
     else
-        error('GIAZ2PLMT:LoadData:ModelDataNotFound', 'Unrecognised model name %s', upper(model));
+        error('ULMO:LoadData:FileNotFound', 'Unrecognised model name %s', upper(model));
     end
 
     if (size(wPlmt, 1) < addmup(L) || ...
@@ -226,7 +226,7 @@ function plm = findsteffendata(model)
              'Use SETENV to specify the environment path']);
         end
 
-        inputFolder = fullfile(inputFolder, 'SteffenGrids');
+        inputFolder = fullfile(inputFolder, 'Steffen21');
 
         % Get the appropriate file name
         model = replace(model, 'Steffen_', '');
@@ -238,9 +238,8 @@ function plm = findsteffendata(model)
 
         % Make sure the file exists
         if exist(inputPath, 'file') ~= 2
-            error( ...
-                [sprintf('Model %s not found', upper(model)), newline, ...
-                 'It should be kept at %s', inputPath]);
+            error('ULMO:LoadData:FileNotFound', ...
+                'Model %s not found at %s', upper(model), inputPath);
         end
 
     end

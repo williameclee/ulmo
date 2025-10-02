@@ -95,67 +95,156 @@
 %       PANGAEA, doi: 10.1594/PANGAEA.932462
 %
 % Last modified by
-%   2025/06/02, williameclee@arizona.edu (@williameclee)
+%   2025/08/04, williameclee@arizona.edu (@williameclee)
 
 function varargout = gia2plmt(varargin)
     %% Initialisation
-    [time, model, L, outputField, outputFormat, beQuiet] = parseinputs(varargin{:});
+    [time, model, L, unit, outputFmt, beQuiet] = ...
+        parseinputs(varargin{:});
 
     %% Loading the model
     % Load this data (saved as lmcosiM)
-    inputPath = finddatafile(model);
     warning('off', 'MATLAB:load:variableNotFound');
-    load(inputPath, 'lmcosiM', 'lmcosiU', 'lmcosiL');
-    lmcosiM(1, 3) = 0; % Ensure the mean is zero
 
-    if ~beQuiet
-        fprintf('%s loaded model %s\n', upper(mfilename), inputPath);
+    inputPath = finddatafile(model, unit);
+    inputUnit = unit;
+
+    if exist(inputPath, 'file')
+        data = load(inputPath, 'lmcosiM', 'lmcosiU', 'lmcosiL');
+
+        if ~beQuiet
+            fprintf('[ULMO><a href="matlab: open(''%s'')">%s</a>] Loaded <a href="matlab: fprintf(''%s\\n'');open(''%s'')">%s GIA model</a>\n', ...
+                mfilename("fullpath"), mfilename, inputPath, inputPath, upper(model));
+        end
+
+    else
+
+        switch unit
+            case 'SD'
+                inputUnit = 'POT';
+            case 'POT'
+                inputUnit = 'SD';
+        end
+
+        altInputPath = finddatafile(model, inputUnit);
+
+        if ~exist(altInputPath, 'file')
+            error('ULMO:LoadData:FileNotFound', ...
+                'GIA model %s not found at expected location:\n%s or %s', upper(model), inputPath, altInputPath);
+        end
+
+        data = load(altInputPath, 'lmcosiM', 'lmcosiU', 'lmcosiL');
+
+        if ~beQuiet
+            fprintf('[ULMO><a href="matlab: open(''%s'')">%s</a>] Loaded <a href="matlab: fprintf(''%s\\n'');open(''%s'')">%s GIA model</a>\n', ...
+                mfilename("fullpath"), mfilename, inputPath, inputPath, upper(model));
+        end
+
     end
 
-    hasBounds = exist('lmcosiU', 'var') && exist('lmcosiL', 'var');
+    if strcmp(unit, 'SD')
+        data.lmcosiM(1, 3) = 0; % Ensure the mean is zero
+    end
+
+    hasBounds = isfield(data, 'lmcosiU') && isfield(data, 'lmcosiL');
 
     %% Some additional processing
+    % Convert unit
+    if ~strcmp(unit, inputUnit)
+        data.lmcosiM = convertgravity(data.lmcosiM, inputUnit, unit);
+
+        if hasBounds
+            data.lmcosiU = convertgravity(data.lmcosiU, inputUnit, unit);
+            data.lmcosiL = convertgravity(data.lmcosiL, inputUnit, unit);
+        end
+
+    end
+
+    % Convert to SSH (i.e. find spatially constant term)
+    if strcmp(unit, 'POT')
+
+        if abs(data.lmcosiM(1, 3)) < 1e-7
+            data.lmcosiM(1, 3) = 0;
+        end
+
+        try
+            Linput = max(data.lmcosiM(:, 1));
+            vlmLmcosi = giaz2plmt(model, Linput);
+            vlmLmcosi(:, 3:4) = vlmLmcosi(:, 3:4) * 1e-3; % mm/yr -> m/yr
+            rslLmcosi = data.lmcosiM;
+            rslLmcosi(:, 3:4) = data.lmcosiM(:, 3:4) - vlmLmcosi(1:size(data.lmcosiM, 1), 3:4);
+            oceanDomain = GeoDomain('alloceans', "Buffer", 0.5);
+            rslLmcosi = localise(rslLmcosi, oceanDomain, 60, "BeQuiet", true);
+            data.lmcosiM(1, 3) = data.lmcosiM(1, 3) - rslLmcosi(1, 3);
+        catch ME
+
+            switch model
+                case 'Paulson07'
+                    data.lmcosiM(1, 3) = -1.4e-4;
+                    warning('ULMO:LoadData:FunctionExternalFailuse', ...
+                        '%s failed to load GIAZ2PLMT for model %s, cannot convert POT to SSH, genetic value of %.5f is used\n(Error: %s)', ...
+                        upper(mfilename), upper(model), data.lmcosiM(1, 3), ME.message);
+                case 'A13'
+                    data.lmcosiM(1, 3) = -1.3e-4;
+                    warning('ULMO:LoadData:FunctionExternalFailuse', ...
+                        '%s failed to load GIAZ2PLMT for model %s, cannot convert POT to SSH, genetic value of %.5f is used\n(Error: %s)', ...
+                        upper(mfilename), upper(model), data.lmcosiM(1, 3), ME.message);
+                otherwise
+                    warning('ULMO:LoadData:FunctionExternalFailuse', ...
+                        '%s failed to load GIAZ2PLMT for model %s, cannot convert POT to SSH\n(Error: %s)', ...
+                        upper(mfilename), upper(model), ME.message);
+            end
+
+        end
+
+    end
+
+    % Save result to inputpath if previously not found
+    if ~exist(inputPath, 'file')
+
+        if ~exist(fileparts(inputPath), 'dir')
+            mkdir(fileparts(inputPath));
+        end
+
+        save(inputPath, '-struct', 'data', 'lmcosiM');
+
+        if hasBounds
+            save(inputPath, '-struct', 'data', 'lmcosiU', 'lmcosiL', '-append');
+        end
+
+        if ~beQuiet
+            fprintf('[ULMO><a href="matlab: open(''%s'')">%s</a>] Saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">%s GIA model</a>\n', ...
+                mfilename("fullpath"), mfilename, inputPath, inputPath, upper(model));
+        end
+
+    end
+
     % Truncate the model to the desired degree
     if ~isempty(L)
 
-        if size(lmcosiM, 1) < addmup(L)
+        if size(data.lmcosiM, 1) < addmup(L)
 
             if ~beQuiet
-                warning('SLEPIAN:gia2plmt:truncation', ...
+                warning('ULMO:LoadData:InsufficientResolution', ...
                     'Model %s resolution lower than the requested degree %d', model, L);
             end
 
-            [lmcosiM(1:addmup(L), 2), lmcosiM(1:addmup(L), 1)] = addmon(L);
+            [data.lmcosiM(1:addmup(L), 2), data.lmcosiM(1:addmup(L), 1)] = addmon(L);
         else
-            lmcosiM = lmcosiM(1:addmup(L), :);
+            data.lmcosiM = data.lmcosiM(1:addmup(L), :);
         end
 
         if hasBounds
 
-            if size(lmcosiU, 1) < addmup(L) || size(lmcosiL, 1) < addmup(L)
-                [lmcosiU(1:addmup(L), 2), lmcosiU(1:addmup(L), 1)] = addmon(L);
-                [lmcosiL(1:addmup(L), 2), lmcosiL(1:addmup(L), 1)] = addmon(L);
+            if size(data.lmcosiU, 1) < addmup(L) || size(data.lmcosiL, 1) < addmup(L)
+                [data.lmcosiU(1:addmup(L), 2), data.lmcosiU(1:addmup(L), 1)] = addmon(L);
+                [data.lmcosiL(1:addmup(L), 2), data.lmcosiL(1:addmup(L), 1)] = addmon(L);
             else
-                lmcosiU = lmcosiU(1:addmup(L), :);
-                lmcosiL = lmcosiL(1:addmup(L), :);
+                data.lmcosiU = data.lmcosiU(1:addmup(L), :);
+                data.lmcosiL = data.lmcosiL(1:addmup(L), :);
             end
 
         end
-
-    end
-
-    % Surface mass density or geoid height
-    switch outputField
-        case {'massdensity', 'SD'}
-            % Do nothing
-        case {'geoid', 'POT'}
-            % Convert to geoid height
-            lmcosiM = plm2pot(lmcosiM, [], [], [], 5);
-
-            if hasBounds
-                lmcosiU = plm2pot(lmcosiU, [], [], [], 5);
-                lmcosiL = plm2pot(lmcosiL, [], [], [], 5);
-            end
 
     end
 
@@ -168,13 +257,13 @@ function varargout = gia2plmt(varargin)
             deltaYear = time / days(years(1));
         end
 
-        GIAt = lmcosiM;
+        GIAt = data.lmcosiM;
         GIAt(:, 3:4) = deltaYear * GIAt(:, 3:4);
 
         if hasBounds
-            GIAtU = lmcosiU;
+            GIAtU = data.lmcosiU;
             GIAtU(:, 3:4) = deltaYear * GIAtU(:, 3:4);
-            GIAtL = lmcosiL;
+            GIAtL = data.lmcosiL;
             GIAtL(:, 3:4) = deltaYear * GIAtL(:, 3:4);
         end
 
@@ -183,17 +272,17 @@ function varargout = gia2plmt(varargin)
         % Reference the date string to the first date
         deltaYear = (time - time(1)) / days(years(1));
 
-        GIAt = plm2plmt(lmcosiM, deltaYear);
+        GIAt = plm2plmt(data.lmcosiM, deltaYear);
 
         if hasBounds
-            GIAtU = plm2plmt(lmcosiU, deltaYear);
-            GIAtL = plm2plmt(lmcosiL, deltaYear);
+            GIAtU = plm2plmt(data.lmcosiU, deltaYear);
+            GIAtL = plm2plmt(data.lmcosiL, deltaYear);
         end
 
     end
 
     %% Collecting outputs
-    switch outputFormat
+    switch outputFmt
         case 'timefirst'
             % Do nothing
         case 'traditional'
@@ -204,14 +293,14 @@ function varargout = gia2plmt(varargin)
         GIAtU = [];
         GIAtL = [];
 
-        if nargout > 1
-            warning('SLEPIAN:gia2plmt:noBoundsToReturn', ...
-            'Upper and lower bounds are not available for this model');
+        if nargout > 1 && ~beQuiet
+            warning(sprintf('ULMO:%s:NoBoundsToReturn', upper(mfilename)), ...
+                'Upper and lower bounds are not available for model %s', upper(model));
         end
 
     else
 
-        switch outputFormat
+        switch outputFmt
             case 'timefirst'
                 % Do nothing
             case 'traditional'
@@ -228,12 +317,12 @@ function varargout = gia2plmt(varargin)
     end
 
     %% Plotting
-    plotgiamap(GIAt, time, deltaYear, model, outputField)
+    plotgiamap(GIAt, time, deltaYear, model, unit)
 end
 
 %% Subfunctions
 function varargout = parseinputs(varargin)
-    modelD = 'Steffen_ice6g_vm5a';
+    dfOpts.model = 'Caron18';
 
     % Allow skipping the time argument
     if nargin > 0 && ...
@@ -242,29 +331,32 @@ function varargout = parseinputs(varargin)
         varargin{1} = [];
     end
 
-    p = inputParser;
-    addOptional(p, 'Time', [], ...
-        @(x) isnumeric(x) || isdatetime(x) || isempty(x) || idsuration(x));
-    addOptional(p, 'Model', modelD, ...
+    ip = inputParser;
+    addOptional(ip, 'Time', [], ...
+        @(x) isnumeric(x) || isdatetime(x) || isempty(x) || isduration(x));
+    addOptional(ip, 'Model', dfOpts.model, ...
         @(x) ischar(x) || (iscell(x) && length(x) == 3) || isempty(x));
-    addOptional(p, 'L', [], ...
-        @(x) isnumeric(x) || isempty(x));
-    addParameter(p, 'BeQuiet', false, @(x) islogical(x) || isnumeric(x));
-    addParameter(p, 'Unit', 'SD', ...
-        @(x) ischar(validatestring(x, {'massdensity', 'geoid', 'SD', 'POT'})));
-    addParameter(p, 'OutputFormat', 'timefirst', ...
+    addOptional(ip, 'L', [], ...
+        @(x) (isnumeric(x) && isscalar(x) && x > 0) || isempty(x));
+    addParameter(ip, 'BeQuiet', false, ...
+        @(x) islogical(x) || isnumeric(x));
+    addParameter(ip, 'Unit', 'SD', ...
+        @(x) ischar(validatestring(x, {'massdensity', 'geoid', 'SD', 'POT', 'geo'})));
+    addParameter(ip, 'OutputFormat', 'timefirst', ...
         @(x) ischar(validatestring(x, {'timefirst', 'traditional'})));
 
-    parse(p, varargin{:});
-    time = p.Results.Time;
-    model = conddefval(p.Results.Model, modelD);
-    L = p.Results.L;
-    beQuiet = p.Results.BeQuiet;
-    outputField = p.Results.Unit;
-    outputFormat = p.Results.OutputFormat;
+    parse(ip, varargin{:});
+    time = ip.Results.Time;
+    model = conddefval(ip.Results.Model, dfOpts.model);
+    L = ip.Results.L;
+    beQuiet = ip.Results.BeQuiet;
+    unit = ip.Results.Unit;
+    outputFmt = ip.Results.OutputFormat;
 
     if isdatetime(time)
         time = datenum(time); %#ok<DATNM>
+    elseif isduration(time)
+        time = days(time);
     end
 
     if iscell(model)
@@ -279,15 +371,31 @@ function varargout = parseinputs(varargin)
 
     end
 
-    if ismember(lower(model), {'ice6gd', 'ice6g_d', 'ice6g-d', 'ice-6g\_d', 'ice6g\_d'})
-        model = 'ICE-6G_D';
+    if ~isempty(regexp(lower(model), '^ice[-]?6g[_-]?d$', 'once'))
+        model = 'ICE6GD';
+    elseif startsWith(lower(model), {'paulson', 'caron'})
+        model(1) = upper(model(1));
     end
 
-    varargout = {time, model, L, outputField, outputFormat, beQuiet};
+    if L ~= round(L)
+        warning( ...
+            sprintf('ULMO:%s:InvalidInput:NonIntegerDegree', upper(mfilename)), ...
+            'The degree L must be an integer. Rounding to %d', round(L));
+        L = round(L);
+    end
+
+    switch lower(unit)
+        case {'massdensity', 'sd'}
+            unit = 'SD';
+        case {'geoid', 'pot', 'geo'}
+            unit = 'POT';
+    end
+
+    varargout = {time, model, L, unit, outputFmt, beQuiet};
 
 end
 
-function inputPath = finddatafile(model)
+function inputPath = finddatafile(model, unit)
 
     if isfile(model)
         inputPath = model;
@@ -305,7 +413,7 @@ function inputPath = finddatafile(model)
     if strncmp(model, 'Morrow', 6)
         inputFolder = fullfile(inputFolder, model(1:6));
     elseif strncmpi(model, 'Steffen', 7)
-        inputFolder = fullfile(inputFolder, 'SteffenGrids');
+        inputFolder = fullfile(inputFolder, 'Steffen21');
     elseif strcmp(model, 'LM17.3')
         inputFolder = fullfile(inputFolder, 'LM17.3');
 
@@ -318,26 +426,7 @@ function inputPath = finddatafile(model)
     end
 
     % And the appropriate name
-    inputPath = fullfile(inputFolder, sprintf('%s_SD.mat', model));
-
-    if exist(inputPath, 'file') ~= 2
-
-        if strcmp(model, 'LM17.3')
-
-            if exist(fullfile(inputFolder, 'LM17.3_0.5x0.5_geoid_globe.txt'), 'file')
-                lm17_Sd(inputFolder, inputPath);
-            else
-                error('Model %s not found\nPlease download it from %s', ...
-                    upper(model), 'https://sites.google.com/view/holgersteffenlm/startseite/data');
-            end
-
-        else
-            error('Model %s not found\nIt should be kept at %s', ...
-                upper(model), inputPath);
-        end
-
-    end
-
+    inputPath = fullfile(inputFolder, sprintf('%s_%s.mat', model, unit));
 end
 
 function plmt = plm2plmt(plm, deltaYear)
