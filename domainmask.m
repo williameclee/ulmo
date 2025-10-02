@@ -10,17 +10,17 @@
 %   domain - Geographic domain to compute the mask for
 %       - GeoDomain object
 %       - Nx2 numeric array of (lon, lat) vertices
-%       - String function name that returns a Nx2 numeric array of 
+%       - String function name that returns a Nx2 numeric array of
 %           (lon, lat) vertices
-%       - Cell array with first element as string function name and 
+%       - Cell array with first element as string function name and
 %           subsequent elements as additional arguments to the function
 %       - PolyShape object
 %       See mustBeGeographicDomain and KERNELCP for more details
 %   lon - Vector or 2D array of longitudes (degrees East)
 %   lat - Vector or 2D array of latitudes (degrees North)
-%   lonlim - 1x2 array specifying the longitude limits [minLon, maxLon] 
+%   lonlim - 1x2 array specifying the longitude limits [minLon, maxLon]
 %       (degrees East)
-%   latlim - 1x2 array specifying the latitude limits [minLat, maxLat] 
+%   latlim - 1x2 array specifying the latitude limits [minLat, maxLat]
 %       (degrees North)
 %   meshsize - Scalar specifying the grid spacing (degrees)
 %   Format - Format of the output mesh
@@ -64,6 +64,7 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
         options.Forcenew (1, 1) logical = false
         options.BeQuiet (1, 1) logical = false
         options.SaveData (1, 1) logical = true
+        options.CallChain cell = {};
     end
 
     arguments (Output)
@@ -76,6 +77,7 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
     forceNew = options.Forcenew;
     beQuiet = options.BeQuiet;
     saveData = options.SaveData;
+    callChain = [options.CallChain, {mfilename}];
 
     if ~isnan(meshsize)
 
@@ -105,7 +107,7 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
     end
 
     if isa(domain, 'GeoDomain')
-        domainPoly = domain.Lonlat("OutputFormat", 'polyshape');
+        domainPoly = domain.Lonlat("OutputFormat", 'polyshape', "LonOrigin", mean(lonlim));
     elseif ismatrix(domain) && isnumeric(domain) && size(domain, 2) == 2
         domainPoly = polyshape(domain);
     elseif ischar(domain)
@@ -135,8 +137,8 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
         data = load(dataPath, vars{:});
 
         if ~beQuiet
-            fprintf('[ULMO><a href="matlab: open(''%s'')">%s</a>] Loaded <a href="matlab: fprintf(''%s\\n'');open(''%s'')">domain mask</a>.\n', ...
-                mfilename("fullpath"), mfilename, dataPath, dataPath);
+            fprintf('[ULMO>%s] Loaded <a href="matlab: fprintf(''%s\\n'');open(''%s'')">domain mask</a>.\n', ...
+                callchaintext(callChain), dataPath, dataPath);
         end
 
         mask = data.mask;
@@ -161,8 +163,7 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
     if ~beQuiet
         t = tic;
         msg = 'computing domain mask, this may take a while ... ';
-        fprintf('[ULMO><a href="matlab: open(''%s'')">%s</a>] %s\n', ...
-            mfilename("fullpath"), mfilename, msg);
+        fprintf('[ULMO>%s] %s\n', callchaintext(callChain), msg);
     end
 
     try
@@ -187,7 +188,7 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
 
         if ~beQuiet
             fprintf(repmat('\b', 1, length(msg) + 1));
-            fprintf('saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">domain mask</a>, took %.1f seconds.', ...
+            fprintf('saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">domain mask</a>, took %.1f seconds.\n', ...
                 dataPath, dataPath, toc(t));
         end
 

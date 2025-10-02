@@ -33,7 +33,7 @@
 %   2024/11/20, williameclee@arizona.edu (@williameclee)
 %
 % Last modified by
-%   2025/05/29, williameclee@arizona.edu (@williameclee)
+%   2025/08/03, williameclee@arizona.edu (@williameclee)
 
 function [plm, K] = localise(plm, varargin)
     ip = inputParser;
@@ -46,6 +46,7 @@ function [plm, K] = localise(plm, varargin)
     addParameter(ip, 'KernelOrder', [], @isvector);
     addParameter(ip, 'IsError', false, ...
         @(x) (islogical(x) || isnumeric(x)) && isscalar(x));
+    addParameter(ip, 'BeQuiet', true, @(x) islogical(x) || isnumeric(x));
     parse(ip, plm, varargin{:});
     plm = ip.Results.Plm;
     domain = ip.Results.domain;
@@ -54,6 +55,7 @@ function [plm, K] = localise(plm, varargin)
     K = ip.Results.K;
     j2 = ip.Results.KernelOrder;
     isError = ip.Results.IsError;
+    beQuiet = ip.Results.BeQuiet;
 
     is3d = ndims(plm) == 3;
 
@@ -110,7 +112,7 @@ function [plm, K] = localise(plm, varargin)
     end
 
     if isempty(K)
-        K = kernelcp_new(L, domain);
+        K = kernelcp_new(L, domain, "BeQuiet", beQuiet);
     end
 
     if isInverted

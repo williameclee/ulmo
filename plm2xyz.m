@@ -295,8 +295,8 @@ function varargout = plm2xyz(varargin)
 
     end
 
-    lat = rad2deg(lon);
-    lon = 90 - rad2deg(col);
+    lon = rad2deg(lon);
+    lat = 90 - rad2deg(col);
 
     if flipLat
         lat = flip(lat);
@@ -304,7 +304,7 @@ function varargout = plm2xyz(varargin)
     end
 
     % Prepare output
-    varargout = {r, lat, lon, Plm, meshSize};
+    varargout = {r, lon, lat, Plm, meshSize};
 end
 
 %% Subfunctions

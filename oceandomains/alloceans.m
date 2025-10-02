@@ -86,38 +86,36 @@ function varargout = alloceans(varargin)
     end
 
     % Parse the inputs
-    lonOriginD = 180;
+    lonOriginD = 200;
     [upscale, latlim, buf, moreBufs, lonOrigin, ~, ...
          forceNew, saveData, beQuiet] = ...
         parseoceaninputs(varargin, 'DefaultLonOrigin', lonOriginD);
 
     %% Check if the data file exists
-    [dataFile, ~, dataExists] = oceanfilename(mfilename, ...
+    [dataFile, ~, ~] = oceanfilename(mfilename, ...
         'Upscale', upscale, 'Latlim', latlim, ...
         'Buffer', buf, 'MoreBuffers', moreBufs);
 
-    if dataExists && ~forceNew
+    if ~forceNew && exist(dataFile, 'file') && ...
+            all(ismember({'XY', 'p'}, who('-file', dataFile)))
         load(dataFile, 'XY', 'p')
 
-        % Make sure the requested data exists
-        if exist('XY', 'var') && exist('p', 'var')
-
-            if beQuiet < 2
-                fprintf('%s loaded %s\n', upper(mfilename), dataFile)
-            end
-
-            if lonOrigin ~= lonOriginD
-                [Y, X] = flatearthpoly(XY(:, 2), XY(:, 1), lonOrigin);
-                warning('off', 'all');
-                p = polyshape(X, Y);
-                warning('on', 'all');
-                XY = poly2xy(p);
-            end
-
-            varargout = returncoastoutputs(nargout, XY, p);
-
-            return
+        if beQuiet < 2
+            fprintf('%s loaded %s\n', upper(mfilename), dataFile)
         end
+
+        if lonOrigin ~= lonOriginD
+            p1 = polyshape(XY);
+            p2 = polyshape(XY(:, 1) - 360, XY(:, 2));
+            p = union([p1, p2]);
+            bbox = polyshape([-180, 180, 180, -180] + lonOrigin, [-90, -90, 90, 90]);
+            p = intersect(p, bbox);
+            XY = poly2xy(p);
+        end
+
+        varargout = returncoastoutputs(nargout, XY, p);
+
+        return
 
     end
 

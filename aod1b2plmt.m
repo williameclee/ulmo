@@ -32,8 +32,8 @@
 %       The default field is 'SD'.
 %   TimeRange - Time range of the output
 %       When specified, the output will be truncated to the specified time
-%       range. If the input has two elements, it is interpreted as the 
-%       start and end of the time range; if the input has more than two 
+%       range. If the input has two elements, it is interpreted as the
+%       start and end of the time range; if the input has more than two
 %       elements, it is interpreted as a list of time stamps.
 %       The default time range is [] (all available data).
 %       Data type: datetime | ([numeric])
@@ -89,7 +89,7 @@ function varargout = aod1b2plmt(varargin)
     %% Initialisation
     % Parse inputs
     [Pcenter, Rlevel, product, Loutput, unit, timelim, ...
-         outputFmt, timeFmt, forceNew, saveData, beQuiet] = ...
+         outputFmt, timeFmt, rmOceanMean, oceanDomain, forceNew, saveData, beQuiet] = ...
         parseinputs(varargin{:});
 
     % If this file already exists, load it.  Otherwise, or if we force it, make
@@ -216,6 +216,10 @@ function varargout = parseinputs(varargin)
         @(x) ischar(validatestring(x, {'timefirst', 'traditional'})));
     addParameter(ip, 'TimeFormat', 'datenum', ...
         @(x) ischar(validatestring(x, {'datetime', 'datenum'})));
+    addParameter(ip, 'RemoveOceanMean', false, ...
+        @(x) (isnumeric(x) || islogical(x)) && isscalar(x));
+    addParameter(ip, 'OceanDomain', GeoDomain('alloceans', "Buffer", 0.5), ...
+        @(x) (isnumeric(x) || islogical(x)) && isscalar(x));
     addParameter(ip, 'ForceNew', false, ...
         @(x) (isnumeric(x) || islogical(x)) && isscalar(x));
     addParameter(ip, 'SaveData', true, ...
@@ -237,6 +241,8 @@ function varargout = parseinputs(varargin)
     timelim = ip.Results.TimeRange;
     outputFmt = ip.Results.OutputFormat;
     timeFmt = ip.Results.TimeFormat;
+    rmOceanMean = logical(ip.Results.RemoveOceanMean);
+    oceanDomain = ip.Results.OceanDomain;
     forceNew = logical(ip.Results.ForceNew);
     saveData = logical(ip.Results.SaveData);
     beQuiet = uint8(double(ip.Results.BeQuiet) * 2);
@@ -251,7 +257,7 @@ function varargout = parseinputs(varargin)
 
     varargout = ...
         {Pcenter, Rlevel, product, Loutput, unit, timelim, ...
-         outputFmt, timeFmt, forceNew, saveData, beQuiet};
+         outputFmt, timeFmt, rmOceanMean, oceanDomain, forceNew, saveData, beQuiet};
 end
 
 % Get the input folder and output file names

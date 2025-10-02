@@ -10,7 +10,7 @@
 %   2025/05/22, williameclee@arizona.edu (@williameclee)
 %
 % Last modified by
-%   2025/05/28, williameclee@arizona.edu (@williameclee)
+%   2025/08/`3, williameclee@arizona.edu (@williameclee)
 
 function output = convertgravity(varargin)
     %% Initialisation
@@ -134,6 +134,10 @@ function sd = pot2sd(pot, degree, avgDensity, inputFmt, timeDim)
             end
 
         case 'cosi'
+            error('Not implemented yet for COSI format');
+        case 'L'
+            lovenum = lovenumber(degree, 'loadinggravitationalpotential');
+            sd = avgDensity / 3 * (2 .* degree + 1) ./ (1 + lovenum) .* pot;
     end
 
 end

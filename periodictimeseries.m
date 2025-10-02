@@ -95,9 +95,17 @@ function varargout = periodictimeseries(t, varargin)
     if ~isempty(sigma)
         W = diag(1 ./ sigma .^ 2);
         coeffs = (X' * W * X) \ (X' * W * x);
-        coeffSigmas = sqrt(diag(inv(X' * W * X)));
+        residuals = x - X * coeffs;
+        weighted_residual_variance = sum((residuals ./ sigma) .^ 2) / (N - size(X, 2));
+        cov_matrix = weighted_residual_variance \ (X' * W * X);
+        coeffSigmas = sqrt(diag(cov_matrix));
     else
         coeffs = X \ x;
+        % Estimate uncertainties of coeffs when sigma is not provided
+        residuals = x - X * coeffs;
+        residual_variance = sum(residuals .^ 2) / (N - size(X, 2));
+        cov_matrix = residual_variance \ (X' * X);
+        coeffSigmas = sqrt(diag(cov_matrix));
     end
 
     dataFit = X * coeffs;
@@ -105,10 +113,8 @@ function varargout = periodictimeseries(t, varargin)
     polyCoeffs = coeffs(1:p + 1);
     periodicCoeffs = coeffs(p + 2:end);
 
-    if ~isempty(sigma)
-        polyCoeffSigmas = coeffSigmas(1:p + 1);
-        periodicCoeffSigmas = coeffSigmas(p + 2:end);
-    end
+    polyCoeffSigmas = coeffSigmas(1:p + 1);
+    periodicCoeffSigmas = coeffSigmas(p + 2:end);
 
     if strcmp(periodicFormat, "amp-phase")
         periodicCoeffs = reshape(periodicCoeffs, [2, numel(periods)]);
@@ -121,11 +127,6 @@ function varargout = periodictimeseries(t, varargin)
             periodicCoeffs(:, 2) = periodicCoeffs(:, 2) / (2 * pi) * days(years(1));
         end
 
-    end
-
-    if isempty(sigma)
-        varargout = {polyCoeffs, periodicCoeffs, dataFit};
-        return;
     end
 
     if strcmp(periodicFormat, "amp-phase")
