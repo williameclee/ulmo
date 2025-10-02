@@ -100,14 +100,14 @@
 %   2025/03/18, williameclee@arizona.edu (@williameclee)
 %
 % Last modified by
-%   2025/08/13, williameclee@arizona.edu (@williameclee)
+%   2025/10/01, williameclee@arizona.edu (@williameclee)
 
 function varargout = solvedegree1(varargin)
     %% Initialisation
     % Parse inputs
     [pcenter, rlevel, Ldata, Ltruncation, Lsle, giaModel, oceanDomain, ...
          includeC20, includeC30, replaceWGad, method, timelim, unit, ...
-         forceNew, saveData, beQuiet, onlyId] = ...
+         forceNew, saveData, beQuiet, onlyId, callChain] = ...
         parseinputs(varargin);
 
     [dataPath, ~, outputId] = ...
@@ -119,24 +119,21 @@ function varargout = solvedegree1(varargin)
         return
     end
 
-    if exist(dataPath, 'file') && ~forceNew
-        load(dataPath, 'coeffs', 'coeffStds', 'dates')
+    vars = {'coeffs', 'coeffStds', 'dates'};
 
-        if exist('coeffs', 'var') && exist('coeffStds', 'var') && exist('dates', 'var')
+    if ~forceNew && exist(dataPath, 'file') && ...
+            all(ismember(vars, who('-file', dataPath)))
+        data = load(dataPath, vars{:});
 
-            if beQuiet <= 1
-                fprintf('%s loaded %s\n', upper(mfilename), dataPath)
-            end
-
-            varargout = formatoutput(coeffs, coeffStds, dates, timelim, unit, nargout, [includeC20, includeC30], ...
-                {pcenter, rlevel, Ldata}, beQuiet);
-
-            return
-        elseif beQuiet <= 1
-            warning(sprintf('%s:LoadData:MissingVariables', upper(mfilename)), ...
-                'One or more variables are missing in the file %s, recomputing...', ...
-                outputPath);
+        if beQuiet <= 1
+            fprintf('[ULMO>%s] Loaded <a href="matlab: fprintf(''%s\\n'');open(''%s'')">recomputed degree-1 data</a>.\n', ...
+                callchaintext(callChain), dataPath, dataPath);
         end
+
+        varargout = formatoutput(data.coeffs, data.coeffStds, data.dates, timelim, unit, nargout, [includeC20, includeC30], ...
+            {pcenter, rlevel, Ldata}, beQuiet);
+
+        return
 
     end
 
@@ -148,7 +145,8 @@ function varargout = solvedegree1(varargin)
         save(dataPath, 'coeffs', 'coeffStds', 'dates')
 
         if beQuiet <= 1
-            fprintf('%s saved %s\n', upper(mfilename), dataPath)
+            fprintf('[ULMO>%s] Saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">recomputed degree-1 data</a>.\n', ...
+                callchaintext(callChain), dataPath, dataPath);
         end
 
     end
@@ -380,6 +378,7 @@ function varargout = parseinputs(inputs)
         @(x) (isnumeric(x) || islogical(x)) && isscalar(x));
     addParameter(ip, 'OnlyId', false, ...
         @(x) (isnumeric(x) || islogical(x)) && isscalar(x));
+    addParameter(ip, 'CallChain', {}, @iscell);
 
     if iscell(inputs{1})
         inputs = [inputs{1}{:}, inputs(2:end)];
@@ -404,6 +403,7 @@ function varargout = parseinputs(inputs)
     saveData = logical(ip.Results.SaveData);
     beQuiet = double(ip.Results.BeQuiet) * 2;
     onlyId = logical(ip.Results.OnlyId);
+    callChain = [ip.Results.CallChain, {mfilename}];
 
     if ~isempty(regexp(lower(giaModel), '^ice[-]?6g[_-]?d$', 'once'))
         giaModel = 'ICE6GD';
@@ -416,7 +416,7 @@ function varargout = parseinputs(inputs)
     varargout = ...
         {pcenter, rlevel, Ldata, Ltruncation, Lsle, giaModel, oceanDomain, ...
          includeC20, includeC30, replaceWGad, method, timelim, unit, ...
-         forceNew, saveData, beQuiet, onlyId};
+         forceNew, saveData, beQuiet, onlyId, callChain};
 end
 
 % Get the input and output file names

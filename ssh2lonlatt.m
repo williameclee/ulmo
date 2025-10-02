@@ -1,5 +1,6 @@
 %% SSH2LONLATT
-% Loads sea surface height (SSH) anomaly data and interpolate to regular latitude-longitude mesh.
+% Loads sea surface height (SSH) anomaly data and interpolate to regular
+% latitude-longitude mesh.
 %
 % Syntax
 %   [ssh, sigma, dates] = SSH2LONLATT(product)
@@ -79,7 +80,7 @@
 % Authored by
 %	2025/05/19, williameclee@arizona.edu (@williameclee)
 % Last modified by
-%	2025/09/15, williameclee@arizona.edu (@williameclee)
+%	2025/10/01, williameclee@arizona.edu (@williameclee)
 
 function [ssh, sshSigma, dates, lon, lat] = ssh2lonlatt(product, timestep, meshsize, timelim, options)
 
@@ -87,13 +88,13 @@ function [ssh, sshSigma, dates, lon, lat] = ssh2lonlatt(product, timestep, meshs
         product SSHProduct {mustBeScalarOrEmpty} = 'MEaSUREs'
         timestep {mustBeTimeStep} = []
         meshsize {mustBePositive} = []
-        timelim {mustBeTimeRange} = []
+        timelim (1, 2) {mustBeA(timelim, {'datetime', 'numeric'})} = []
         options.LonOrigin {mustBeFinite, mustBeReal} = []
-        options.Interpolation (1, :) char ...
-            {mustBeMember(options.Interpolation, {'linear', 'nearest', 'next', 'previous', 'spline', 'pchip'})} = 'linear'
+        options.Interpolation ...
+            {mustBeTextScalar, mustBeMember(options.Interpolation, {'linear', 'nearest', 'next', 'previous', 'spline', 'pchip'})} = 'linear'
         options.TimeFormat (1, :) DateFormat = 'datetime'
         options.OutputFormat (1, :) MeshFormat = 'meshgrid'
-        options.Unit (1, :) char {mustBeMember(options.Unit, {'mm', 'm'})} = 'm'
+        options.Unit {mustBeTextScalar, mustBeMember(options.Unit, {'mm', 'm'})} = 'm'
         options.ForceNew (1, 1) {mustBeNumericOrLogical} = false
         options.BeQuiet (1, 1) {mustBeNumericOrLogical} = 0.5
         options.SaveData (1, 1) {mustBeNumericOrLogical} = true
@@ -122,6 +123,11 @@ function [ssh, sshSigma, dates, lon, lat] = ssh2lonlatt(product, timestep, meshs
 
     if ~isempty(timelim) && isnumeric(timelim)
         timelim = datetime(timelim, 'ConvertFrom', 'datenum');
+    end
+
+    if ~isempty(timelim) && timelim(1) > timelim(2)
+        warning('The start time (%s) is later than the end time (%s), flipping the order.', timelim(1), timelim(2));
+        timelim = fliplr(timelim);
     end
 
     outputFolder = fullfile(getenv('IFILES'), char(product));
@@ -339,7 +345,7 @@ function [sshs, sshErrors, dates, lon, lat] = loadAggregatedRawData( ...
     end
 
     if ~exist(inputFolder, 'dir')
-        error(sprintf('%s:InputNotFound', upper(mfilename)), ...
+        error('ULMO:LoadData:FileNotFound', ...
             'Input folder not found at %s\n', inputFolder);
     end
 
@@ -347,7 +353,7 @@ function [sshs, sshErrors, dates, lon, lat] = loadAggregatedRawData( ...
     inputFiles = {dir(fullfile(inputFolder, inputFileTemplate)).name};
 
     if isempty(inputFiles)
-        error(sprintf('%s:InputNotFound', upper(mfilename)), ...
+        error('ULMO:LoadData:FileNotFound', ...
             'No input files found at %s, data can be accessed from <a href="%s">PO.DAAC</a>\n', ...
             inputFolder, 'https://podaac.jpl.nasa.gov/dataset/SEA_SURFACE_HEIGHT_ALT_GRIDS_L4_2SATS_5DAY_6THDEG_V_JPL2205');
     end
@@ -486,9 +492,6 @@ function varargout = ...
         case 'mm'
             sshs = sshs * 1e3;
             sshErrors = sshErrors * 1e3;
-        otherwise
-            error(sprintf('%s:InvalidUnit', upper(mfilename)), ...
-                'Unrecognised unit for sea surface height %s', unit);
     end
 
     varargout = {sshs, sshErrors, dates, lon, lat};
@@ -509,7 +512,7 @@ function outputPath = ...
         elseif isnumeric(timeStep)
             timeStepStr = sprintf('-T%d', timeStep);
         else
-            error(sprintf('%s:InvalidTimeStep', upper(mfilename)), ...
+            error(sprintf('ULMO:%s:InvalidTimeStep', upper(mfilename)), ...
                 'Unrecognised time step input for saving: %s', class(timeStep));
         end
 

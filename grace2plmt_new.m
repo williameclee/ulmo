@@ -118,18 +118,18 @@
 %   printed to the log file instead.
 %
 % Last modified by
-%   2025/08/04, williameclee@arizona.edu (@williameclee)
+%   2025/10/01, williameclee@arizona.edu (@williameclee)
 %   2022/05/18, charig@email.arizona.edu (@harig00)
 %   2020/11/09, lashokkumar@arizona.edu
 %   2019/03/18, mlubeck@email.arizona.edu
 %   2011/05/17, fjsimons@alum.mit.edu (@fjsimons)
 
-function varargout = grace2plmt_new(varargin)
+function [gracePlmt, graceStdPlmt, dates] = grace2plmt_new(varargin)
     %% Initialisation
     % Parse inputs
     [Pcenter, Rlevel, Ldata, unit, timelim, redoDeg1, ...
-         deg1corr, c20corr, c30corr, outputFmt, timeFmt, ...
-         forceNew, saveData, beQuiet] = ...
+         deg1corr, c20corr, c30corr, outputFmt, timeFmt, Loutput, ...
+         forceNew, saveData, beQuiet, callChain] = ...
         parseinputs(varargin{:});
 
     % Find the coefficient files
@@ -138,34 +138,19 @@ function varargout = grace2plmt_new(varargin)
 
     % If this file already exists, load it.  Otherwise, or if we force it, make
     % a new one (e.g. you added extra months to the database).
+    vars = {'gracePlmt', 'graceStdPlmt', 'dates'};
+
     if exist(outputPath, 'file') && ...
             (forceNew == 0 || ...
-            (forceNew == 1 && isolder(inputFolder, outputPath, false)))
-        load(outputPath, ...
-            'gracePlmt', 'graceStdPlmt', 'dates')
-
-        if ~(exist('gracePlmt', 'var') && ...
-                exist('graceStdPlmt', 'var') && ...
-                exist('dates', 'var'))
-            forceNew = true;
-
-            if beQuiet <= 1
-                warning(sprintf('%s:LoadData:MissingVariables', upper(mfilename)), ...
-                    'One or more variables are missing in the file %s, recomputing...', ...
-                    outputPath);
-            end
-
-        else
-            forceNew = false;
-        end
+            (forceNew == 1 && isolder(inputFolder, outputPath, false))) && all(ismember(vars, who('-file', outputPath)))
+        load(outputPath, vars{:})
 
         if beQuiet <= 1
-            fprintf('%s loaded %s\n', upper(mfilename), outputPath)
+            fprintf('[ULMO>%s] Loaded <a href="matlab: fprintf(''%s\\n'');open(''%s'')">GRACE data</a>.\n', ...
+                callchaintext(callChain), outputPath, outputPath);
         end
 
-    end
-
-    if forceNew
+    else
         % Reload from the raw data
         [gracePlmt, graceStdPlmt, dates, gravityParam, equatorRadius] = ...
             grace2plmtCore(Pcenter, Rlevel, Ldata, unit, inputFolder, ...
@@ -173,10 +158,11 @@ function varargout = grace2plmt_new(varargin)
 
         if saveData
             save(outputPath, ...
-                'gracePlmt', 'graceStdPlmt', 'dates', 'gravityParam', 'equatorRadius');
+                vars{:}, 'gravityParam', 'equatorRadius');
 
             if beQuiet <= 1
-                fprintf('%s saved %s\n', upper(mfilename), outputPath)
+                fprintf('[ULMO>%s] Saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">GRACE data</a>.\n', ...
+                    callchaintext(callChain), outputPath, outputPath);
             end
 
         end
@@ -187,7 +173,8 @@ function varargout = grace2plmt_new(varargin)
     % Recalculate degree 1 coefficients
     if iscell(redoDeg1)
         [myDeg1, myDeg1Std, myDeg1Dates] = ...
-            solvedegree1(Pcenter, Rlevel, redoDeg1{:}, "Unit", unit, "BeQuiet", beQuiet);
+            solvedegree1(Pcenter, Rlevel, redoDeg1{:}, "Unit", unit, ...
+            "BeQuiet", beQuiet, "CallChain", callChain);
 
         if size(myDeg1, 1) > size(gracePlmt, 1)
             [~, isValidTime] = ismember(myDeg1Dates, dates);
@@ -203,19 +190,11 @@ function varargout = grace2plmt_new(varargin)
         graceStdPlmt(:, 2, 3) = myDeg1Std(:, 1);
         graceStdPlmt(:, 3, 3) = myDeg1Std(:, 2);
         graceStdPlmt(:, 3, 4) = myDeg1Std(:, 3);
-
-        if beQuiet <= 1
-            fprintf('%s replaced degree 1 coefficients with SOLVEDEGREE1\n', ...
-                upper(mfilename))
-        end
-
     end
 
     % Format output
     [gracePlmt, graceStdPlmt, dates] = ...
-        formatoutput(gracePlmt, graceStdPlmt, dates, timelim, outputFmt, timeFmt);
-
-    varargout = {gracePlmt, graceStdPlmt, dates};
+        formatoutput(gracePlmt, graceStdPlmt, dates, timelim, outputFmt, timeFmt, Loutput);
 end
 
 %% Subfunctions
@@ -377,6 +356,7 @@ function varargout = parseinputs(varargin)
     dfOpt.RecomputeDegree1 = false;
     dfOpt.OutputFormat = 'timefirst';
     dfOpt.TimeFormat = 'datenum';
+    dfOpt.Loutput = [];
     dfOpt.ForceNew = 0.5;
     dfOpt.SaveData = true;
     dfOpt.BeQuiet = 0.5;
@@ -405,12 +385,15 @@ function varargout = parseinputs(varargin)
         @(x) ischar(validatestring(x, {'timefirst', 'traditional'})));
     addParameter(ip, 'TimeFormat', dfOpt.TimeFormat, ...
         @(x) ischar(validatestring(x, {'datetime', 'datenum'})));
+    addParameter(ip, 'Loutput', dfOpt.Loutput, ...
+        @(x) (isscalar(x) && isnumeric(x) && x > 0) || isempty(x));
     addParameter(ip, 'ForceNew', dfOpt.ForceNew, ...
         @(x) (isnumeric(x) || islogical(x)) && isscalar(x));
     addParameter(ip, 'SaveData', dfOpt.SaveData, ...
         @(x) (isnumeric(x) || islogical(x)) && isscalar(x));
     addParameter(ip, 'BeQuiet', dfOpt.BeQuiet, ...
         @(x) (isnumeric(x) || islogical(x)) && isscalar(x));
+    addParameter(ip, 'CallChain', {}, @iscell);
 
     if ~isempty(varargin) && iscell(varargin{1})
         varargin = [varargin{1}{:}, varargin(2:end)];
@@ -434,11 +417,13 @@ function varargout = parseinputs(varargin)
     outputFmt = ...
         conddefval(ip.Results.OutputFormat, dfOpt.OutputFormat);
     timeFmt = conddefval(ip.Results.TimeFormat, dfOpt.TimeFormat);
+    Loutput = conddefval(ip.Results.Loutput, dfOpt.Loutput);
     forceNew = ...
         uint8(double(conddefval(ip.Results.ForceNew, dfOpt.ForceNew)) * 2);
     saveData = conddefval(logical(ip.Results.SaveData), dfOpt.SaveData);
     beQuiet = ...
         uint8(double(conddefval(ip.Results.BeQuiet, dfOpt.BeQuiet)) * 2);
+    callChain = [ip.Results.CallChain, {mfilename}];
 
     if isnumeric(Rlevel)
         Rlevel = sprintf('RL%02d', floor(Rlevel));
@@ -449,20 +434,20 @@ function varargout = parseinputs(varargin)
     end
 
     if islogical(redoDeg1) && redoDeg1
-        redoDeg1 = {60, 180, 'ice6gd', GeoDomain('alloceans', "Buffer", 0.5)};
+        redoDeg1 = {60, [], 180, 'ice6gd', GeoDomain('alloceans', "Buffer", 0.5)};
     elseif ischar(redoDeg1)
-        redoDeg1 = {60, 180, redoDeg1, GeoDomain('alloceans', "Buffer", 0.5)};
+        redoDeg1 = {60, [], 180, redoDeg1, GeoDomain('alloceans', "Buffer", 0.5)};
     end
 
     varargout = ...
         {Pcenter, Rlevel, Ldata, unit, timelim, redoDeg1, ...
-         deg1correction, c20correction, c30correction, outputFmt, timeFmt, ...
-         forceNew, saveData, beQuiet};
+         deg1correction, c20correction, c30correction, outputFmt, timeFmt, Loutput, ...
+         forceNew, saveData, beQuiet, callChain};
 end
 
 % Format the output
 function [gracePlmt, graceStdPlmt, dates] = ...
-        formatoutput(gracePlmt, graceStdPlmt, dates, timelim, outputFmt, timeFmt)
+        formatoutput(gracePlmt, graceStdPlmt, dates, timelim, outputFmt, timeFmt, Loutput)
 
     if ~isempty(timelim)
         % Only keep the data within the specified time range
@@ -470,6 +455,19 @@ function [gracePlmt, graceStdPlmt, dates] = ...
         gracePlmt = gracePlmt(isValidTime, :, :);
         graceStdPlmt = graceStdPlmt(isValidTime, :, :);
         dates = dates(isValidTime);
+    end
+
+    if ~isempty(Loutput)
+
+        if size(gracePlmt, 2) > addmup(Loutput)
+            gracePlmt = gracePlmt(:, 1:addmup(Loutput), :);
+            graceStdPlmt = graceStdPlmt(:, 1:addmup(Loutput), :);
+        elseif size(gracePlmt, 2) < addmup(Loutput)
+            [order, degree] = addmon(Loutput);
+            gracePlmt(:, 1:addmup(Loutput), 1) = repmat(reshape(degree, 1, 1, []), [size(gracePlmt, 1), addmup(Loutput), 1]);
+            gracePlmt(:, 1:addmup(Loutput), 2) = repmat(reshape(order, 1, 1, []), [size(gracePlmt, 1), addmup(Loutput), 1]);
+        end
+
     end
 
     if strcmp(outputFmt, 'traditional')

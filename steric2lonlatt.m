@@ -83,7 +83,7 @@
 % Authored by
 %	2025/07/22, williameclee@arizona.edu (@williameclee)
 % Last modified by
-%	2025/09/15, williameclee@arizona.edu (@williameclee)
+%	2025/10/01, williameclee@arizona.edu (@williameclee)
 
 function [steric, stericSigma, dates, lon, lat] = steric2lonlatt(product, timestep, meshsize, timelim, options)
     %% Initialisation
@@ -103,6 +103,7 @@ function [steric, stericSigma, dates, lon, lat] = steric2lonlatt(product, timest
         options.ForceNew (1, 1) {mustBeNumericOrLogical} = false
         options.BeQuiet (1, 1) {mustBeNumericOrLogical} = 0.5
         options.SaveData (1, 1) {mustBeNumericOrLogical} = true
+        options.CallChain cell = {};
     end
 
     arguments (Output)
@@ -122,6 +123,7 @@ function [steric, stericSigma, dates, lon, lat] = steric2lonlatt(product, timest
     forceNew = options.ForceNew;
     beQuiet = uint8(double(options.BeQuiet) * 2);
     saveData = options.SaveData;
+    callChain = [options.CallChain, {mfilename}];
 
     if ~isempty(timelim) && isnumeric(timelim)
         timelim = datetime(timelim, 'ConvertFrom', 'datenum');
@@ -156,8 +158,8 @@ function [steric, stericSigma, dates, lon, lat] = steric2lonlatt(product, timest
         if beQuiet <= 1
             t = tic;
             msg = 'this may take a while...';
-            fprintf('[ULMO><a href="matlab: open(''%s'')">%s</a>] Loading <a href="matlab: fprintf(''%s\\n'');open(''%s'')">steric product</a>, %s\n', ...
-                mfilename("fullpath"), mfilename, outputPath, outputPath, msg);
+            fprintf('[ULMO>%s] Loading <a href="matlab: fprintf(''%s\\n'');open(''%s'')">steric product</a>, %s\n', ...
+                callchaintext(callChain), outputPath, outputPath, msg);
         end
 
         data = load(outputPath, 'lon', 'lat', 'dates', stericVar);
@@ -184,7 +186,7 @@ function [steric, stericSigma, dates, lon, lat] = steric2lonlatt(product, timest
     inputPath = outputpath(product, [], [], [], []);
 
     if ~exist(inputPath, 'file')
-        error('ULMO:LoadData:MethodNotImplemented', ...
+        error('ULMO:LoadData:FileNotFound', ...
             'Input file %s not found.', inputPath);
     end
 
@@ -198,8 +200,8 @@ function [steric, stericSigma, dates, lon, lat] = steric2lonlatt(product, timest
     data = load(inputPath, 'lon', 'lat', 'dates', stericVar);
 
     if beQuiet == 0
-        fprintf('[ULMO><a href="matlab: open(''%s'')">%s</a>] Loaded uninterpolated <a href="matlab: fprintf(''%s\\n'');open(''%s'')">steric product</a>.\n', ...
-            mfilename("fullpath"), mfilename, outputPath, outputPath);
+        fprintf('[ULMO>%s] Loaded uninterpolated <a href="matlab: fprintf(''%s\\n'');open(''%s'')">steric product</a>.\n', ...
+            callchaintext(callChain), outputPath, outputPath);
     end
 
     if ~isempty(timestep)
@@ -230,8 +232,8 @@ function [steric, stericSigma, dates, lon, lat] = steric2lonlatt(product, timest
         end
 
         if beQuiet <= 1
-            fprintf('[ULMO><a href="matlab: open(''%s'')">%s</a>] Saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">steric product</a>.\n', ...
-                mfilename("fullpath"), mfilename, outputPath, outputPath);
+            fprintf('[ULMO>%s] Saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">steric product</a>.\n', ...
+                callchaintext(callChain), outputPath, outputPath);
         end
 
     end

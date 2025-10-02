@@ -45,7 +45,7 @@
 %   SPHAREA
 %
 % Last modified by
-%   2025/06/02, williameclee@arizona.edu (@williameclee)
+%   2025/10/01, williameclee@arizona.edu (@williameclee)
 
 classdef GeoDomain
 
@@ -98,6 +98,15 @@ classdef GeoDomain
 
         % The identifier for file names, etc.
         function id = Id(obj)
+
+            arguments (Input)
+                obj (1, 1) GeoDomain
+            end
+
+            arguments (Output)
+                id (1, :) char
+            end
+
             id = ...
                 [capitalise(char(obj.Domain)), dataattrchar( ...
                  "Upscale", obj.Upscale, "Buffer", obj.Buffer, ...
@@ -105,41 +114,38 @@ classdef GeoDomain
         end
 
         % Display name
-        function displayName = DisplayName(obj, varargin)
-            p = inputParser;
-            addOptional(p, 'Format', 'short', ...
-                @(x) (ischar(x) || isstring(x)));
-            parse(p, varargin{:});
-            format = p.Results.Format;
+        function displayName = DisplayName(obj, fmt)
 
-            displayName = domainname(obj.Domain, format);
+            arguments (Input)
+                obj (1, 1) GeoDomain
+                fmt (1, :) = 'short'
+            end
+
+            arguments (Output)
+                displayName (1, :) char
+            end
+
+            displayName = domainname(obj.Domain, fmt);
 
         end
 
         % Longitude and latitude arrays
-        function varargout = Lonlat(obj, varargin)
-            ip = inputParser;
-            addOptional(ip, 'LonOrigin', [], ...
-                @(x) isnumeric(x) && isscalar(x));
-            addParameter(ip, 'RotateBack', false, ...
-                @istruefalse);
-            addParameter(ip, 'Anchors', false, ...
-                @istruefalse);
-            addParameter(ip, 'Inverse', false, ...
-                @istruefalse);
-            addParameter(ip, 'OutputFormat', 'lonlat', ...
-                @(x) ischar(validatestring(x, {'lonlat', 'latlon', 'polyshape'})));
-            parse(ip, varargin{:});
-            lonOrigin = ip.Results.LonOrigin;
-            rotateBack = logical(ip.Results.RotateBack);
-            addAnchors = logical(ip.Results.Anchors);
-            inverse = logical(ip.Results.Inverse);
-            outputFmt = ip.Results.OutputFormat;
+        function varargout = Lonlat(obj, lonOrigin, options)
 
-            if rotateBack && ...
+            arguments (Input)
+                obj (1, 1) GeoDomain
+                lonOrigin {mustBeScalarOrEmpty, mustBeFinite} = []
+                options.RotateBack (1, 1) {mustBeNumericOrLogical} = false
+                options.Anchors (1, 1) {mustBeNumericOrLogical} = false
+                options.Inverse (1, 1) {mustBeNumericOrLogical} = false
+                options.OutputFormat (1, :) ...
+                    {mustBeTextScalar, mustBeMember(options.OutputFormat, {'lonlat', 'latlon', 'polyshape'})} = 'lonlat'
+            end
+
+            if options.RotateBack && ...
                     ~ismember(obj.Domain, {'antarctica', 'arctic'})
-                rotateBack = false;
-                warning('GeoDomain:unsupportedRotateBack', ...
+                options.RotateBack = false;
+                warning('ULMO:GeoDomain:unsupportedRotateBack', ...
                 'RotateBack is only supported for Antarctica');
             end
 
@@ -147,17 +153,17 @@ classdef GeoDomain
                 [lonlat, lonc, latc] = feval(obj.Domain, "Upscale", obj.Upscale, ...
                     "Buffer", obj.Buffer, "Latlim", obj.Latlim, ...
                     "NearBy", obj.NearBy, "LonOrigin", lonOrigin, ...
-                    "MoreBuffers", obj.MoreBuffers, "RotateBack", rotateBack, ...
+                    "MoreBuffers", obj.MoreBuffers, "RotateBack", options.RotateBack, ...
                     'BeQuiet', true);
             catch
                 lonlat = feval(obj.Domain, "Upscale", obj.Upscale, ...
                     "Buffer", obj.Buffer, "Latlim", obj.Latlim, ...
                     "NearBy", obj.NearBy, "LonOrigin", lonOrigin, ...
-                    "MoreBuffers", obj.MoreBuffers, "RotateBack", rotateBack, ...
+                    "MoreBuffers", obj.MoreBuffers, "RotateBack", options.RotateBack, ...
                     'BeQuiet', true);
             end
 
-            if inverse
+            if options.Inverse
                 lonlatP = polyshape(lonlat);
                 boxP = polyshape([-180, 180, 180, -180] + lonOrigin, ...
                     [-90, -90, 90, 90]);
@@ -165,14 +171,14 @@ classdef GeoDomain
                 lonlat = lonlatP.Vertices;
             end
 
-            if addAnchors
+            if options.Anchors
                 lonlat = addanchors(lonlat);
             end
 
             lon = lonlat(:, 1);
             lat = lonlat(:, 2);
 
-            switch outputFmt
+            switch options.OutputFormat
                 case 'lonlat'
                     % Do nothing
                 case 'latlon'
@@ -180,7 +186,7 @@ classdef GeoDomain
                 case 'polyshape'
                     lonlat = polyshape(lonlat);
                 otherwise
-                    error('Invalid output format: %s', outputFmt)
+                    error('Invalid output format: %s', options.OutputFormat)
             end
 
             if nargout > 0
@@ -200,7 +206,7 @@ classdef GeoDomain
                 return
             end
 
-            plotlonlat(lonlat, obj, rotateBack)
+            plotlonlat(lonlat, obj, options.RotateBack)
 
         end
 
@@ -218,11 +224,29 @@ classdef GeoDomain
 
         % Fractional area relative to the sphere
         function area = SphArea(obj)
+
+            arguments (Input)
+                obj (1, 1) GeoDomain
+            end
+
+            arguments (Output)
+                area (1, 1) double {mustBeFinitemustBeFinite, mustBeBetween(area, 0, 1)}
+            end
+
             area = spharea(obj.Lonlat);
         end
 
         % Total area in square metres
         function area = Area(obj)
+
+            arguments (Input)
+                obj (1, 1) GeoDomain
+            end
+
+            arguments (Output)
+                area (1, 1) double {mustBeFinite, mustBeNonnegative}
+            end
+
             earthRadius = 6371e3;
             area = spharea(obj.Lonlat) * (4 * pi * earthRadius ^ 2);
         end
