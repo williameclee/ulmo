@@ -25,20 +25,27 @@
 %   'North America'
 %
 % Last modified by
-%   2024/08/27, williameclee@arizona.edu (@williameclee)
+%   2025/10/01, williameclee@arizona.edu (@williameclee)
 
-function domainName = domainname(varargin)
-    p = inputParser;
-    addRequired(p, 'Domain', ...
-        @(x) ischar(x) || isstring(x) || iscell(x));
-    addOptional(p, 'Format', 'short', ...
-        @(x) (ischar(x) || isstring(x)) && ismember(x, {'abbrevation', 'abbr', 'short', 'long'}));
-    parse(p, varargin{:});
-    domain = p.Results.Domain;
-    format = char(p.Results.Format);
+function domainName = domainname(domain, format)
+
+    arguments (Input)
+        domain {mustBeA(domain, {'char', 'string', 'cell'})}
+        format {mustBeA(format, {'char', 'string'}), mustBeMember(format, {'abbrevation', 'abbr', 'short', 'long'})} = 'short'
+    end
+
+    arguments (Output)
+        domainName (1, :) char
+    end
 
     if iscell(domain)
         domain = domain{1};
+
+        if ~ischar(domain) && ~isstring(domain)
+            error ('ULMO:domainname:invalidDomain', ...
+            'If domain is a cell array, the first element should be a string.');
+        end
+
     end
 
     domain = lower(domain);
@@ -79,9 +86,9 @@ function domainName = domainname(varargin)
                 case 'abbrevation'
                     domainName = 'Global';
                 case 'short'
-                    domainName = 'All oceans';
+                    domainName = 'Global mean';
                 case 'long'
-                    domainName = 'All oceans';
+                    domainName = 'Global mean';
             end
 
         case 'atlantic'

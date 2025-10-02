@@ -110,7 +110,7 @@
 %   back...
 %
 % Last modified by
-%   2024/08/20, williameclee@arizona.edu (@williameclee)
+%   2025/06/02, williameclee@arizona.edu (@williameclee)
 %   2017/12/01, fjsimons@alum.mit.edu (@fjsimons)
 %   2016/06/27, charig@princeton.edu (@harig00)
 %   2016/10/11, plattner@alumni.ethz.ch (@AlainPlattner)
@@ -225,7 +225,7 @@ function varargout = glmalpha_new(varargin)
     %% Plot eignvalue-weighted maps
     if ~beQuiet
         fprintf('%s generating eigenvalue-weighted map, this make take a while...\n', ...
-        upper(mfilename))
+            upper(mfilename))
     end
 
     plotvweightmap(G, V, domain)
@@ -369,7 +369,7 @@ function [dataPath, dataExists, GM2AL, MTAP, IMTAP, xver] = ...
     end
 
     dataPath = fullfile(dataFolder, outputFile);
-    dataExists = exist(dataPath, 'file') == 2;
+    dataExists = isfile(dataPath);
 end
 
 function [lp, bp, maxL, ldim] = ldimension(L)

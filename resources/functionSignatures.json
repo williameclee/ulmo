@@ -1,0 +1,116 @@
+{
+  "_schemaVersion": "0.1.0",
+  "ssh2lonlatt": {
+    "inputs": [
+      {
+        "name": "product",
+        "kind": "ordered",
+        "type": ["char", "string", "choices={'MEaSUREs'}"],
+        "purpose": "name of the SSH product"
+      },
+      {
+        "name": "timestep",
+        "kind": "ordered",
+        "type": [
+          ["duration", ["numeric", ">0"]],
+          ["char", "string", "choices={'midmonth'}"]
+        ],
+        "purpose": "interpolation time step"
+      },
+      {
+        "name": "meshsize",
+        "kind": "ordered",
+        "type": ["numeric"],
+        "purpose": "interpolation time step"
+      },
+      {
+        "name": "timelim",
+        "kind": "ordered",
+        "type": ["numeric", "datetime"],
+        "purpose": "time range of data to read"
+      },
+      {
+        "name": "LonOrigin",
+        "kind": "namevalue",
+        "type": ["numeric", ">0"],
+        "purpose": "longitude centre of output grid"
+      },
+      {
+        "name": "Interpolation",
+        "kind": "namevalue",
+        "type": ["char", "string", "choices={'linear','nearest','spline','pchio'}"],
+        "purpose": "longitude centre of output grid"
+      },
+      {
+        "name": "TimeFormat",
+        "kind": "namevalue",
+        "type": ["char", "string", "choices={'datetime','datenum'}"],
+        "purpose": "Type of the time vector"
+      },
+      {
+        "name": "Unit",
+        "kind": "namevalue",
+        "type": ["char", "string", "choices={'m','mm'}"],
+        "purpose": "unit of output"
+      },
+      {
+        "name": "ForceNew",
+        "kind": "namevalue",
+        "type": ["logical"],
+        "purpose": "force reprocess data"
+      },
+      {
+        "name": "BeQuiet",
+        "kind": "namevalue",
+        "type": ["logical"],
+        "purpose": "suppress output messages"
+      },
+      {
+        "name": "SaveData",
+        "kind": "namevalue",
+        "type": ["logical"],
+        "purpose": "save processed data"
+      }
+    ]
+  },
+  "gia2plmt": {
+    "inputs": [
+      {
+        "name": "time",
+        "kind": "ordered",
+        "type": ["duration", "numeric", "datetime"],
+        "purpose": "time stamp of GIA"
+      },
+      {
+        "name": "model",
+        "kind": "ordered",
+        "type": ["char", "string", "choices={'Caron18', 'Caron19', 'A13', 'ICE6GD', 'Paulson07}"],
+        "purpose": "name of the GIA model"
+      },
+      {
+        "name": "L",
+        "kind": "ordered",
+        "type": ["numeric"],
+        "purpose": "degree/order of spherical harmonics"
+      },
+      {
+        "name": "Unit",
+        "kind": "namevalue",
+        "type": ["char", "string", "choices={'SD','POT'}"],
+        "purpose": "Unit of output"
+      },
+      {
+        "name": "OutputFormat",
+        "kind": "namevalue",
+        "type": ["char", "string", "choices={'timefirst','traditional'}"],
+        "purpose": "dimension order of output"
+      },
+      {
+        "name": "BeQuiet",
+        "kind": "namevalue",
+        "type": ["logical"],
+        "purpose": "suppress output messages"
+      }
+    ]
+  }
+}

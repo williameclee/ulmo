@@ -70,7 +70,7 @@
 %   OCEANPOLY, GSHHSCOASTLINE, BUFFER4OCEANS
 %
 % Last modified by
-%   2024/08/15, williameclee@arizona.edu (@williameclee)
+%   2025/06/02, williameclee@arizona.edu (@williameclee)
 
 function varargout = oceans(varargin)
     %% Initialisation
@@ -82,7 +82,7 @@ function varargout = oceans(varargin)
         varargout = {false};
         return
     end
-    
+
     % Parse the inputs
     lonOriginD = 200;
     [upscale, latlim, buf, moreBufs, lonOrigin, ~, ...
@@ -132,6 +132,12 @@ function varargout = oceans(varargin)
     % Crop out more buffers
     [~, coastPoly] = buffer4oceans(coastPoly, ...
         'MoreBuffers', moreBufs, 'LonOrigin', lonOrigin);
+    figure(998)
+    clf
+    hold on
+    plot(coastPoly)
+    plot(oceanPoly)
+    hold off
     % Manually remove small holes
     coastPoly = manualadjustments(coastPoly, buf, moreBufs, lonOrigin);
     % Subtract the land regions from the ocean boundary

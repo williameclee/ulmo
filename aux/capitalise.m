@@ -11,17 +11,28 @@
 %   sc - The capitalised string
 %
 % Last modified by
-%   2024/08/12, williameclee@arizona.edu (@williameclee)
+%   2025/08/15, williameclee@arizona.edu (@williameclee)
 
 function capitalisedString = capitalise(inputString)
+    isString = isstring(inputString);
     % Empty string
     if isempty(inputString)
-        capitalisedString = '';
+
+        if isString
+            capitalisedString = string.empty;
+        else
+            capitalisedString = char.empty;
+        end
+
         return
     end
 
+    if isString
+        inputString = char(inputString);
+    end
+
     % Single character
-    if length(inputString) == 1
+    if isscalar(inputString)
         capitalisedString = upper(inputString);
         return
     end
@@ -30,5 +41,4 @@ function capitalisedString = capitalise(inputString)
     capitalisedString = ...
         [upper(extractBefore(inputString, 2)), ...
          extractAfter(inputString, 1)];
-
 end

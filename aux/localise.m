@@ -1,12 +1,12 @@
-%% Localise
+%% LOCALISE
 % Localise spherical harmonic coefficients to a domain.
 % This goal is very similar to that of Slepian functions', but this function don't truncate anything.
 %
 % Syntax
-%   Plm = localise(Plm, domain, L)
-%   Plm = localise(Plm, domain, L, "Inverse", true)
-%   Plm = localise(Plm, "K", K)
-%   [Plm, K] = localise(Plm, __)
+%   Plm = LOCALISE(Plm, domain, L)
+%   Plm = LOCALISE(Plm, domain, L, "Inverse", true)
+%   Plm = LOCALISE(Plm, "K", K)
+%   [Plm, K] = LOCALISE(Plm, __)
 %
 % Input arguments
 %   Plm - Spherical harmonic coefficients
@@ -31,88 +31,107 @@
 %
 % Authored by
 %   2024/11/20, williameclee@arizona.edu (@williameclee)
+%
+% Last modified by
+%   2025/08/03, williameclee@arizona.edu (@williameclee)
 
-function [Plm, K] = localise(Plm, domain, L, varargin)
+function [plm, K] = localise(plm, varargin)
     ip = inputParser;
     addRequired(ip, 'Plm', ...
         @(x) isnumeric(x) && (size(x, 2) == 4 || size(x, 2) == 2));
-    addRequired(ip, 'domain', @(x) isa(x, 'GeoDomain'));
-    addRequired(ip, 'L', @(x) isnumeric(x) && isscalar(x) && x > 0);
+    addOptional(ip, 'domain', @(x) isa(x, 'GeoDomain'));
+    addOptional(ip, 'L', [], @(x) isnumeric(x) && isscalar(x) && x > 0);
     addParameter(ip, 'Inverse', false, @(x) islogical(x) || isnumeric(x));
     addParameter(ip, 'K', [], @ismatrix);
-    parse(ip, Plm, domain, L, varargin{:});
-    Plm = ip.Results.Plm;
+    addParameter(ip, 'KernelOrder', [], @isvector);
+    addParameter(ip, 'IsError', false, ...
+        @(x) (islogical(x) || isnumeric(x)) && isscalar(x));
+    addParameter(ip, 'BeQuiet', true, @(x) islogical(x) || isnumeric(x));
+    parse(ip, plm, varargin{:});
+    plm = ip.Results.Plm;
     domain = ip.Results.domain;
     L = ip.Results.L;
     isInverted = ip.Results.Inverse;
     K = ip.Results.K;
+    j2 = ip.Results.KernelOrder;
+    isError = ip.Results.IsError;
+    beQuiet = ip.Results.BeQuiet;
 
-    is3d = ndims(Plm) == 3;
+    is3d = ndims(plm) == 3;
 
     if is3d
-        nData = size(Plm, 3);
+        nData = size(plm, 3);
     end
 
-    includesDO = size(Plm, 2) == 4;
-
-    if includesDO
-    end
-
-    j2 = kernelorder(L);
+    includesDO = size(plm, 2) == 4;
 
     if includesDO
 
+        if isempty(L)
+            L = max(plm(:, 1));
+        end
+
         if is3d
-            Plm = Plm(:, 3:4, :);
+            plm = plm(:, 3:4, :);
         else
-            Plm = Plm(:, 3:4);
+            plm = plm(:, 3:4);
         end
 
     end
 
-    if size(Plm, 1) < addmup(L)
+    if isempty(j2)
+        j2 = kernelorder(L);
+    end
+
+    nInput = size(plm, 1);
+    nTarget = addmup(L);
+
+    if nInput < nTarget
 
         if is3d
-            Plm(addmup(L), 2, 1) = 0;
+            plm(nTarget, 2, 1) = 0;
         else
-            Plm(addmup(L), 2) = 0;
+            plm(nTarget, 2) = 0;
         end
 
-    elseif size(Plm, 1) > addmup(L)
+    elseif nInput > nTarget
 
         if is3d
-            Plm = Plm(1:addmup(L), :, :);
+            plm = plm(1:nTarget, :, :);
         else
-            Plm = Plm(1:addmup(L), :);
+            plm = plm(1:nTarget, :);
         end
 
     end
 
     if is3d
-        Plm = reshape(Plm, [size(Plm, 1) * size(Plm, 2), size(Plm, 3)]);
-        Plms = Plm(j2, :);
+        plm = reshape(plm, [nInput * size(plm, 2), size(plm, 3)]);
+        plm = plm(j2, :);
     else
-        Plms = Plm(j2);
+        plm = plm(j2);
     end
 
     if isempty(K)
-        K = kernelcp_new(L, domain, "BeQuiet", true);
-
-        if isInverted
-            K = eye(size(K)) - K;
-        end
-
+        K = kernelcp_new(L, domain, "BeQuiet", beQuiet);
     end
 
-    ofun = K * Plms;
+    if isInverted
+        K = eye(size(K)) - K;
+    end
+
+    if ~isError
+        ofun = K * plm;
+    else
+        ofun = sqrt((K .^ 2) * (plm .^ 2));
+    end
 
     if is3d
-        Plm = zeros([addmup(L) * 2, nData]);
-        Plm(j2, :) = ofun;
-        Plm = reshape(Plm, [addmup(L), 2, nData]);
+        plm = zeros([nTarget * 2, nData]);
+        plm(j2, :) = ofun;
+        plm = reshape(plm, [nTarget, 2, nData]);
     else
-        Plm = zeros([addmup(L), 2]);
-        Plm(j2) = ofun;
+        plm = zeros([nTarget, 2]);
+        plm(j2) = ofun;
     end
 
     if includesDO
@@ -120,9 +139,9 @@ function [Plm, K] = localise(Plm, domain, L, varargin)
         [order, degree] = addmon(L);
 
         if is3d
-            Plm = cat(2, repmat(degree, [1, 1, nData]), repmat(order, [1, 1, nData]), Plm);
+            plm = cat(2, repmat(degree, [1, 1, nData]), repmat(order, [1, 1, nData]), plm);
         else
-            Plm = [degree, order, Plm];
+            plm = [degree, order, plm];
         end
 
     end

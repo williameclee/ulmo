@@ -26,7 +26,7 @@
 %   GLMALPHA, KERNELC, KERNELCP, LOCALIZATION
 %
 % Last modified by
-% 	2024/08/09, williameclee@arizona.edu
+% 	2025/06/03, williameclee@arizona.edu
 
 function [G, V, N] = glmalpha_geographic( ...
         L, domain, upscale, isAntiDomain, rotateBack, ldim, isBp, ...
@@ -133,16 +133,20 @@ function [G, V, N] = glmalpha_geographic( ...
     try
         rotateBack = feval(domain.Domain, 'rotated');
     catch
+        rotateBack = false;
     end
 
     % Now do the rotation
-    if rotateBack && isscalar(rotateBack)
+    if isscalar(rotateBack) && islogical(rotateBack) && rotateBack
         % Get the rotation parameters to rotate G. Note, the region
         % rotation angles that we return from the functions (lonc, latc)
         % are the same regardless of if we did a buffer, as they pertain
         % to the original region
-        [~, lonc, latc] = feval(domain.Domain);
-        G = rotateGp(G, lonc, latc);
+        try
+            [~, lonc, latc] = feval(domain.Domain);
+            G = rotateGp(G, lonc, latc);
+        catch
+        end
     end
 
 end

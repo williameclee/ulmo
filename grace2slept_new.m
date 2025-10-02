@@ -3,11 +3,11 @@
 % this data into the requested Slepian basis.
 %
 % Syntax
-%   [date, slept] = grace2slept(product, domain, buf, L)
-%   [date, slept] = ...
-%       grace2slept(product, r, buf, L, phi, theta, omega, J)
-%   [date, slept] = grace2slept(__, 'Name', Value)
-%   [__, domain, G, eigfun, V, N] = grace2slept(__)
+%   [slept, stdSlept, dates] = GRACE2SLEPT(product, domain, L)
+%   [slept, stdSlept, dates] = ...
+%       GRACE2SLEPT(product, r, buf, L, phi, theta, omega, Truncation)
+%   [slept, stdSlept, dates] = GRACE2SLEPT(__, 'Name', Value)
+%   [__, domain, G, eigfun, V, N] = GRACE2SLEPT(__)
 %
 % Input arguments
 %   product - The name of the data product
@@ -16,6 +16,7 @@
 %       - the release level ('RL04', 'RL05', or 'RL06'),
 %       - the dataproduct bandwidth.
 %       The default product is {'CSR', 'RL06', 60}.
+%       Data type: cell array
 %   r - Radius of the concentration region in degrees
 %       - A string of the domain of interest. It must be a function that
 %           returns the coordinates of the domain.
@@ -25,39 +26,67 @@
 %       - A GeoDomain object.
 %   buf - Distance in degrees that the region outline will be enlarged
 %              by BUFFERM [default: 0]
-%   L - Bandwidth of the window [default: bandwidth of the data],
-%              or bandpass (two degrees)
+%   L - Bandwidth of the window
+%       - A scalar value for the highpass bandwidth of the window.
+%       - A 2-element vector for the bandpass bandwidth of the window.
+%       The default value is 60.
+%       Data type: numeric (array)
 %   phi, theta, omega - Longitude, colatitude, and anticlockwise azimuthal
 %       rotation of the center of the tapers in degrees
-%   J - Number of largest eigenfunctions in which to expand
+%   Truncation - Number of largest eigenfunctions in which to expand
 %       - 'N': The Shannon number of eigenfunctions.
 %       The default is all of them.
-%   unit - The unit of the output data
-%       - 'POT': Geopotential.
-%       - 'SD': Surface mass density.
-%       The default unit is 'POT'.
-%   Deg1Correction, C20Correction, C30Correction - Wether you want to apply
-%       the degree 1, C20, or C30 corrections
-%       The default options are true.
-%   TimeRange - The time range of GRACE data
-%       A 2-by-1 datetime or timenum array specifying the starting and ending time of the GRACE data used.
-%       The default range uses all data available.
-%   ForceNew - Wether or not you want to force recomputation
+%   Unit - Unit of the output
+%       See GRACE2PLMT (GRACE2PLMT_NEW) for the available options. This
+%       function does not check the vailidity of the input.
+%       The default option is whatever the default is for GRACE2PLMT (as of
+%       right now, SD).
+%       Data type: char | []
+%   Deg1Correction, C20Correction, C30Correction - Logical flag to apply
+%       the degree 1, C20, or C30 corrections using the techinical notes
+%       See GRACE2PLMT (GRACE2PLMT_NEW) for more details.
+%       The default options are whatever the default is for GRACE2PLMT (as
+%       of right now, true).
+%       Data type: logical | []
+%   RecomputeDegree1 - Logical flag to recompute the degree 1 coefficients
+%       See GRACE2PLMT (GRACE2PLMT_NEW) for more details.
+%       The default option is whatever the default is for GRACE2PLMT (as
+%       of right now, no recomputation).
+%       Data type: logical | char | cell array | ([])
+%   TimeRange - Time range of the output
+%       When specified, the output will be truncated to the specified time
+%       range.
+%       The default time range is [] (all available data).
+%       Data type: datetime array | ([numeric] array)
+%   ForceNew - Logical flag to force reprocess of the data
 %       The default option is false.
-%   SaveData - Wether or not you want to save the output data
-%       The default option is true.
-%   BeQuiet - Wether or not you want to suppress output
-%       The default option is false.
+%       Data type: logical | ([numeric])
+%	SaveData - Logical flag to save the data
+%		- true: Save the data to disk.
+%		- false: Do not save the data to disk.
+%       When recomputing the degree 1 coefficients, no data is saved.
+%		The default option is true.
+%		Data types: logical | ([numeric])
+%	BeQuiet - Logical flag to print messages
+%		- true: Suppress all messages.
+%		- false: Print all messages (usually for debugging).
+%		The default option is false.
+%		Data types: logical | ([numeric])
 %
-% Output and saved arguments
-%   slept - The expansion coefficients of the GRACE data in specified unit
-%       into the Slepian basispotential Slepian coefficients
-%       The size is [nmonths x addmoff(Ldata)].
-%   slept_err - The expansion coefficients of the calibrated errors into
-%       the Slepian basis calibrated errors.
-%       The size is [nmonths x addmoff(Ldata)].
-%       For release RL06, the calibrated errors are not available.
-%   date - Time stamps of the time series in DATETIME format
+% Output arguments
+%   slept - Slepian coefficients of the gravity field
+%       Units: m/s^2 (POT) | kg/m^2 (SD)
+%       Data type: DOUBLE
+%       Dimension: [ndates x truncation] | [truncation x ndates]
+%           (depending on the OutputFormat input)
+%   stdSlept - Standard deviation of the Slepian coefficients
+%       The data type and dimension are the same as for slept.
+%   dates - Time stamps of the coefficients
+%       The time stamps are the midpoints of the time intervals of the
+%       input data.
+%       Datatype: DATATIME | DOUBLE
+%           (depending on the TimeFormat input)
+%       Dimension: [ndates x 1]
 %   domain - The domain
 %       If there was buffering, this will be a XY array of coordinates,
 %       which you can use with SPHAREA to get the Shannon number.
@@ -67,9 +96,10 @@
 %   N - The Shannon number
 %
 % See also
-%   PLM2SLEP
+%   GRACE2PLMT (GRACE2PLMT_NEW), PLM2SLEP
 %
 % Last modified by
+%   2025/05/27, williameclee@arizona.edu (@williameclee)
 %   2024/08/30, williameclee@arizona.edu (@williameclee)
 %   2022/05/18, charig@princeton.edu (@harig00)
 %   2012/06/26, fjsimons@alum.mit.edu (@fjsimons)
@@ -77,9 +107,10 @@
 function varargout = grace2slept_new(varargin)
     %% Initialisation
     % Parse inputs
-    [~, domain, L, phi, theta, omega, unit, timeRange, ...
-         dataCentre, releaseLevel, Ldata, productStr, truncation, ...
-         deg1corr, c20corr, c30corr, forceNew, saveData, beQuiet] = ...
+    [product, domain, L, phi, theta, omega, unit, timelim, ...
+         truncation, ...
+         deg1corr, c20corr, c30corr, redoDeg1, ...
+         outputFmt, timeFmt, forceNew, saveData, beQuiet] = ...
         parseinputs(varargin{:});
 
     % Figure out if it's low-pass or band-pass
@@ -94,17 +125,265 @@ function varargout = grace2slept_new(varargin)
 
     % Check if you want the Shannon number of eigenfunctions
     if strcmp(truncation, 'N')
-        truncation = round((L(end) + 1) ^ 2 * domain.Spharea);
+        truncation = ceil((L(end) + 1) ^ 2 * domain.Spharea);
     else
         truncation = conddefval(truncation, ldim);
     end
 
     % Output file
     [outputPath, outputExists] = getoutputfile(domain, L, ...
-        productStr, truncation, unit, bp, ...
+        product, truncation, unit, bp, ...
         deg1corr, c20corr, c30corr);
 
-    %% Constructing the Slepian basis
+    %% Loading existing data
+    % If this expansion already exists, load it.  Otherwise, or if we force
+    % it, make a new one (e.g. if you added extra months to the database).
+    if outputExists && ~forceNew
+        load(outputPath, 'slept', 'stdSlept', 'dates')
+
+        if ~beQuiet
+            fprintf('%s loaded %s\n', upper(mfilename), outputPath)
+        end
+
+        [slept, stdSlept, dates] = ...
+            formatoutput(slept, stdSlept, dates, timelim, outputFmt, timeFmt);
+
+        if nargout <= 4
+            varargout = {slept, stdSlept, dates, domain};
+            return
+        end
+
+        [G, CC, V, N] = ...
+            getslepianbasis(domain, L, phi, theta, omega, maxL, truncation, beQuiet);
+        varargout = {slept, stdSlept, dates, domain, G, CC, V, N};
+
+        return
+    end
+
+    %% Processing GRACE data
+    % Use GRACE2PLMT to get the GRACE data
+    [plmt, stdPlmt, dates] = ...
+        grace2plmt_new(product, "Unit", unit, ...
+        "OutputFormat", 'timefirst', "TimeFormat", 'datetime', ...
+        "Deg1Correction", deg1corr, "C20Correction", c20corr, "C30Correction", c30corr, "RecomputeDegree1", redoDeg1, ...
+        "BeQuiet", beQuiet);
+
+    % Limit everything to the window bandwidth
+    if size(plmt, 2) > addmup(maxL)
+        plmt = plmt(:, 1:addmup(maxL), 1:4);
+        stdPlmt = stdPlmt(:, 1:addmup(maxL), 1:4);
+    elseif size(plmt, 2) < addmup(maxL)
+        [order, degree] = addmon(maxL);
+        plmt(:, 1:addmup(maxL), 1) = degree;
+        plmt(:, 1:addmup(maxL), 2) = order;
+    end
+
+    [G, CC, V, N, ronmW] = ...
+        getslepianbasis(domain, L, phi, theta, omega, maxL, truncation, beQuiet);
+
+    nDates = length(dates);
+    % GRACE
+    plmst = reshape(plmt(:, :, 3:4), [nDates, size(plmt, 2) * 2]);
+    plmst = plmst(:, ronmW(1:(maxL + 1) ^ 2)); % nDates x nCoeffs
+    slept = (G' * plmst')';
+    % GRACE STD
+    stdPlmst = reshape(stdPlmt(:, :, 3:4), [nDates, size(stdPlmt, 2) * 2]);
+    stdPlmst = stdPlmst(:, ronmW(1:(maxL + 1) ^ 2)); % nDates x nCoeffs
+    stdSlept = sqrt(((G .^ 2)' * (stdPlmst .^ 2)')');
+
+    if saveData
+        save(outputPath, 'slept', 'stdSlept', 'dates');
+
+        if ~beQuiet
+            fprintf('%s saved %s\n', upper(mfilename), outputPath)
+        end
+
+    end
+
+    [slept, stdSlept, dates] = ...
+        formatoutput(slept, stdSlept, dates, timelim, outputFmt, timeFmt);
+
+    % Collect output
+    varargout = {slept, stdSlept, dates, domain, G, CC, V, N};
+
+end
+
+%% Subfunctions
+% Parse inputs
+function varargout = parseinputs(varargin)
+    dfOpt.Product = {'CSR', 'RL06', 60};
+    dfOpt.Domain = 'greenland';
+    dfOpt.L = 60;
+    dfOpt.CapSpecs = 0;
+    dfOpt.Truncation = [];
+    dfOpt.Unit = [];
+    dfOpt.OutputFormat = 'timefirst';
+    dfOpt.TimeFormat = 'datetime';
+    dfOpt.ForceNew = false;
+    dfOpt.SaveData = true;
+
+    ip = inputParser;
+    addOptional(ip, 'Product', dfOpt.Product, ...
+        @(x) (iscell(x) && length(x) == 3) || isempty(x));
+    addOptional(ip, 'Domain', dfOpt.Domain, ...
+        @(x) (ischar(x)) || isstring(x) || iscell(x) || ...
+        isa(x, 'GeoDomain') || (isnumeric(x) && size(x, 2) == 2) || ...
+        (isempty(x)));
+    addOptional(ip, 'L', dfOpt.L, ...
+        @(x) (isnumeric(x) && (length(x) <= 2)) || (isempty(x)));
+    addOptional(ip, 'phi', dfOpt.CapSpecs, ...
+        @(x) (isnumeric(x) && isscalar(x)) || (isempty(x)));
+    addOptional(ip, 'theta', dfOpt.CapSpecs, ...
+        @(x) (isnumeric(x) && isscalar(x)) || (isempty(x)));
+    addOptional(ip, 'omega', dfOpt.CapSpecs, ...
+        @(x) (isnumeric(x) && isscalar(x)) || (isempty(x)));
+    addOptional(ip, 'Truncation', dfOpt.Truncation, ...
+        @(x) ((isnumeric(x) && isscalar(x) && x > 0) || ...
+        strcmp(x, 'N')) || (isempty(x)));
+    addOptional(ip, 'Unit', dfOpt.Unit, ...
+        @(x) ischar(x) || isempty(x));
+    addOptional(ip, 'TimeRange', [], ...
+        @(x) isempty(x) || ((isdatetime(x) || isnumeric(x))));
+    addOptional(ip, 'ForceNew', dfOpt.ForceNew, ...
+        @(x) ((isnumeric(x) || islogical(x)) && isscalar(x)) || isempty(x));
+    addOptional(ip, 'MoreRegionSpecs', {}, @iscell);
+    addParameter(ip, 'SaveData', [], ...
+        @(x) ((isnumeric(x) || islogical(x)) && isscalar(x)) || isempty(x));
+    addParameter(ip, 'BeQuiet', false, ...
+        @(x) (isnumeric(x) || islogical(x)) && isscalar(x));
+    addParameter(ip, 'Deg1Correction', [], ...
+        @(x) ((isnumeric(x) || islogical(x)) && isscalar(x)) || isempty(x));
+    addParameter(ip, 'C20Correction', [], ...
+        @(x) ((isnumeric(x) || islogical(x)) && isscalar(x)) || isempty(x));
+    addParameter(ip, 'C30Correction', [], ...
+        @(x) ((isnumeric(x) || islogical(x)) && isscalar(x)) || isempty(x));
+    addParameter(ip, 'RecomputeDegree1', [], ...
+        @(x) islogical(x) || iscell(x) || ischar(x) || isempty(x));
+    addParameter(ip, 'OutputFormat', dfOpt.OutputFormat, ...
+        @(x) ischar(validatestring(x, {'timefirst', 'traditional'})));
+    addParameter(ip, 'TimeFormat', dfOpt.TimeFormat, ...
+        @(x) ischar(validatestring(x, {'datetime', 'datenum'})));
+    parse(ip, varargin{:});
+
+    product = conddefval(ip.Results.Product, dfOpt.Product);
+    domain = conddefval(ip.Results.Domain, dfOpt.Domain);
+    L = conddefval(ip.Results.L, dfOpt.L);
+    phi = conddefval(ip.Results.phi, dfOpt.CapSpecs);
+    theta = conddefval(ip.Results.theta, dfOpt.CapSpecs);
+    omega = conddefval(ip.Results.omega, dfOpt.CapSpecs);
+    unit = conddefval(ip.Results.Unit, dfOpt.Unit);
+    domainSpecs = ip.Results.MoreRegionSpecs;
+    J = conddefval(ip.Results.Truncation, dfOpt.Truncation);
+    timeRange = ip.Results.TimeRange;
+    forceNew = conddefval(logical(ip.Results.ForceNew), dfOpt.ForceNew);
+    saveData = conddefval(logical(ip.Results.SaveData), dfOpt.SaveData);
+    beQuiet = logical(ip.Results.BeQuiet);
+    deg1corr = logical(ip.Results.Deg1Correction);
+    c20corr = logical(ip.Results.C20Correction);
+    c30corr = logical(ip.Results.C30Correction);
+    redoDeg1 = ip.Results.RecomputeDegree1;
+    outputFmt = ip.Results.OutputFormat;
+    timeFmt = ip.Results.TimeFormat;
+
+    if isnumeric(product{2})
+        product{2} = ['RL0', num2str(product{2})];
+    end
+
+    % Change the domain to a GeoDomain object if appropriate
+    if ischar(domain) || isstring(domain) && exist(domain, "file")
+        domain = GeoDomain(domain, domainSpecs{:});
+    elseif iscell(domain) && length(domain) == 2
+        domain = ...
+            GeoDomain(domain{1}, "Buffer", domain{2}, ...
+            domainSpecs{:});
+    elseif iscell(domain) && length(domain) >= 3
+        domain = GeoDomain(domain{:}, domainSpecs{:});
+    end
+
+    disp(redoDeg1)
+
+    if (~isempty(redoDeg1) && ~(islogical(redoDeg1) && ~redoDeg1)) && ...
+            (~isempty(ip.Results.SaveData) && ip.Results.SaveData)
+        warning(sprintf('%s:CannotSaveData', upper(mfilename)), ...
+        'Saving data with recompute degree 1 is not supported')
+        saveData = false;
+    end
+
+    varargout = ...
+        {product, domain, L, ...
+         phi, theta, omega, unit, timeRange, J, ...
+         deg1corr, c20corr, c30corr, redoDeg1, ...
+         outputFmt, timeFmt, ...
+         forceNew, saveData, beQuiet};
+end
+
+function [outputPath, outputExists] = getoutputfile(domain, L, ...
+        product, truncation, unit, bp, ...
+        deg1corr, c20corr, c30corr)
+
+    % Folder
+    if ~isempty(getenv('GRACE'))
+        outputFolder = fullfile(getenv('GRACE'), ...
+        'SlepianExpansions');
+    else
+        outputFolder = fullfile(getenv('IFILES'), ...
+            'GRACE', 'SlepianExpansions');
+    end
+
+    % File name
+    if bp
+        Lstr = sprintf('%i-%i', L(1), L(2));
+    else
+        Lstr = sprintf('%i', L);
+    end
+
+    productStr = [product{1}, '_', product{2}, '_', num2str(product{3})];
+
+    switch domainType(domain)
+        case 'polar'
+            r = domain;
+
+            outputFile = sprintf( ...
+                'grace2slept-%s-CAP-%i-%s-%i-%s.mat', ...
+                productStr, r, Lstr, truncation, unit);
+
+        case {'geodomain', 'lonlat'}
+
+            switch domainType(domain)
+                case 'geodomain'
+                    domainId = domain.Id;
+                case 'lonlat'
+                    domainId = hash(domain, 'sha1');
+            end
+
+            % The name of the save file
+            outputFile = sprintf( ...
+                'grace2slept-%s-%s-%s-%i-%s.mat', ...
+                productStr, domainId, Lstr, truncation, unit);
+
+    end
+
+    if ~deg1corr
+        outputFile = strrep(outputFile, '.mat', '-nDeg1.mat');
+    end
+
+    if ~c20corr
+        outputFile = strrep(outputFile, '.mat', '-nC20.mat');
+    end
+
+    if ~c30corr
+        outputFile = strrep(outputFile, '.mat', '-nC30.mat');
+    end
+
+    outputPath = fullfile(outputFolder, outputFile);
+
+    outputExists = isfile(outputPath);
+
+end
+
+% Get the auxiliary data (GLMALPHA, etc.)
+function [G, CC, V, N, ronmW] = ...
+        getslepianbasis(domain, L, phi, theta, omega, maxL, truncation, beQuiet)
     [~, ~, ~, lmcosiW, ~, ~, ~, ~, ~, ronmW] = addmon(maxL);
 
     if phi == 0 && theta == 0 && omega == 0
@@ -138,259 +417,34 @@ function varargout = grace2slept_new(varargin)
         % Stick in the coefficients of the 1st eigentaper
         cosi(ronmW) = G(:, j);
         % Construct the full matrix
-        CC{j} = [lmcosiW(:, 1:2) cosi];
+        CC{j} = [lmcosiW(:, 1:2), cosi];
     end
-
-    % INITILIZATION COMPLETE
-
-    % If this expansion already exists, load it.  Otherwise, or if we force
-    % it, make a new one (e.g. if you added extra months to the database).
-    if outputExists && ~forceNew
-        load(outputPath, 'slept', 'dates', 'thedates', 'slepcoffs')
-
-        if ~beQuiet
-            fprintf('%s loaded %s\n', upper(mfilename), outputPath)
-        end
-
-        if ~exist('slept', 'var') && exist('slepcoffs', 'var')
-            slept = slepcoffs;
-        end
-
-        if ~exist('dates', 'var') && exist('thedates', 'var')
-            dates = thedates;
-        end
-
-        save(outputPath, 'slept', 'dates');
-
-        % Truncate to required time range
-        if ~isempty(timeRange)
-            timeStartId = find(dates >= timeRange(1), 1, 'first');
-            timeEndId = find(dates <= timeRange(2), 1, 'last');
-            dates = dates(timeStartId:timeEndId);
-            slept = slept(timeStartId:timeEndId, :);
-        end
-
-        dates = dates(:);
-        dates = datetime(dates, 'ConvertFrom', 'datenum');
-        varargout = {dates, slept, domain, G, CC, V, N};
-
-        return
-    end
-
-    % Use GRACE2PLMT to get the GRACE data
-    [sphCoeffs, ~, dates] = grace2plmt_new(dataCentre, releaseLevel, ...
-        Ldata, unit, 'Deg1Correction', deg1corr, ...
-        'C20Correction', c20corr, 'C30Correction', c30corr);
-    dates = dates(:);
-    % *** Here I changed this. Run grace2plmt once to update your data, and
-    % then when you call forcenew=1 from now on it will just update the
-    % expansion
-
-    % Initialize new coefficients
-    nMonths = length(dates);
-    slept = nan([nMonths, truncation]);
-    % slepcalerrors = nan(nmonths, truncation);
-
-    % Limit everything to the window bandwidth
-    potcoffsW = sphCoeffs(:, 1:addmup(L), 1:4);
-    %cal_errorsW = cal_errors(:,1:size(lmcosiW,1),1:4);
-
-    % Loop over the months
-    parfor iMonth = 1:nMonths
-        % Expand this month's POTENTIAL into the Slepian basis
-        sphCoeffs = squeeze(potcoffsW(iMonth, :, :));
-        slept(iMonth, :) = ...
-            sphCoeffs(2 * size(sphCoeffs, 1) + ...
-            ronmW(1:(maxL + 1) ^ 2))' * G;
-
-        % Expand this month of CALIBRATED ERRORS into the Slepian basis
-        %calerrors_month=squeeze(cal_errorsW(index,:,:));
-        %slepcalerrors(index,:) = ...
-        %    calerrors_month(2*size(calerrors_month,1)+ronmW(1:(maxL+1)^2))'*G;
-    end
-
-    if saveData
-        save(outputPath, 'slept', 'dates');
-
-        if ~beQuiet
-            fprintf('%s saved %s\n', upper(mfilename), outputPath)
-        end
-
-    end
-
-    % Truncate to required time range
-    if ~isempty(timeRange)
-        timeStartId = find(dates >= timeRange(1), 1, 'first');
-        timeEndId = find(dates <= timeRange(2), 1, 'last');
-        dates = dates(timeStartId:timeEndId);
-        slept = slept(timeStartId:timeEndId, :);
-    end
-
-    % Collect output
-    dates = dates(:);
-    dates = datetime(dates, 'ConvertFrom', 'datenum');
-    varargout = {dates, slept, domain, G, CC, V, N};
 
 end
 
-%% Subfunctions
-function varargout = parseinputs(varargin)
-    productD = {'CSR', 'RL06', 60};
-    domainD = 'greenland';
-    LD = 18;
-    taperD = 0;
-    JD = [];
-    unitD = 'POT';
-    forceNewD = false;
+% Format outputs
+function [slept, stdSlept, dates] = ...
+        formatoutput(slept, stdSlept, dates, timelim, outputFmt, timeFmt)
 
-    p = inputParser;
-    addOptional(p, 'DataProduct', productD, ...
-        @(x) (iscell(x) && length(x) == 3) || isempty(x));
-    addOptional(p, 'Domain', domainD, ...
-        @(x) (ischar(x)) || isstring(x) || iscell(x) || ...
-        isa(x, 'GeoDomain') || (isnumeric(x) && size(x, 2) == 2) || ...
-        (isempty(x)));
-    addOptional(p, 'L', LD, ...
-        @(x) (isnumeric(x) && (length(x) <= 2)) || (isempty(x)));
-    addOptional(p, 'phi', taperD, ...
-        @(x) (isnumeric(x) && isscalar(x)) || (isempty(x)));
-    addOptional(p, 'theta', taperD, ...
-        @(x) (isnumeric(x) && isscalar(x)) || (isempty(x)));
-    addOptional(p, 'omega', taperD, ...
-        @(x) (isnumeric(x) && isscalar(x)) || (isempty(x)));
-    addOptional(p, 'Truncation', JD, ...
-        @(x) ((isnumeric(x) && isscalar(x) && x > 0) || ...
-        strcmp(x, 'N')) || (isempty(x)));
-    addOptional(p, 'Unit', unitD, ...
-        @(x) (ischar(validatestring(x, {'POT', 'SD'}))) || (isempty(x)));
-    addOptional(p, 'TimeRange', [], ...
-        @(x) isempty(x) || ((isdatetime(x) || isnumeric(x))));
-    addOptional(p, 'ForceNew', forceNewD, ...
-        @(x) (isnumeric(x) && (x == 0 || x == 1)) || islogical(x) ...
-        || (isempty(x)));
-    addOptional(p, 'MoreRegionSpecs', {}, @iscell);
-    addParameter(p, 'BeQuiet', false, @(x) islogical(x) || isnumeric(x));
-    addParameter(p, 'SaveData', true, @(x) islogical(x) || isnumeric(x));
-    addParameter(p, 'Deg1Correction', true, ...
-        @(x) islogical(x) || isnumeric(x));
-    addParameter(p, 'C20Correction', true, ...
-        @(x) islogical(x) || isnumeric(x));
-    addParameter(p, 'C30Correction', true, ...
-        @(x) islogical(x) || isnumeric(x));
-    parse(p, varargin{:});
-
-    product = conddefval(p.Results.DataProduct, productD);
-    domain = conddefval(p.Results.Domain, domainD);
-
-    L = conddefval(p.Results.L, LD);
-    phi = conddefval(p.Results.phi, taperD);
-    theta = conddefval(p.Results.theta, taperD);
-    omega = conddefval(p.Results.omega, taperD);
-    unit = conddefval(p.Results.Unit, unitD);
-    domainSpecs = p.Results.MoreRegionSpecs;
-    J = conddefval(p.Results.Truncation, JD);
-    forceNew = conddefval(logical(p.Results.ForceNew), forceNewD);
-    beQuiet = logical(p.Results.BeQuiet);
-    saveData = logical(p.Results.SaveData);
-    deg1correction = logical(p.Results.Deg1Correction);
-    c20correction = logical(p.Results.C20Correction);
-    c30correction = logical(p.Results.C30Correction);
-    timeRange = p.Results.TimeRange;
-
-    if isnumeric(product{2})
-        product{2} = ['RL0', num2str(product{2})];
+    if ~isempty(timelim)
+        isValidTime = dates >= timelim(1) & dates <= timelim(2);
+        slept = slept(isValidTime, :);
+        stdSlept = stdSlept(isValidTime, :);
+        dates = dates(isValidTime);
     end
 
-    dataCentre = product{1};
-    releaseLevel = product{2};
-    Ldata = product{3};
-    productId = [dataCentre, releaseLevel, num2str(Ldata)];
-
-    % Change the domain to a GeoDomain object if appropriate
-    if ischar(domain) || isstring(domain) && exist(domain, "file")
-        domain = GeoDomain(domain, domainSpecs{:});
-    elseif iscell(domain) && length(domain) == 2
-        domain = ...
-            GeoDomain(domain{1}, "Buffer", domain{2}, ...
-            domainSpecs{:});
-    elseif iscell(domain) && length(domain) >= 3
-        domain = GeoDomain(domain{:}, domainSpecs{:});
+    if strcmp(outputFmt, 'traditional')
+        slept = permute(slept, [2, 1]);
+        stdSlept = permute(stdSlept, [2, 1]);
     end
 
-    if isdatetime(timeRange)
-        timeRange = datenum(timeRange); %#ok<DATNM>
+    if strcmp(timeFmt, 'datenum')
+        dates = datenum(dates); %#ok<DATNM>
     end
-
-    varargout = ...
-        {product, domain, L, ...
-         phi, theta, omega, unit, timeRange, ...
-         dataCentre, releaseLevel, Ldata, productId, J, ...
-         deg1correction, c20correction, c30correction, ...
-         forceNew, saveData, beQuiet};
-end
-
-function [outputPath, outputExists] = getoutputfile(domain, L, ...
-        productId, truncation, unit, bp, ...
-        deg1corr, c20corr, c30corr)
-
-    % Folder
-    if ~isempty(getenv('GRACE'))
-        outputFolder = fullfile(getenv('GRACE'), ...
-        'SlepianExpansions');
-    else
-        outputFolder = fullfile(getenv('IFILES'), ...
-            'GRACE', 'SlepianExpansions');
-    end
-
-    % File name
-    if bp
-        Lstr = sprintf('%i-%i', L(1), L(2));
-    else
-        Lstr = sprintf('%i', L);
-    end
-
-    switch domainType(domain)
-        case 'polar'
-            r = domain;
-
-            outputFile = sprintf( ...
-                'grace2slept-%s-CAP-%i-%s-%i-%s.mat', ...
-                productId, r, Lstr, truncation, unit);
-
-        case {'geodomain', 'lonlat'}
-
-            switch domainType(domain)
-                case 'geodomain'
-                    domainId = domain.Id;
-                case 'lonlat'
-                    domainId = hash(domain, 'sha1');
-            end
-
-            % The name of the save file
-            outputFile = sprintf( ...
-                'grace2slept-%s-%s-%s-%i-%s.mat', ...
-                productId, domainId, Lstr, truncation, unit);
-
-    end
-
-    if ~deg1corr
-        outputFile = strrep(outputFile, '.mat', '-nDeg1.mat');
-    end
-
-    if ~c20corr
-        outputFile = strrep(outputFile, '.mat', '-nC20.mat');
-    end
-
-    if ~c30corr
-        outputFile = strrep(outputFile, '.mat', '-nC30.mat');
-    end
-
-    outputPath = fullfile(outputFolder, outputFile);
-
-    outputExists = exist(outputPath, 'file') == 2;
 
 end
 
+% Figute out which type of domain is used
 function domainType = domainType(domain)
 
     if isa(domain, 'GeoDomain')

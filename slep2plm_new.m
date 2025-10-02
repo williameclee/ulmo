@@ -107,8 +107,20 @@ function varargout = slep2plm_new(varargin)
 
     % Perform the expansion of the signal into the Slepian basis
     % and stick these coefficients in at the right places
-    plm(2 * size(plm, 1) + ronm(1:(L + 1) ^ 2)) = ...
-        G(:, 1:truncation) * falpha(1:truncation);
+
+    if isvector(falpha)
+        falpha = falpha(:);
+        plm(2 * size(plm, 1) + ronm(1:(L + 1) ^ 2)) = ...
+            G(:, 1:truncation) * falpha(1:truncation);
+    elseif ismatrix(falpha)
+        plm = repmat(plm, [1, 1, size(falpha, 1)]);
+        id2 = 2 * size(plm, 1) + ronm(1:(L + 1) ^ 2);
+        id3 = repmat(id2, [1, size(falpha, 1)]) + ...
+            (0:size(falpha, 1) - 1) * size(plm, 1) * size(plm, 2);
+        plm(id3) = ...
+            G(:, 1:truncation) * falpha(:, 1:truncation)';
+    end
+
     % plm = coef2lmcosi(G(:, 1:truncation) * falpha(1:truncation));
 
     %% Collecting output
@@ -142,7 +154,7 @@ function varargout = parseinputs(varargin)
     addOptional(p, 'Truncation', [], @(x) isnumeric(x) || isempty(x));
 
     parse(p, varargin{:});
-    falpha = p.Results.falpha(:);
+    falpha = p.Results.falpha;
 
     domain = conddefval(p.Results.Domain, domainD);
     L = p.Results.L;

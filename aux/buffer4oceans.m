@@ -2,7 +2,7 @@
 % Buffers the coastlines
 %
 % Last modified by
-%   2024/11/20, williameclee@arizona.edu (@williameclee)
+%   2025/06/03, williameclee@arizona.edu (@williameclee)
 
 function [coastXY, coastPoly] = buffer4oceans(coast, varargin)
     % Suppress warnings
@@ -39,10 +39,12 @@ function [coastXY, coastPoly] = buffer4oceans(coast, varargin)
 
         [moreCoastY, moreCoastX] = flatearthpoly( ...
             moreCoastXY(:, 2), moreCoastXY(:, 1), lonOrigin);
+        moreCoastX = moreCoastX - 360 * floor(min(moreCoastX) / 360);
         moreCoastPoly = polyshape(moreCoastX, moreCoastY);
         coastPoly = union(coastPoly, moreCoastPoly);
     end
 
-    coastXY = closecoastline(coastPoly.Vertices);
+    [coastX, coastY] = boundary(coastPoly);
+    coastXY = [coastX, coastY];
 
 end

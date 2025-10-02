@@ -4,6 +4,7 @@
 % Syntax
 %   Plm = sphgaussfilt(Plm, sigma)
 %   Plm = sphgaussfilt(Plm, sigma, unit)
+%   Plm = sphgaussfilt(Plm, sigma, unit, lmin)
 %
 % Input arguments
 %   Plm - Spherical harmonic coefficients
@@ -13,23 +14,28 @@
 %       'radian' - The standard deviation is in radians
 %       'km' - The standard deviation is in kilometres
 %       The default unit is 'degree'
+%   lmin - Minimum spherical harmonic degree to apply the filter
+%       If given, the filter is applied only to spherical harmonic degrees 
+%       at or above this threshold.
+%       The default value is none, i.e. the filter is applied to all 
+%       spherical harmonic degrees.
 %
 % Output arguments
 %   Plm - Filtered spherical harmonic coefficients
 %
 % Last modified by
-%   2025/03/18, williameclee@arizona.edu (@williameclee)
-%   2024/11/20, williameclee@arizona.edu (@williameclee)
+%   2025/07/30, williameclee@arizona.edu (@williameclee)
 
-function Plm = sphgaussfilt(Plm, varargin)
-    ip = inputParser;
-    addRequired(ip, 'Plm', @(x) (isnumeric(x) && size(x, 2) == 4));
-    addOptional(ip, 'Sigma', 5, @isnumeric);
-    addOptional(ip, 'Unit', 'degree', @(x) ischar(validatestring(x, {'degree', 'radian', 'km'})));
-    parse(ip, Plm, varargin{:});
-    Plm = ip.Results.Plm;
-    sigma = ip.Results.Sigma;
-    unit = ip.Results.Unit;
+function Plm = sphgaussfilt(Plm, sigma, unit, options)
+
+    arguments
+        Plm (:, 4, :) {isnumeric}
+        sigma (1, 1) {mustBeNumeric, mustBePositive} = 5
+        unit (1, :) {mustBeMember(unit, {'degree', 'radian', 'km'})} = 'degree'
+        options.Lmin (1, 1) {mustBeNumeric, mustBeNonnegative} = Inf
+    end
+
+    lmin = options.Lmin;
 
     if ismatrix(Plm)
         l = Plm(:, 1);
@@ -46,6 +52,10 @@ function Plm = sphgaussfilt(Plm, varargin)
         case 'km' % modified from Adhikari et al. (2019)
             % sigma = sigma/6371;
             gfilter = exp(- l .* (l + 1) * (sigma / 6371) ^ 2 / (4 * log(2)));
+    end
+
+    if lmin < Inf
+        gfilter(l < lmin) = 1;
     end
 
     if ismatrix(Plm)

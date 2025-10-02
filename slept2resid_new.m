@@ -101,8 +101,7 @@
 %       integrals.
 %
 % Last modified by
-%   2024/09/25, williameclee@arizona.edu (@williameclee)
-%   2024/06/07, williameclee@arizona.edu (@williameclee)
+%   2025/06/02, williameclee@arizona.edu (@williameclee)
 %   2012/06/26, charig@princeton.edu (@harig00)
 
 function varargout = slept2resid_new(varargin)
@@ -112,18 +111,19 @@ function varargout = slept2resid_new(varargin)
          unit, beQuiet, doNormalisation, transFlag] = parseinputs(varargin{:});
 
     % Format dates
-    nMonth = length(date);
 
-    if nMonth == size(slept, 1) % do nothing
+    if length(date) == size(slept, 1) % do nothing
         dateExtra = [];
         moredates = false;
-    elseif nMonth > size(slept, 1) % pull off extra dates
+    elseif length(date) > size(slept, 1) % pull off extra dates
         dateExtra = date((size(slept, 1) + 1):end);
         date = date(1:size(slept, 1));
         moredates = true;
     else
         error('Is dates shorter than slept?')
     end
+
+    nMonth = length(date);
 
     % We will do a scaling/normalisation to improve the solution
     dateMean = mean(date);
@@ -281,7 +281,7 @@ function varargout = slept2resid_new(varargin)
     end
 
     % Calculate the Shannon number for this basis
-    truncation = conddefval(truncation, round((L + 1) ^ 2 * spharea(XY)));
+    truncation = conddefval(truncation, ceil((L + 1) ^ 2 * spharea(XY)));
 
     % Make the coefficients with reference to some mean
     % If they already are, then this won't matter
@@ -300,8 +300,15 @@ function varargout = slept2resid_new(varargin)
 
     if isa(domain, 'GeoDomain') || ismatrix(domain)
         G = glmalpha_new(domain, L, "BeQuiet", beQuiet);
-        eigfunINT = integratebasis_new( ...
-            G, domain, truncation, "BeQuiet", beQuiet);
+
+        try
+            eigfunINT = integratebasis_new( ...
+                G, domain, truncation, "BeQuiet", beQuiet);
+        catch
+            eigfunINT = integratebasis_new( ...
+                G, domain, truncation, "BeQuiet", beQuiet, "ForceNew", true);
+        end
+
     else
         G = glmalpha_new(domain, L, phi, theta, omega, "BeQuiet", beQuiet);
         eigfunINT = integratebasis_new( ...
@@ -324,7 +331,15 @@ function varargout = slept2resid_new(varargin)
 
     % Here do the total sum of the data
     eigfunINT = eigfunINT(:);
-    eigfunINT = eigfunINT(1:truncation);
+
+    try
+        eigfunINT = eigfunINT(1:truncation);
+    catch
+        disp(size(eigfunINT))
+        disp(truncation)
+        error('truncation is too large')
+    end
+
     total = eigfunINT' * sleptdelta(:, 1:truncation)';
 
     % Get the error
@@ -347,10 +362,10 @@ function varargout = slept2resid_new(varargin)
     totalfit = [date', fit, delta];
 
     % Make the error valid for a year
-    totalparamerrors = paramerrors * 365;
+    totalparamerrors = paramerrors * days(years(1));
 
     if strcmp(unit, 'year')
-        totalparams = totalparams * 365;
+        totalparams = totalparams * days(years(1));
     end
 
     % Collect the expanded output
@@ -408,15 +423,14 @@ function varargout = parseinputs(varargin)
 
     transFlag = false;
 
-    if size(slept, 1) ~= length(date)
+    if size(slept, 1) ~= length(date) && size(slept, 2) == length(date)
+        slept = slept';
+        transFlag = true;
+    end
 
-        if size(slept, 2) == length(date)
-            slept = slept';
-            transFlag = true;
-        else
-            error('SLEPT and DATE must have the same length')
-        end
-
+    if isduration(fitwhat)
+        % Convert durations to datetimes
+        fitwhat = days(fitwhat);
     end
 
     % Change the domain to a GeoDomain object if appropriate

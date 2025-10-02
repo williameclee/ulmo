@@ -1,14 +1,14 @@
 %% PLM2XYZ
-% Inverse (4*pi-normalized real) spherical harmonic transform.
+% Inverses (4*pi-normalized real) spherical harmonic transform.
 %
 % Compute a spatial field from spherical harmonic coefficients given as
 % [l m Ccos Csin] (not necessarily starting from zero, but sorted), with
 % degree resolution 'h' [default: approximate Nyquist degree].
 %
 % Syntax
-% [r, lon, lat, Plm, h] = plm2xyz(lmcosi, h)
-% [r, lon, lat, Plm, h] = plm2xyz(lmcosi, h, c11cmn, lmax, latmax, Plm)
-% [r, lon, lat, Plm, h] = plm2xyz(lmcosi, lat, lon, lmax, latmax, Plm)
+%   [r, lon, lat, Plm, h] = plm2xyz(lmcosi, h)
+%   [r, lon, lat, Plm, h] = plm2xyz(lmcosi, h, c11cmn, lmax, latmax, Plm)
+%   [r, lon, lat, Plm, h] = plm2xyz(lmcosi, lat, lon, lmax, latmax, Plm)
 %
 % Input arguments
 %   lmcosi - Matrix listing l,m,cosine and sine expansion coefficients
@@ -57,6 +57,7 @@
 %   XYZ2PLM, PLM2SPEC, TH2PL, PL2TH, YLM
 %
 % Special thanks to kwlewis@princeton.edu for spotting a bug.
+%
 % Last modified by
 %   2024/08/13, williameclee@arizona.edu (@williameclee)
 %   2023/11/20, fjsimons@alum.mit.edu (@fjsimons)
@@ -78,6 +79,13 @@ function varargout = plm2xyz(varargin)
     [lmcosi, meshSize, c11cmn, lmax, latmax, Plm, beQuiet] = ...
         parseinputs(varargin{:});
 
+    if c11cmn(2) < c11cmn(4)
+        c11cmn([2, 4]) = c11cmn([4, 2]);
+        flipLat = true;
+    else
+        flipLat = false;
+    end
+
     %% Computing the mesh
     % Lowest degree of the expansion
     lmin = lmcosi(1);
@@ -94,13 +102,13 @@ function varargout = plm2xyz(varargin)
 
     % But is it a grid or are they merely scattered points?
     if length(meshSize) == length(c11cmn)
-        % It's a bunch of points!
-        nLat = length(meshSize);
-        nLon = length(c11cmn);
-        % Colatitude vector in radians
-        theta = deg2rad((90 - meshSize(:)'));
-        % Longitude vector in radians
-        phi = deg2rad(c11cmn(:)');
+        % A bunch of (lon, lat) points
+        lon = meshSize(:)';
+        lat = c11cmn(:)';
+        nLat = length(lat);
+        nLon = length(lon);
+        col = deg2rad((90 - lat));
+        lon = deg2rad(lon);
 
         % Initialize output vector
         r = zeros(nLat, 1);
@@ -128,18 +136,14 @@ function varargout = plm2xyz(varargin)
         r = zeros(nLat, nLon);
 
         % Longitude grid vector in radians
-        phi = linspace(deg2rad(c11cmn(1)), deg2rad(c11cmn(3)), nLon);
+        lon = linspace(deg2rad(c11cmn(1)), deg2rad(c11cmn(3)), nLon);
         % Colatitude grid vector in radians
-        theta = linspace(deg2rad(90 - c11cmn(2)), deg2rad(90 - c11cmn(4)), nLat);
+        col = linspace(deg2rad(90 - c11cmn(2)), deg2rad(90 - c11cmn(4)), nLat);
 
         %    disp(sprintf('Creating %i by %i grid with resolution %8.3f',nlat,nlon,degres))
     else
         error('Make up your mind - is it a grid or a list of points?')
     end
-
-    % Here we were going to build an option for a polar grid
-    % But abandon this for now
-    % [thetap,phip]=rottp(theta,phi,pi/2,pi/2,0);
 
     % Piecemeal degree ranges
     % Divide the degree range increments spaced such that the additional
@@ -195,7 +199,7 @@ function varargout = plm2xyz(varargin)
         else
             % Evaluate Legendre polynomials at selected points
             try
-                Plm = nan(length(theta), addmup(lup) - addmup(ldown - 1));
+                Plm = nan(length(col), addmup(lup) - addmup(ldown - 1));
             catch ME
                 error('\n %s \n\n Decrease lmax in PLM2XYZ \n', ME.message)
             end
@@ -212,7 +216,7 @@ function varargout = plm2xyz(varargin)
             for l = ldown:lup
 
                 % Never use Libbrecht algorithm... found out it wasn't that good
-                Plm(:, in1 + 1:in2) = (legendre(l, cos(theta(:)'), 'sch') * sqrt(2 * l + 1))';
+                Plm(:, in1 + 1:in2) = (legendre(l, cos(col(:)'), 'sch') * sqrt(2 * l + 1))';
 
                 in1 = in2;
                 in2 = in1 + l + 2;
@@ -258,30 +262,14 @@ function varargout = plm2xyz(varargin)
             plm = Plm(:, b:e)';
 
             m = 0:l;
-            mphi = m(:) * phi(:)';
+            mphi = m(:) * lon(:)';
 
-            % Normalization of the harmonics is to 4\ pi, the area of the unit
-            % sphere: $\int_{0}^{\pi}\int_{0}^{2\pi}
-            % |P_l^m(\cos\theta)\cos(m\phi)|^2\sin\theta\,d\theta d\phi=4\pi$.
-            % Note the |cos(m\phi)|^2 d\phi contributes exactly \pi for m~=0
-            % and 2\pi for m==0 which explains the absence of sqrt(2) there;
-            % that fully normalized Legendre polynomials integrate to 1/2/pi
-            % that regular Legendre polynomials integrate to 2/(2l+1),
-            % Schmidt polynomials to 4/(2l+1) for m>0 and 2/(2l+1) for m==0,
-            % and Schmidt*sqrt(2l+1) to 4 or 2. Note that for the integration of
-            % the harmonics you get either 2pi for m==0 or pi+pi for cosine and
-            % sine squared (cross terms drop out). This makes the fully
-            % normalized spherical harmonics the only ones that consistently give
-            % 1 for the normalization of the spherical harmonics.
-            % Note this is using the cosines only; the "spherical harmonics" are
-            % actually only semi-normalized.
-            % Test normalization as follows (using inaccurate Simpson's rule):
             defval('tst', 0)
 
             if tst
-                f = (plm .* plm)' .* repmat(sin(theta(:)), 1, l + 1);
+                f = (plm .* plm)' .* repmat(sin(col(:)), 1, l + 1);
                 c = (cos(mphi) .* cos(mphi))';
-                ntest = simpson(theta, f) .* simpson(phi, c) / 4 / pi;
+                ntest = simpson(col, f) .* simpson(lon, c) / 4 / pi;
                 fprintf('Mean normalisation error l= %3.3i: %8.3e\n', ...
                     l, (sum(abs(1 - ntest))) / (l + 1))
                 % For a decent test you would use "legendreprodint"
@@ -307,8 +295,13 @@ function varargout = plm2xyz(varargin)
 
     end
 
-    lon = rad2deg(phi);
-    lat = 90 - rad2deg(theta);
+    lon = rad2deg(lon);
+    lat = 90 - rad2deg(col);
+
+    if flipLat
+        lat = flip(lat);
+        r = flip(r);
+    end
 
     % Prepare output
     varargout = {r, lon, lat, Plm, meshSize};
@@ -356,31 +349,32 @@ function Outputs = rundemos(varargin)
 end
 
 function varargout = parseinputs(varargin)
-    meshSizeD = 1;
-    c11cmnD = [0, 90, 360, -90];
-    LmaxD = 720;
-    latmaxD = Inf;
-    p = inputParser;
-    addRequired(p, 'lmcosi', @(x) isnumeric(x));
-    addOptional(p, 'MeshSize', meshSizeD, ...
+    dfOpts.meshSize = 1;
+    dfOpts.c11cmn = [0, 90, 360, -90];
+    dfOpts.Lmax = 720;
+    dfOpts.latmax = Inf;
+    ip = inputParser;
+    addRequired(ip, 'lmcosi', @(x) isnumeric(x));
+    addOptional(ip, 'MeshSize', dfOpts.meshSize, ...
         @(x) (isnumeric(x) && isscalar(x)) || isempty(x));
-    addOptional(p, 'c11cmn', c11cmnD, ...
+    addOptional(ip, 'c11cmn', dfOpts.c11cmn, ...
         @(x) (isnumeric(x) && isvector(x)) || isempty(x));
-    addOptional(p, 'Lmax', LmaxD, ...
+    addOptional(ip, 'Lmax', dfOpts.Lmax, ...
         @(x) (isnumeric(x) && isscalar(x)) || isempty(x));
-    addOptional(p, 'latmax', latmaxD, ...
+    addOptional(ip, 'latmax', dfOpts.latmax, ...
         @(x) (isnumeric(x) && isscalar(x)) || isempty(x));
-    addOptional(p, 'Plm', [], ...
+    addOptional(ip, 'Plm', [], ...
         @(x) (isnumeric(x) && ismatrix(x)) || isempty(x));
-    addParameter(p, 'BeQuiet', false, @(x) islogical(x) || isnumeric(x));
-    parse(p, varargin{:});
-    lmcosi = p.Results.lmcosi;
-    meshSize = conddefval(p.Results.MeshSize, meshSizeD);
-    c11cmn = conddefval(p.Results.c11cmn, c11cmnD);
-    lmax = conddefval(p.Results.Lmax, LmaxD);
-    latmax = conddefval(p.Results.latmax, latmaxD);
-    Plm = p.Results.Plm;
-    beQuiet = logical(p.Results.BeQuiet);
+    addParameter(ip, 'BeQuiet', false, @(x) islogical(x) || isnumeric(x));
+
+    parse(ip, varargin{:});
+    lmcosi = ip.Results.lmcosi;
+    meshSize = conddefval(ip.Results.MeshSize, dfOpts.meshSize);
+    c11cmn = conddefval(ip.Results.c11cmn, dfOpts.c11cmn);
+    lmax = conddefval(ip.Results.Lmax, dfOpts.Lmax);
+    latmax = conddefval(ip.Results.latmax, dfOpts.latmax);
+    Plm = ip.Results.Plm;
+    beQuiet = logical(ip.Results.BeQuiet);
 
     varargout = {lmcosi, meshSize, c11cmn, lmax, latmax, Plm, beQuiet};
 end

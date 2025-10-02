@@ -70,28 +70,34 @@
 %   By default, if the output unit is geoid (POT), it is shifted vertically to represent the sea surface height change to conserve the ocean mass. To remove such effect, simply set the degree-0 coefficient to zero.
 %
 % Last modified by
-%   2025/03/28, williameclee@arizona.edu (@williameclee)
+%   2025/07/21, williameclee@arizona.edu (@williameclee)
 
 function varargout = gia2slept(varargin)
     %% Initialisation
     % Parse inputs
-    [date, model, domain, L, phi, theta, omega, units, beQuiet] = ...
+    [date, model, domain, L, phi, theta, omega, unit, beQuiet] = ...
         parseinputs(varargin{:});
 
     %% Loading the model
     warning('off', 'SLEPIAN:gia2plmt:noBoundsToReturn');
     [plm, plmU, plmL] = gia2plmt( ...
-        [], model, L, "Unit", units, "BeQuiet", beQuiet);
+        [], model, L, "Unit", unit, "BeQuiet", beQuiet);
 
-    switch units
-        case {'massdensity', 'SD'}
-        case {'geoid', 'POT'}
-            oceanDomain = GeoDomain('alloceans', "Buffer", 0.5);
-            zplm = giaz2plmt(model, L, "BeQuiet", beQuiet);
-            plmLcl = localise(plm, oceanDomain, L);
-            zplm = localise(zplm, oceanDomain, L);
-            zOffset = plmLcl(1, 3) - zplm(1, 3) / 1e3;
-            plm(1, 3) = plm(1, 3) - zOffset / oceanDomain.SphArea;
+    switch unit
+        case 'SD'
+        case 'POT'
+
+            try
+                oceanDomain = GeoDomain('alloceans', "Buffer", 0.5);
+                zplm = giaz2plmt(model, L, "BeQuiet", beQuiet);
+                plmLcl = localise(plm, oceanDomain, L);
+                zplm = localise(zplm, oceanDomain, L);
+                zOffset = plmLcl(1, 3) - zplm(1, 3) / 1e3;
+                plm(1, 3) = plm(1, 3) - zOffset / oceanDomain.SphArea;
+            catch
+                warning('Failed to apply the degree-0 correction for geoid unit');
+            end
+
     end
 
     hasBounds = ~isempty(plmU) && ~isempty(plmL);
@@ -136,10 +142,10 @@ function varargout = gia2slept(varargin)
 
     eigfunINT = eigfunINT(1:truncation);
 
-    switch units
-        case {'massdensity', 'SD'}
+    switch unit
+        case 'SD'
             eigfunINT = eigfunINT * (4 * pi * 6370e3 ^ 2) / 1e12;
-        case {'geoid', 'POT'}
+        case 'POT'
             eigfunINT = eigfunINT * 1e3 / domain.SphArea;
     end
 
@@ -172,7 +178,7 @@ end
 %% Subfunctions
 function varargout = parseinputs(varargin)
     % Fallback values
-    modelD = 'Steffen_ice6g_vm5a';
+    modelD = 'Caron18';
     domainD = {'greenland', 0.5};
     phiD = 0;
     thetaD = 0;
@@ -212,7 +218,7 @@ function varargout = parseinputs(varargin)
     phi = conddefval(p.Results.phi, phiD);
     theta = conddefval(p.Results.theta, thetaD);
     omega = conddefval(p.Results.omega, omegaD);
-    units = p.Results.Unit;
+    unit = p.Results.Unit;
     beQuiet = uint8(double(p.Results.BeQuiet) * 2);
 
     if isnumeric(time)
@@ -229,7 +235,14 @@ function varargout = parseinputs(varargin)
         domain = GeoDomain(domain{:});
     end
 
-    varargout = {time, model, domain, L, phi, theta, omega, units, beQuiet};
+    switch unit
+        case {'massdensity', 'SD'}
+            unit = 'SD';
+        case {'geoid', 'POT'}
+            unit = 'POT';
+    end
+
+    varargout = {time, model, domain, L, phi, theta, omega, unit, beQuiet};
 
 end
 

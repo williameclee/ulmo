@@ -4,23 +4,23 @@
 % harmonic expansion coefficients are given.
 %
 % Syntax
-%   plm2slep(demoId)
+%   PLM2SLEP(demoId)
 %       Runs a demo with the specified name.
-%   [falpha, V, N] = plm2slep(Plm, r, L, phi, theta, omega)
+%   [falpha, V, N] = PLM2SLEP(Plm, r, L, phi, theta, omega)
 %       Finds the expansion coefficients of the function into the Slepian
 %       basis of a polar cap.
-%   [falpha, V, N] = plm2slep(Plm, domain, L)
+%   [falpha, V, N] = PLM2SLEP(Plm, domain, L)
 %       Finds the expansion coefficients of the function into the Slepian
 %       basis of a geographic domain.
-%   [falpha, V, N] = plm2slep(__, nosort, truncation)
+%   [falpha, V, N] = PLM2SLEP(__, nosort, truncation)
 %       Finds the expansion with the specified sorting and the number of
 %       eigenfunctions to use.
-%   [__, MTAP, G] = plm2slep(__)
+%   [__, MTAP, G] = PLM2SLEP(__)
 %
 % Input arguments
 %   Plm - Standard-type real spherical harmonic expansion coefficients
 %   r - Radius of the concentration region in degrees
-%       Alternatively, phi, theta and omega can also be specified following 
+%       Alternatively, phi, theta and omega can also be specified following
 %       r.
 %       The default value is 30 degrees.
 %       Format: scalar or 1 x 4 vector.
@@ -34,20 +34,20 @@
 %   phi, theta, omega - Longitude, colatitude, and anticlockwise azimuthal
 %       rotation of the centre of the tapers in degrees
 %       The default values are 0.
-%   nosort - Whether to sort the eigenvalues and eigenfunctions
+%   NoSort - Logical flag to sort the eigenvalues and eigenfunctions
 %       - false: Will sort the output according to the global eigenvalue.
 %       - true: Will not sort thus the "block" sorting is preserved,
 %       The default value is false (i.e. sort).
-%   truncation - Number of largest eigenfunctions in which to expand
-%       The default value is all the (L+1)^2 eigenfunctions.
+%   Truncation - Number of largest eigenfunctions in which to expand
+%       The default value is all the (L+1)^2 eigenfunctions (no truncation).
 %
 % Output arguments
-%   falpha - The expansion coefficients of the function into the Slepian
+%   falpha - Expansion coefficients of the function into the Slepian
 %       basis
-%   V - The eigenvalues of the Slepian functions in question
-%   N - The Shannon number
-%   MTAP - The orders of the Slepian functions in question, if preserved
-%   G - The matrix with the spherical harmonic expansion
+%   V - Eigenvalues of the Slepian functions in question
+%   N - Shannon number
+%   MTAP - Orders of the Slepian functions in question, if preserved
+%   G - Matrix with the spherical harmonic expansion
 %            coefficients of the Slepian functions used
 %
 % Examples
@@ -62,10 +62,9 @@
 %   PTOSLEP, GLMALPHA, GLMALPHAPTO, SLEP2PLM
 %
 % Last modified by
-%   2024/09/12, williameclee@arizona.edu (@williameclee)
-%   2024/07/12, williameclee@arizona.edu (@williameclee)
+%   2025/05/23, williameclee@arizona.edu (@williameclee)
 %   2023/09/26, fjsimons@alum.mit.edu (@fjsimons)
-%   2013/04/24, charig@princeton.edu (@charig)
+%   2013/04/24, charig@princeton.edu (@harig00)
 
 function varargout = plm2slep_new(varargin)
     %% Initialisation
@@ -88,7 +87,7 @@ function varargout = plm2slep_new(varargin)
     end
 
     % Parse inputs
-    [lmcosi, domain, L, phi, theta, omega, nosort, J, beQuiet, GVN] = ...
+    [lmcosi, domain, L, phi, theta, omega, nosort, J, beQuiet, GVN, fmt, isError] = ...
         parseinputs(varargin{:});
 
     maxL = max(L);
@@ -100,10 +99,6 @@ function varargout = plm2slep_new(varargin)
     end
 
     J = conddefval(J, ldim);
-
-    if lmcosi(1) ~= 0 || lmcosi(2) ~= 1
-        error('Spherical harmonics must start from degree zero')
-    end
 
     %% Computing the projection
     % If it is the standard North-Polar cap or a geographic region, it's easy
@@ -147,15 +142,54 @@ function varargout = plm2slep_new(varargin)
 
     % Make sure that the requested L acts as truncation on lmcosi
     % or if we don't have enough, pad with zeros
-    if size(lmcosi, 1) < addmup(maxL)
-        [~, ~, ~, lmcosipad] = addmon(maxL);
-        lmcosi = [lmcosi; lmcosipad(size(lmcosi, 1) + 1:end, :)];
-    else
-        lmcosi = lmcosi(1:addmup(maxL), :);
-    end
+    if ismatrix(lmcosi)
 
-    % Perform the expansion of the signal into the Slepian basis
-    falpha = G' * lmcosi(2 * size(lmcosi, 1) + ronm(1:(maxL + 1) ^ 2));
+        if size(lmcosi, 2) == 4
+            lmcosi = lmcosi(:, 3:4);
+        end
+
+        if size(lmcosi, 1) < addmup(maxL)
+            % The lm part is not used anyway
+            lmcosi(addmup(maxL), 1, :) = 0;
+        elseif size(lmcosi, 1) > addmup(maxL)
+            lmcosi = lmcosi(1:addmup(maxL), :);
+        end
+
+        % Perform the expansion of the signal into the Slepian basis
+        falpha = G' * lmcosi(ronm(1:(maxL + 1) ^ 2));
+
+    elseif ndims(lmcosi) == 3
+
+        if strcmp(fmt, 'timefirst')
+            lmcosi = permute(lmcosi, [2, 3, 1]);
+        end
+
+        if size(lmcosi, 2) == 4
+            lmcosi = lmcosi(:, 3:4, :);
+        end
+
+        if size(lmcosi, 1) < addmup(maxL)
+            % The lm part is not used anyway
+            lmcosi(addmup(maxL), 1, :) = 0;
+        else
+            lmcosi = lmcosi(1:addmup(maxL), :, :);
+        end
+
+        lmcosi = reshape(lmcosi, ...
+            [size(lmcosi, 1) * size(lmcosi, 2), size(lmcosi, 3)]);
+
+        % Perform the expansion of the signal into the Slepian basis
+        if ~isError
+            falpha = G' * lmcosi(ronm(1:(maxL + 1) ^ 2), :);
+        else
+            falpha = sqrt((G .^ 2)' * lmcosi(ronm(1:(maxL + 1) ^ 2), :) .^ 2);
+        end
+
+        if strcmp(fmt, 'timefirst')
+            falpha = permute(falpha, [2, 1]);
+        end
+
+    end
 
     %% Returning requested outputs
     varargout = {falpha, V, N, MTAP, G};
@@ -164,52 +198,62 @@ end
 
 %% Subfunctions
 function varargout = parseinputs(varargin)
-    domainD = 30;
-    LD = 18;
-    phiD = 0;
-    thetaD = 0;
-    omegaD = 0;
-    nosortD = false;
-    JD = [];
-    upscaleD = 0;
+    dfOpt.Domain = 30;
+    dfOpt.L = 18;
+    dfOpt.Phi = 0;
+    dfOpt.Theta = 0;
+    dfOpt.Omega = 0;
+    dfOpt.NoSort = false;
+    dfOpt.Truncation = [];
+    dfOpt.Upscale = 0;
+    dfOpt.Format = 'timefirst';
+    dfOpt.IsError = false;
+    dfOpt.BeQuiet = 0.5;
 
-    p = inputParser;
-    addRequired(p, 'lmcosi', ...
+    ip = inputParser;
+    addRequired(ip, 'lmcosi', ...
         @(x) isnumeric(x) || ischar(x));
-    addOptional(p, 'Domain', domainD, ...
+    addOptional(ip, 'Domain', dfOpt.Domain, ...
         @(x) ischar(x) || iscell(x) || isa(x, "GeoDomain") || ...
         isnumeric(x) || isempty(x));
-    addOptional(p, 'L', LD, ...
+    addOptional(ip, 'L', dfOpt.L, ...
         @(x) isnumeric(x) || isempty(x));
-    addOptional(p, 'phi', phiD, ...
+    addOptional(ip, 'phi', dfOpt.Phi, ...
         @(x) isnumeric(x) || isempty(x));
-    addOptional(p, 'theta', thetaD, ...
+    addOptional(ip, 'theta', dfOpt.Theta, ...
         @(x) isnumeric(x) || isempty(x));
-    addOptional(p, 'omega', omegaD, ...
+    addOptional(ip, 'omega', dfOpt.Omega, ...
         @(x) isnumeric(x) || isempty(x));
-    addOptional(p, 'nosort', nosortD, ...
+    addOptional(ip, 'NoSort', dfOpt.NoSort, ...
         @(x) isnumeric(x) || islogical(x) || isempty(x));
-    addOptional(p, 'J', JD, ...
+    addOptional(ip, 'J', dfOpt.Truncation, ...
         @(x) isnumeric(x) || isempty(x));
-    addOptional(p, 'Upscale', upscaleD, ...
+    addOptional(ip, 'Upscale', dfOpt.Upscale, ...
         @(x) isnumeric(x) || isempty(x));
-    addOptional(p, 'MoreDomainSpecs', {}, @iscell);
-    addParameter(p, 'BeQuiet', false, @(x) islogical(x) || isnumeric(x));
-    addParameter(p, 'GVN', {}, @(x) iscell(x) && length(x) == 3);
-    parse(p, varargin{:});
+    addOptional(ip, 'MoreDomainSpecs', {}, @iscell);
+    addParameter(ip, 'GVN', {}, @(x) iscell(x) && length(x) == 3);
+    addParameter(ip, 'Format', dfOpt.Format, ...
+        @(x) ischar(validatestring(x, {'timefirst', 'traditional'})));
+    addParameter(ip, 'IsError', dfOpt.IsError, ...
+        @(x) (isnumeric(x) || islogical(x)) && isscalar(x));
+    addParameter(ip, 'BeQuiet', dfOpt.BeQuiet, ...
+        @(x) (isnumeric(x) || islogical(x)) && isscalar(x));
+    parse(ip, varargin{:});
 
-    lmcosi = p.Results.lmcosi;
-    domain = conddefval(p.Results.Domain, domainD);
-    L = conddefval(p.Results.L, LD);
-    phi = conddefval(p.Results.phi, phiD);
-    theta = conddefval(p.Results.theta, thetaD);
-    omega = conddefval(p.Results.omega, omegaD);
-    nosort = conddefval(p.Results.nosort, nosortD);
-    J = conddefval(p.Results.J, JD);
-    upscale = conddefval(p.Results.Upscale, upscaleD);
-    moreRegionSpecs = p.Results.MoreDomainSpecs;
-    beQuiet = logical(p.Results.BeQuiet);
-    GVN = p.Results.GVN;
+    lmcosi = ip.Results.lmcosi;
+    domain = conddefval(ip.Results.Domain, dfOpt.Domain);
+    L = conddefval(ip.Results.L, dfOpt.L);
+    phi = conddefval(ip.Results.phi, dfOpt.Phi);
+    theta = conddefval(ip.Results.theta, dfOpt.Theta);
+    omega = conddefval(ip.Results.omega, dfOpt.Omega);
+    nosort = conddefval(ip.Results.NoSort, dfOpt.NoSort);
+    J = conddefval(ip.Results.J, dfOpt.Truncation);
+    upscale = conddefval(ip.Results.Upscale, dfOpt.Upscale);
+    moreRegionSpecs = ip.Results.MoreDomainSpecs;
+    beQuiet = double(conddefval(ip.Results.BeQuiet, dfOpt.BeQuiet)) * 2;
+    GVN = ip.Results.GVN;
+    fmt = ip.Results.Format;
+    isError = logical(ip.Results.IsError);
 
     if isnumeric(domain) && isvector(domain)
 
@@ -230,5 +274,5 @@ function varargout = parseinputs(varargin)
         domain = GeoDomain(domain{1}, "Upscale", upscale, domain{2:end});
     end
 
-    varargout = {lmcosi, domain, L, phi, theta, omega, nosort, J, beQuiet, GVN};
+    varargout = {lmcosi, domain, L, phi, theta, omega, nosort, J, beQuiet, GVN, fmt, isError};
 end

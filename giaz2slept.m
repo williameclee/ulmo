@@ -70,7 +70,7 @@
 %       Structure (1.0) [Dataset]. Zenodo. doi: 10.5281/zenodo.5560862.
 %
 % Last modified by
-%   2024/09/12, williameclee@arizona.edu (@williameclee)
+%   2025/06/03, williameclee@arizona.edu (@williameclee)
 
 function varargout = giaz2slept(varargin)
     %% Initialisation
@@ -85,7 +85,7 @@ function varargout = giaz2slept(varargin)
         plm2slep_new(wPlm, domain, L, "BeQuiet", beQuiet);
     wSlept = wSlep * dYear;
 
-    if ismatrix(wUPlm) && ismatrix(wLPlm)
+    if ~isempty(wUPlm) && ~isempty(wLPlm)
         wUSlep = plm2slep_new(wUPlm, domain, L, "BeQuiet", beQuiet);
         wLSlep = plm2slep_new(wLPlm, domain, L, "BeQuiet", beQuiet);
         wUSlept = wUSlep * dYear;
@@ -104,9 +104,9 @@ function varargout = giaz2slept(varargin)
         eigfunInt = integratebasis_new( ...
             G, domain, truncation, "BeQuiet", beQuiet);
         eigfunInt = eigfunInt(:);
-        eigfunInt = eigfunInt * (4 * pi * 6371e3 ^ 2) * 1e-3; % Convert to m^3
+        eigfunInt = eigfunInt * (4 * pi * 6371e3 ^ 2) * 1e-12; % Convert to m^3
         total = eigfunInt' * wSlept(1:truncation, :);
-        total = total(:);
+        total = mass2weq(total(:), domain);
 
         varargout = {wSlept, wUSlept, wLSlept, total};
     end

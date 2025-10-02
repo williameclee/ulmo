@@ -54,9 +54,7 @@
 %       PANGAEA, doi: 10.1594/PANGAEA.932462
 %
 % Last modified by
-%   2025/02/05, williameclee@arizona.edu (@williameclee)
-%   2024/10/03, williameclee@arizona.edu (@williameclee)
-%   2024/09/12, williameclee@arizona.edu (@williameclee)
+%   2025/08/03, williameclee@arizona.edu (@williameclee)
 
 function varargout = giaz2plmt(varargin)
     %% Initialisation
@@ -64,11 +62,11 @@ function varargout = giaz2plmt(varargin)
     [model, L, dYear, beQuiet, makePlot] = parseinputs(varargin{:});
 
     % Loading the model
-    if contains(model, 'Steffen')
+    if contains(lower(model), 'steffen')
         wPlmt = findsteffendata(model);
         wUPlmt = [];
         wLPlmt = [];
-    elseif strcmp(model, 'LM17.3')
+    elseif strcmpi(model, 'lm17.3')
         wPlmt = lm17_vup;
         wPlmt = wPlmt(wPlmt(:, 1) <= L, :);
         wUPlmt = [];
@@ -81,14 +79,21 @@ function varargout = giaz2plmt(varargin)
         wPlmt = lmcosiM(lmcosiM(:, 1) <= L, :);
         wUPlmt = lmcosiU(lmcosiU(:, 1) <= L, :);
         wLPlmt = lmcosiL(lmcosiL(:, 1) <= L, :);
+    elseif strcmpi(model, 'ice6gd') || strcmpi(model, 'ice-6g_d')
+        inputFolder = fullfile(getenv('IFILES'), 'GIA', 'ICE-6G_D');
+        inputPath = fullfile(inputFolder, 'ICE-6G_D_VLM.mat');
+        load(inputPath, 'wSph');
+        wPlmt = wSph;
+        wUPlmt = [];
+        wLPlmt = [];
     else
-        error('Unrecognised model name %s', upper(model));
+        error('ULMO:LoadData:FileNotFound', 'Unrecognised model name %s', upper(model));
     end
 
-    if size(wPlmt, 1) < addmup(L) || ...
+    if (size(wPlmt, 1) < addmup(L) || ...
             (~isempty(wUPlmt) && size(wUPlmt, 1) < addmup(L)) || ...
-            (~isempty(wLPlmt) && size(wLPlmt, 1) < addmup(L))
-        warning('Model %s resolution lower than the required degree %d', model, L);
+            (~isempty(wLPlmt) && size(wLPlmt, 1) < addmup(L))) && ~beQuiet
+        warning('Model %s resolution lower than the requested degree %d', model, L);
     end
 
     if size(wPlmt, 1) < addmup(L)
@@ -221,10 +226,11 @@ function plm = findsteffendata(model)
              'Use SETENV to specify the environment path']);
         end
 
-        inputFolder = fullfile(inputFolder, 'SteffenGrids');
+        inputFolder = fullfile(inputFolder, 'Steffen21');
 
         % Get the appropriate file name
         model = replace(model, 'Steffen_', '');
+        model = replace(model, 'steffen_', '');
         model = [model, '_vup.mat'];
         inputFile = model;
 
@@ -232,9 +238,8 @@ function plm = findsteffendata(model)
 
         % Make sure the file exists
         if exist(inputPath, 'file') ~= 2
-            error( ...
-                [sprintf('Model %s not found', upper(model)), newline, ...
-                 'It should be kept at %s', inputPath]);
+            error('ULMO:LoadData:FileNotFound', ...
+                'Model %s not found at %s', upper(model), inputPath);
         end
 
     end

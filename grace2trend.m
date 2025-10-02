@@ -44,7 +44,7 @@
 %       The default product is {'CSR', 'RL06', 60}.
 %   gia - Whether to apply the GIA correction or which model to use
 %       When set to FALSE, no corrections are applied.
-%       The default option is the ICE6G_D (VM5a) solution as used in the 
+%       The default option is the ICE6G_D (VM5a) solution as used in the
 %       CSR mascon solution.
 %   Deg1Correction, C20Correction, C30Correction - Wether you want to apply
 %       the degree 1, C20, or C30 corrections
@@ -77,7 +77,7 @@
 function varargout = grace2trend(domain, varargin)
     %% Initialisation
     [domain, L, timeRange, fitwhat, product, gia, deg1cor, c20cor, ...
-         c30cor, ~, beQuiet, saveData, forceNew] = ...
+         c30cor, ~, beQuiet, saveData, forceNew, normalise, onlytrend] = ...
         parseinputs(domain, varargin{:});
 
     [outputPath, ~, outputExists] = outputfile(domain);
@@ -93,12 +93,31 @@ function varargout = grace2trend(domain, varargin)
                 G2T, domain, L, timeRange, product, corrections);
 
             if ~isnan(iExp)
+                date = G2T(iExp).Date;
+                total = G2T(iExp).Total;
+                totalerror = G2T(iExp).TotalError;
+                totalfit = G2T(iExp).TotalFit;
+                fitparams = G2T(iExp).FitParams;
+                fitparamerrors = G2T(iExp).FitParamErrors;
+
+                if onlytrend
+                    totalfit = totalfit(:, 2);
+                    fitparams = fitparams(2);
+                    fitparamerrors = fitparamerrors(2);
+                end
+
+                if normalise
+                    [total, totalerror, totalfit, fitparams, fitparamerrors] = ...
+                        mass2weq({total, totalerror, totalfit, fitparams, fitparamerrors}, domain);
+                    % total = mass2weq(total, domain);
+                    % totalerror = mass2weq(totalerror, domain);
+                    % totalfit = mass2weq(totalfit, domain);
+                    % fitparams = mass2weq(fitparams, domain);
+                    % fitparamerrors = mass2weq(fitparamerrors, domain);
+                end
 
                 varargout = ...
-                    {G2T(iExp).Date, G2T(iExp).Total, ...
-                     G2T(iExp).TotalError, ...
-                     G2T(iExp).TotalFit, G2T(iExp).FitParams, ...
-                     G2T(iExp).FitParamErrors};
+                    {date, total, totalerror, totalfit, fitparams, fitparamerrors};
 
                 return
             end
@@ -108,7 +127,7 @@ function varargout = grace2trend(domain, varargin)
     end
 
     %% Loading data
-    [date, slept, ~, G, ~, V, N] = ...
+    [slept, ~, date, ~, G, ~, V, N] = ...
         grace2slept_new(product, domain, L, ...
         "TimeRange", timeRange, "Unit", 'SD', ...
         "Deg1Correction", deg1cor, "C20Correction", c20cor, ...
@@ -116,9 +135,9 @@ function varargout = grace2trend(domain, varargin)
 
     % Correct for GIA
     if gia
-        [~, gisSlept] = ...
+        [~, giaSlept] = ...
             gia2slept(date, gia, domain, L, "BeQuiet", beQuiet);
-        slept = slept - gisSlept;
+        slept = slept - giaSlept;
     end
 
     %% Computing trends
@@ -131,86 +150,101 @@ function varargout = grace2trend(domain, varargin)
     total = total(:)';
     date = date(:)';
 
-    if nargout <= 3
-        varargout = ...
-            {date, total, totalerror, totalfit, fitparams, fitparamerrors};
-    else
-        varargout = ...
-            {date, total, totalerror, totalfit, fitparams, ...
-             fitparamerrors, slept, sleptSig, sleptRes, N, G, V};
+    %% Saving and output
+    if saveData
+
+        if outputExists
+            load(outputPath, 'G2T');
+            h = length(G2T) + 1;
+        else
+            h = 1;
+            G2T = struct;
+        end
+
+        G2T(h).Domain = domain;
+        G2T(h).L = L;
+        G2T(h).TimeRange = timeRange;
+        G2T(h).Product = product;
+        G2T(h).Corrections = corrections;
+        G2T(h).Date = date;
+        G2T(h).Total = total;
+        G2T(h).TotalError = totalerror;
+        G2T(h).TotalFit = totalfit;
+        G2T(h).FitParams = fitparams;
+        G2T(h).FitParamErrors = fitparamerrors;
+
+        save(outputPath, 'G2T');
+
+        if ~beQuiet
+            fprintf('%s saved %s\n', upper(mfilename), outputPath);
+        end
+
     end
 
-    %% Saving output
-    if ~saveData
-        return
+    if onlytrend
+        totalfit = totalfit(:, 2);
+        fitparams = fitparams(2);
+        fitparamerrors = fitparamerrors(2);
     end
 
-    if outputExists
-        load(outputPath, 'G2T');
-        h = length(G2T) + 1;
-    else
-        h = 1;
-        G2T = struct;
+    if normalise
+        [total, totalerror, totalfit, fitparams, fitparamerrors] = ...
+            mass2weq({total, totalerror, totalfit, fitparams, fitparamerrors}, domain);
+        % total = mass2weq(total, domain);
+        % totalerror = mass2weq(totalerror, domain);
+        % totalfit = mass2weq(totalfit, domain);
+        % fitparams = mass2weq(fitparams, domain);
+        % fitparamerrors = mass2weq(fitparamerrors, domain);
     end
 
-    G2T(h).Domain = domain;
-    G2T(h).L = L;
-    G2T(h).TimeRange = timeRange;
-    G2T(h).Product = product;
-    G2T(h).Corrections = corrections;
-    G2T(h).Date = date;
-    G2T(h).Total = total;
-    G2T(h).TotalError = totalerror;
-    G2T(h).TotalFit = totalfit;
-    G2T(h).FitParams = fitparams;
-    G2T(h).FitParamErrors = fitparamerrors;
-
-    save(outputPath, 'G2T');
-
-    if ~beQuiet
-        fprintf('%s saved %s\n', upper(mfilename), outputPath);
-    end
+    varargout = ...
+        {date, total, totalerror, totalfit, fitparams, ...
+         fitparamerrors, slept, sleptSig, sleptRes, N, G, V};
 
 end
 
 %% Subfunctions
 function varargout = parseinputs(varargin)
-    fitwhatD = [3, 365.25, 182.625, 161];
-    p = inputParser;
-    addRequired(p, 'Domain', ...
+    fitwhatD = [3, 365.25, 182.625, 161]; % 161: S2 tide
+    ip = inputParser;
+    addRequired(ip, 'Domain', ...
         @(x) ischar(x) || isstring(x) || iscell(x) || isa(x, 'GeoDomain'));
-    addOptional(p, 'L', 30, @isnumeric);
-    addOptional(p, 'TimeRange', ...
+    addOptional(ip, 'L', 30, @isnumeric);
+    addOptional(ip, 'TimeRange', ...
         [datetime(2003, 1, 1), datetime(2022, 12, 31)], ...
         @(x) isdatetime(x) && length(x) == 2);
-    addOptional(p, 'FitWhat', fitwhatD, ...
+    addOptional(ip, 'FitWhat', fitwhatD, ...
         @(x) isnumeric(x));
-    addOptional(p, 'DataProduct', {'CSR', 'RL06', 60}, ...
+    addOptional(ip, 'DataProduct', {'CSR', 'RL06', 60}, ...
         @(x) iscell(x) && length(x) == 3);
-    addParameter(p, 'GIACorrection', 'mascon', ...
+    addParameter(ip, 'GIACorrection', 'ICE-6G_D', ...
         @(x) ischar(x) || istruefalse(x));
-    addParameter(p, 'Deg1Correction', true, @istruefalse);
-    addParameter(p, 'C20Correction', true, @istruefalse);
-    addParameter(p, 'C30Correction', true, @istruefalse);
-    addParameter(p, 'Truncation', [], @isnumeric);
-    addParameter(p, 'BeQuiet', 0.5, @(x) istruefalse(x, true));
-    addParameter(p, 'SaveData', true, @istruefalse);
-    addParameter(p, 'ForceNew', false, @istruefalse);
-    parse(p, varargin{:});
+    addParameter(ip, 'Deg1Correction', true, @istruefalse);
+    addParameter(ip, 'C20Correction', true, @istruefalse);
+    addParameter(ip, 'C30Correction', true, @istruefalse);
+    addParameter(ip, 'Truncation', [], @isnumeric);
+    addParameter(ip, 'BeQuiet', 0.5, @(x) istruefalse(x, true));
+    addParameter(ip, 'SaveData', true, @istruefalse);
+    addParameter(ip, 'ForceNew', false, @istruefalse);
+    addParameter(ip, 'Normalisation', true, @(x) ischar(x) || istruefalse(x));
+    addParameter(ip, 'OnlyTrend', false, @(x) ischar(x) || istruefalse(x));
+    parse(ip, varargin{:});
 
-    domain = p.Results.Domain;
-    L = p.Results.L;
-    timeRange = p.Results.TimeRange;
-    fitwhat = conddefval(p.Results.FitWhat, fitwhatD);
-    DataProduct = p.Results.DataProduct;
-    giaModel = p.Results.GIACorrection;
-    deg1cor = p.Results.Deg1Correction;
-    c20cor = p.Results.C20Correction;
-    c30cor = p.Results.C30Correction;
-    truncation = p.Results.Truncation;
-    beQuiet = uint8((double(p.Results.BeQuiet) * 2));
-    saveData = p.Results.SaveData;
-    forceNew = p.Results.ForceNew;
+    domain = ip.Results.Domain;
+    L = ip.Results.L;
+    timeRange = ip.Results.TimeRange;
+    fitwhat = conddefval(ip.Results.FitWhat, fitwhatD);
+    DataProduct = ip.Results.DataProduct;
+    giaModel = ip.Results.GIACorrection;
+    deg1cor = ip.Results.Deg1Correction;
+    c20cor = ip.Results.C20Correction;
+    c30cor = ip.Results.C30Correction;
+    truncation = ip.Results.Truncation;
+    beQuiet = uint8((double(ip.Results.BeQuiet) * 2));
+    saveData = ip.Results.SaveData;
+    forceNew = ip.Results.ForceNew;
+    normalise = logical(ip.Results.Normalisation);
+    onlytrend = logical(ip.Results.OnlyTrend);
 
     % Change the domain to a GeoDomain object if appropriate
     if ischar(domain) || isstring(domain) && exist(domain, "file")
@@ -232,7 +266,7 @@ function varargout = parseinputs(varargin)
 
     varargout = ...
         {domain, L, timeRange, fitwhat, DataProduct, giaModel, ...
-         deg1cor, c20cor, c30cor, truncation, beQuiet, saveData, forceNew};
+         deg1cor, c20cor, c30cor, truncation, beQuiet, saveData, forceNew, normalise, onlytrend};
 end
 
 function [outputPath, outputFolder, outputExists] = outputfile(domain)
@@ -247,7 +281,7 @@ function [outputPath, outputFolder, outputExists] = outputfile(domain)
     outputFile = sprintf('%s-%s.mat', mfilename, domain.Domain);
     outputPath = fullfile(outputFolder, outputFile);
 
-    outputExists = exist(outputPath, 'file') == 2;
+    outputExists = exist(outputPath, "file");
 
 end
 

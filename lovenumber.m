@@ -5,22 +5,25 @@
 % Input arguments
 %   l - Degree of the Love number
 %   type - Type of the Love number
-%       'loadingverticaldisplacement' - Loading Love number for vertical displacement
-%       'loadinggravitationalpotential' - Loading Love number for gravitational potential
-%       'loadinghorizontaldisplacement' - Loading Love number for horizontal displacement
-%       'tidalverticaldisplacement' - Tidal Love number for vertical displacement
-%       'tidalgravitationalpotential' - Tidal Love number for gravitational potential
-%       'tidalhorizontaldisplacement' - Tidal Love number for horizontal displacement
+%       'loadingverticaldisplacement': Loading Love number for vertical displacements
+%       'loadinggravitationalpotential': Loading Love number for gravitational potentials
+%       'loadinghorizontaldisplacement': Loading Love number for horizontal displacements
+%       'tidalverticaldisplacement': Tidal Love number for vertical displacements
+%       'tidalgravitationalpotential': Tidal Love number for gravitational potentials
+%       'tidalhorizontaldisplacement': Tidal Love number for horizontal displacements
 %   frame - Reference frame
-%       'CM' - Centre of mass frame
-%       'CF' - Centre of figure frame
-%       The default frame is the CF frame
+%       'CM': Centre of mass frame.
+%       'CF': Centre of figure frame.
+%       The default frame is the CF frame.
 %
 % Output arguments
-%   ln - Love number
+%   ln - Love numbers
 %
 % Authored by
 %   2024/11/20, williameclee@arizona.edu (@williameclee)
+%
+% Last modified by
+%   2025/08/03, williameclee@arizona.edu (@williameclee)
 
 function ln = lovenumber(l, varargin)
     %% Initialisation
@@ -30,9 +33,10 @@ function ln = lovenumber(l, varargin)
         @(x) ischar(validatestring(lower(x), ...
         {'loadingverticaldisplacement', 'loadinggravitationalpotential', ...
          'loadinghorizontaldisplacement', 'tidalverticaldisplacement', ...
-         'tidalgravitationalpotential', 'tidalhorizontaldisplacement'})));
-    addOptional(ip, 'frame', 'CF', @(x) ischar(validatestring(upper(x), ...
-        {'CM', 'CF'})));
+         'tidalgravitationalpotential', 'tidalhorizontaldisplacement', ...
+         'LLN geoid', 'LLN VLM', 'TLN geoid', 'TLN VLM', 'LLN HLM', 'TLN HLM'})));
+    addOptional(ip, 'frame', 'CF', ...
+        @(x) ischar(validatestring(upper(x), {'CM', 'CF'})));
     parse(ip, l, varargin{:});
     l = ip.Results.l;
     type = ip.Results.type;
@@ -42,9 +46,24 @@ function ln = lovenumber(l, varargin)
         error('Love number must be less than or equal to 10000');
     end
 
+    switch type
+        case 'LLN geoid'
+            type = 'loadinggravitationalpotential';
+        case 'LLN VLM'
+            type = 'loadingverticaldisplacement';
+        case 'LLN HLM'
+            type = 'loadinghorizontaldisplacement';
+        case 'TLN geoid'
+            type = 'tidalgravitationalpotential';
+        case 'TLN VLM'
+            type = 'tidalverticaldisplacement';
+        case 'TLN HLM'
+            type = 'tidalhorizontaldisplacement';
+    end
+
     %% Loading Love numbers
     try
-        ln = load(fullfile('IFILES', 'lovenumbers.mat'), type);
+        ln = load(fullfile(getenv('IFILES'), 'lovenumbers.mat'), type);
     catch
         error('Check your love number file at %s', fullfile('IFILES', 'lovenumbers.mat'));
     end
@@ -63,6 +82,7 @@ function ln = lovenumber(l, varargin)
 
     end
 
-    ln = ln(l + 1);
+    ln = ln(l + 1); % l starts at 0
+    ln = reshape(ln, size(l)); 
 
 end
