@@ -17,22 +17,25 @@
 %   >>  v = conddefval(v, 10);
 %
 % Last modified by
-%   2024/08/13, williameclee@arizona.edu (@williameclee)
+%   2024/08/28, williameclee@arizona.edu (@williameclee)
 
-function v = conddefval(v, v0, varargin)
-    p = inputParser;
-    addRequired(p, 'v');
-    addRequired(p, 'v0');
-    addParameter(p, 'IncludeNan', false, @(x) islogical(x) || isnumeric(x));
-    parse(p, v, v0, varargin{:});
-    v = p.Results.v;
-    v0 = p.Results.v0;
-    includeNan = logical(p.Results.IncludeNan);
+function v = conddefval(v, v0, options)
 
-    if ~isempty(v) && ~(includeNan && isnumeric(x) && isnan(v))
+    arguments
+        v
+        v0
+        options.IncludeNan (1, 1) logical = false
+    end
+
+    includeNan = logical(options.IncludeNan);
+
+    if isempty(v)
+        v = v0;
         return
     end
 
-    v = v0;
+    if includeNan && isscalar(v) && isnumeric(x) && isnan(v)
+        v = v0;
+    end
 
 end

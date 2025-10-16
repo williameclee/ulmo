@@ -118,7 +118,7 @@
 %   printed to the log file instead.
 %
 % Last modified by
-%   2025/10/01, williameclee@arizona.edu (@williameclee)
+%   2025/10/16, williameclee@arizona.edu (@williameclee)
 %   2022/05/18, charig@email.arizona.edu (@harig00)
 %   2020/11/09, lashokkumar@arizona.edu
 %   2019/03/18, mlubeck@email.arizona.edu
@@ -418,11 +418,9 @@ function varargout = parseinputs(varargin)
         conddefval(ip.Results.OutputFormat, dfOpt.OutputFormat);
     timeFmt = conddefval(ip.Results.TimeFormat, dfOpt.TimeFormat);
     Loutput = conddefval(ip.Results.Loutput, dfOpt.Loutput);
-    forceNew = ...
-        uint8(double(conddefval(ip.Results.ForceNew, dfOpt.ForceNew)) * 2);
-    saveData = conddefval(logical(ip.Results.SaveData), dfOpt.SaveData);
-    beQuiet = ...
-        uint8(double(conddefval(ip.Results.BeQuiet, dfOpt.BeQuiet)) * 2);
+    forceNew = uint8(double(ip.Results.ForceNew) * 2);
+    saveData = logical(ip.Results.SaveData);
+    beQuiet = uint8(double(ip.Results.BeQuiet) * 2);
     callChain = [ip.Results.CallChain, {mfilename}];
 
     if isnumeric(Rlevel)

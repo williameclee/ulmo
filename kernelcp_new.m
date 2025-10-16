@@ -75,7 +75,7 @@
 %   PLOTSLEP, PLM2AVG, KERNELC, LEGENDREPRODINT, DLMLMP
 %
 % Last modified by
-%   2025/03/18, williameclee@arizona.edu (@williameclee)
+%   2025/10/16, williameclee@arizona.edu (@williameclee)
 %   2024/08/15, williameclee@arizona.edu (@williameclee)
 %   2023/11/11, fjsimons@alum.mit.edu (@fjsimons)
 %   2017/05/26, plattner@alumni.ethz.ch (@AlainPlattner)
@@ -106,7 +106,7 @@ function varargout = kernelcp_new(varargin)
     end
 
     % Parse inputs
-    [Lmax, domain, pars, ngl, rotb, forceNew, saveData, beQuiet] = ...
+    [Lmax, domain, pars, ngl, rotb, forceNew, saveData, beQuiet, callChain] = ...
         parseinputs(varargin);
     K1 = nan; %#ok<NASGU>
     K = nan; %#ok<NASGU>
@@ -115,37 +115,48 @@ function varargout = kernelcp_new(varargin)
 
     %% Initialisation
     % Generic path name that I like
-    [outputPath1, outputPath2, output1Exists, output2Exists, ...
-         outputFolder1, ~] = ...
+    [outputPath1, outputPath2, outputFolder1, ~] = ...
         getoutputfile(Lmax, domain, pars, rotb);
 
     % Check if the kernel has already been calculated
-    if output1Exists && ~forceNew ...
-            && ~(isstring(ngl) || ischar(ngl))
+    vars = {'Klmlmp', 'XY', 'K1', 'K'};
+
+    if ~forceNew && ~(isstring(ngl) || ischar(ngl)) && ...
+            exist(outputPath1, 'file') && ...
+            all(ismember(vars, who('-file', outputPath1)))
         % Check the KERNELC directory
-        load(outputPath1, 'Klmlmp', 'XY', 'K1', 'K')
+        data = load(outputPath1, vars{:});
 
-        if ~beQuiet
-            fprintf('%s loaded %s\n', upper(mfilename), outputPath1)
+        if beQuiet <= 1
+            fprintf('[ULMO>%s] Loaded <a href="matlab: fprintf(''%s\\n'');open(''%s'')">localisation kernel</a>.\n', ...
+                callchaintext(callChain), outputPath1, outputPath1);
         end
 
-        varargout = {Klmlmp, XY, K1, K};
+        varargout = {data.Klmlmp, data.XY, data.K1, data.K};
         return
-    elseif output2Exists && ~forceNew ...
-            && ~(isstring(ngl) || ischar(ngl))
+    elseif ~forceNew && ~(isstring(ngl) || ischar(ngl)) && ...
+            exist(outputPath2, 'file') && ...
+            all(ismember(vars, who('-file', outputPath2)))
         % Check if you have a file in the old KERNELCP directory
-        load(outputPath2, 'Klmlmp', 'XY', 'K1', 'K')
+        data = load(outputPath2, vars{:});
 
-        if ~beQuiet
-            fprintf('%s loaded %s\n', upper(mfilename), outputPath2)
-            fprintf('Consider moving your kernel files back to the KERNELC directory\n')
+        if beQuiet <= 1
+            fprintf('[ULMO>%s] Loaded <a href="matlab: fprintf(''%s\\n'');open(''%s'')">localisation kernel</a>.\nConsider moving your kernel files back to the KERNELC directory\n', ...
+                callchaintext(callChain), outputPath1, outputPath1);
         end
 
-        varargout = {Klmlmp, XY, K1, K};
+        varargout = {data.Klmlmp, data.XY, data.K1, data.K};
         return
     end
 
     %% Computing the kernel matrix
+    if beQuiet == 0
+        t = tic;
+        templine = 'this may take a while...';
+        fprintf('[ULMO><a href="matlab: open(''%s'')">%s</a>] Computing localisation kernel, %s\n', ...
+            mfilename("fullpath"), mfilename, templine);
+    end
+
     if strcmp(domain, 'patch')
         % For future reference
         th0 = pars(1);
@@ -218,7 +229,7 @@ function varargout = kernelcp_new(varargin)
         % Prepare the reindexing arrays
         % We're not fully using the recursion here, so there is wastage
         % Perform the masked spherical harmonic transform
-        waitbarKernelcp = waitbar(0, sprintf('%s: Loop over all degrees and orders', upper(mfilename)));
+        wbar = waitbar(0, sprintf('%s: Loop over all degrees and orders', upper(mfilename)));
         % With the recursions as they are, we are not yet taking full
         % advantage of this method. See Mark Wieczorek's Fortran code which
         % presumably works better for this case.
@@ -230,7 +241,7 @@ function varargout = kernelcp_new(varargin)
                 * 2 * sqrt(pi);
 
             for m = 0:l
-                waitbar((addmup(l) + m) / addmup(Lmax), waitbarKernelcp);
+                waitbar((addmup(l) + m) / addmup(Lmax), wbar);
                 % Return the expansion coefficients in "standard" real
                 % harmonics order
                 lmcosiplus = xyz2plm((-1) ^ m * theYplus(:, :, m + 1) .* r, Lmax);
@@ -254,7 +265,7 @@ function varargout = kernelcp_new(varargin)
 
         end
 
-        delete(waitbarKernelcp)
+        delete(wbar)
 
         % NOTE : THIS PIECE OF THE CODE IS REPEATED VERBATIM BELOW
         % By whichever way you obtained the kernel, now check if you might want
@@ -388,9 +399,9 @@ function varargout = kernelcp_new(varargin)
         if strcmp(domain, 'patch')
             parea = 2 * pi * (1 - cos(thR));
             apo = abs(parea - Klmlmp(1)) / parea;
-            fprintf( ...
-                'Area of the patch approximated to within %5.2f %s\n', ...
-                apo * 100, '%')
+            % fprintf( ...
+            %     'Area of the patch approximated to within %5.2f %s\n', ...
+            %     apo * 100, '%')
 
             if apo * 100 > 1
                 error('Something wrong with the area element: radians/degrees ?')
@@ -399,17 +410,17 @@ function varargout = kernelcp_new(varargin)
         elseif strcmp(domain, 'sqpatch')
             parea = (cos(thN) - cos(thS)) * (phE - phW);
             apo = abs(parea - Klmlmp(1)) / parea;
-            fprintf( ...
-                'Area of the patch approximated to within %5.2f %s\n', ...
-                apo * 100, '%')
+            % fprintf( ...
+            %     'Area of the patch approximated to within %5.2f %s\n', ...
+            %     apo * 100, '%')
 
             if apo * 100 > 1
                 error('Something wrong with the area element: radians/degrees ?')
             end
 
         else
-            fprintf('Area of the domain approximated as %8.3e\n', ...
-                Klmlmp(1))
+            % fprintf('Area of the domain approximated as %8.3e\n', ...
+            %     Klmlmp(1))
         end
 
         % To make this exactly equivalent to Tony's \ylm, i.e. undo what we
@@ -426,19 +437,28 @@ function varargout = kernelcp_new(varargin)
         % This is where the save statement used to be
     end
 
-    fprintf('%s (Matrix)  took %8.4f s\n', upper(mfilename), toc)
+    if beQuiet == 0
+        fprintf(repmat('\b', 1, length(templine) + 1));
+        fprintf('took %.1f seconds.\n', toc(t));
+    end
 
     % NOTE : THIS PIECE OF THE CODE IS REPEATED VERBATIM ABOVE
     % By whichever way you obtained the kernel, now check if you might want
     % to rotate it back so its eigenvectors are "right", right away,
     % e.g. for Antarctica or ContShelves without needing to rotate as
     % part of LOCALIZATION
-    if rotb
-        disp('The input coordinates were rotated. Kernel will be unrotated,')
-        disp('so its eigenfunctions will show up in the right place')
-        disp(' ')
+    if rotb && ...
+            (((ischar(domain) || isstring(domain)) && ismember(domain, {'antarctica', 'contshelves'})) || ...
+            isa(domain, 'GeoDomain') && ismember(domain.Domain, {'antarctica', 'contshelves'}))
         % Get the rotation parameters for this particular region
-        [XY, lonc, latc] = feval(domain, pars);
+        if ischar(domain) || isstring(domain)
+            [XY, lonc, latc] = feval(domain, pars);
+        elseif isa(domain, 'GeoDomain')
+            [XY, lonc, latc] = feval(domain.Domain, "Upscale", domain.Upscale, "Buffer", domain.Buffer);
+        else
+            error(sprintf('ULMO:%s:CannotRotate', upper(mfilename)), ...
+                'Domain type %s not recognised for rotation', upper(class(domain)))
+        end
 
         if nargout < 4
             % Rotate the kernel, properly
@@ -460,23 +480,12 @@ function varargout = kernelcp_new(varargin)
         return
     end
 
-    % This is only saved when it's not the alternative calculation method
-    try
-        save(outputPath1, 'Lmax', 'Klmlmp', 'domain', 'ngl', 'XY', ...
-            'lonc', 'latc', 'K1', 'K', '-v7.3')
+    save(outputPath1, 'Lmax', 'Klmlmp', 'domain', 'ngl', 'XY', ...
+        'lonc', 'latc', 'K1', 'K', '-v7.3')
 
-        if ~beQuiet
-            fprintf('%s saving %s\n', upper(mfilename), outputPath1)
-        end
-
-    catch
-        save(outputPath1, 'Lmax', 'Klmlmp', 'domain', 'ngl', 'XY', ...
-            'lonc', 'latc', 'K1', 'K')
-
-        if ~beQuiet
-            fprintf('%s saving %s\n', upper(mfilename), outputPath1)
-        end
-
+    if beQuiet <= 1
+        fprintf('[ULMO>%s] Saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">localisation kernel</a>.\n', ...
+            callchaintext(callChain), outputPath1, outputPath1);
     end
 
 end
@@ -484,40 +493,45 @@ end
 %% Subfunctions
 function varargout = parseinputs(Inputs)
     % Define fallback values
-    LmaxD = 12;
-    domainD = 'greenland';
-    parsD = [];
-    nglD = 200;
-    rotbD = false;
+    dfOpt.Lmax = 12;
+    dfOpt.domain = 'greenland';
+    dfOpt.pars = [];
+    dfOpt.ngl = 200;
+    dfOpt.rotb = false;
+    dfOpt.ForceNew = false;
+    dfOpt.SaveData = true;
+    dfOpt.BeQuiet = 0.5;
 
-    p = inputParser;
-    addOptional(p, 'Lmax', LmaxD, ...
+    ip = inputParser;
+    addOptional(ip, 'Lmax', dfOpt.Lmax, ...
         @(x) isnumeric(x) || isempty(x));
-    addOptional(p, 'Domain', domainD, ...
+    addOptional(ip, 'Domain', dfOpt.domain, ...
         @(x) ischar(x) || iscell(x) || isa(x, "GeoDomain") || ...
         isnumeric(x) || isempty(x));
-    addOptional(p, 'pars', parsD, ...
+    addOptional(ip, 'pars', dfOpt.pars, ...
         @(x) isnumeric(x) || ischar(x) || iscell(x) || isempty(x));
-    addOptional(p, 'ngl', nglD, ...
+    addOptional(ip, 'ngl', dfOpt.ngl, ...
         @(x) isnumeric(x) || ischar(x) || isempty(x));
-    addOptional(p, 'rotb', rotbD, ...
+    addOptional(ip, 'rotb', dfOpt.rotb, ...
         @(x) isnumeric(x) || islogical(x) || isempty(x));
-    addParameter(p, 'ForceNew', false, ...
+    addParameter(ip, 'ForceNew', dfOpt.ForceNew, ...
         @(x) islogical(x) || isnumeric(x));
-    addParameter(p, 'SaveData', true, ...
+    addParameter(ip, 'SaveData', dfOpt.SaveData, ...
         @(x) islogical(x) || isnumeric(x));
-    addParameter(p, 'BeQuiet', false, ...
-        @(x) islogical(x) || isnumeric(x));
-    parse(p, Inputs{:});
+    addParameter(ip, 'BeQuiet', dfOpt.BeQuiet, ...
+        @(x) (isnumeric(x) || islogical(x)) && isscalar(x));
+    addParameter(ip, 'CallChain', {}, @iscell);
+    parse(ip, Inputs{:});
 
-    Lmax = conddefval(p.Results.Lmax, LmaxD);
-    domain = conddefval(p.Results.Domain, domainD);
-    pars = conddefval(p.Results.pars, parsD);
-    ngl = conddefval(p.Results.ngl, nglD);
-    rotb = logical(conddefval(p.Results.rotb, rotbD));
-    forceNew = logical(p.Results.ForceNew);
-    saveData = logical(p.Results.SaveData);
-    beQuiet = logical(p.Results.BeQuiet);
+    Lmax = conddefval(ip.Results.Lmax, dfOpt.Lmax);
+    domain = conddefval(ip.Results.Domain, dfOpt.domain);
+    pars = conddefval(ip.Results.pars, dfOpt.pars);
+    ngl = conddefval(ip.Results.ngl, dfOpt.ngl);
+    rotb = logical(conddefval(ip.Results.rotb, dfOpt.rotb));
+    forceNew = logical(ip.Results.ForceNew);
+    saveData = logical(ip.Results.SaveData);
+    beQuiet = uint8(double(ip.Results.BeQuiet) * 2);
+    callChain = [ip.Results.CallChain, {mfilename}];
 
     % Change the domain to a GeoDomain object if appropriate
     if ischar(domain) || isstring(domain) && exist(domain, "file")
@@ -530,7 +544,7 @@ function varargout = parseinputs(Inputs)
     end
 
     varargout = ...
-        {Lmax, domain, pars, ngl, rotb, forceNew, saveData, beQuiet};
+        {Lmax, domain, pars, ngl, rotb, forceNew, saveData, beQuiet, callChain};
 end
 
 function varargout = getoutputfile(Lmax, domain, pars, rotb)
@@ -580,10 +594,7 @@ function varargout = getoutputfile(Lmax, domain, pars, rotb)
     outputPath1 = fullfile(outputFolder1, outputName);
     outputPath2 = fullfile(outputFolder2, outputName);
 
-    outputFile1Exists = exist(outputPath1, 'file');
-    outputFile2Exists = exist(outputPath2, 'file');
-
     varargout = ...
-        {outputPath1, outputPath2, outputFile1Exists, outputFile2Exists, ...
+        {outputPath1, outputPath2, ...
          outputFolder1, outputFolder2};
 end
