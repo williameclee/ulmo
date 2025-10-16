@@ -355,7 +355,7 @@
       {
         "name": "time",
         "kind": "ordered",
-        "type": ["duration", "numeric", "datetime"],
+        "type": [["duration"], ["numeric"], ["datetime"]],
         "purpose": "time stamp of GIA"
       },
       {

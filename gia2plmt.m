@@ -99,12 +99,11 @@
 
 function varargout = gia2plmt(varargin)
     %% Initialisation
-    [time, model, L, unit, outputFmt, beQuiet] = ...
+    [time, model, L, unit, outputFmt, beQuiet, callChain] = ...
         parseinputs(varargin{:});
 
     %% Loading the model
     % Load this data (saved as lmcosiM)
-    warning('off', 'MATLAB:load:variableNotFound');
 
     inputPath = finddatafile(model, unit);
     inputUnit = unit;
@@ -113,8 +112,8 @@ function varargout = gia2plmt(varargin)
         data = load(inputPath, 'lmcosiM', 'lmcosiU', 'lmcosiL');
 
         if ~beQuiet
-            fprintf('[ULMO><a href="matlab: open(''%s'')">%s</a>] Loaded <a href="matlab: fprintf(''%s\\n'');open(''%s'')">%s GIA model</a>\n', ...
-                mfilename("fullpath"), mfilename, inputPath, inputPath, upper(model));
+            fprintf('[ULMO>%s] Loaded <a href="matlab: fprintf(''%s\\n'');open(''%s'')">%s GIA model</a>\n', ...
+                callchaintext(callChain), inputPath, inputPath, upper(model));
         end
 
     else
@@ -136,8 +135,8 @@ function varargout = gia2plmt(varargin)
         data = load(altInputPath, 'lmcosiM', 'lmcosiU', 'lmcosiL');
 
         if ~beQuiet
-            fprintf('[ULMO><a href="matlab: open(''%s'')">%s</a>] Loaded <a href="matlab: fprintf(''%s\\n'');open(''%s'')">%s GIA model</a>\n', ...
-                mfilename("fullpath"), mfilename, inputPath, inputPath, upper(model));
+            fprintf('[ULMO>%s] Loaded <a href="matlab: fprintf(''%s\\n'');open(''%s'')">%s GIA model</a>\n', ...
+                callchaintext(callChain), inputPath, inputPath, upper(model));
         end
 
     end
@@ -213,8 +212,8 @@ function varargout = gia2plmt(varargin)
         end
 
         if ~beQuiet
-            fprintf('[ULMO><a href="matlab: open(''%s'')">%s</a>] Saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">%s GIA model</a>\n', ...
-                mfilename("fullpath"), mfilename, inputPath, inputPath, upper(model));
+            fprintf('[ULMO>%s] Saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">%s GIA model</a>\n', ...
+                callchaintext(callChain), inputPath, inputPath, upper(model));
         end
 
     end
@@ -344,6 +343,8 @@ function varargout = parseinputs(varargin)
         @(x) ischar(validatestring(x, {'massdensity', 'geoid', 'SD', 'POT', 'geo'})));
     addParameter(ip, 'OutputFormat', 'timefirst', ...
         @(x) ischar(validatestring(x, {'timefirst', 'traditional'})));
+    addParameter(ip, 'CallChain', {}, ...
+        @(x) iscell(x));
 
     parse(ip, varargin{:});
     time = ip.Results.Time;
@@ -352,6 +353,7 @@ function varargout = parseinputs(varargin)
     beQuiet = ip.Results.BeQuiet;
     unit = ip.Results.Unit;
     outputFmt = ip.Results.OutputFormat;
+    callChain = [ip.Results.CallChain, {mfilename}];
 
     if isdatetime(time)
         time = datenum(time); %#ok<DATNM>
@@ -391,7 +393,7 @@ function varargout = parseinputs(varargin)
             unit = 'POT';
     end
 
-    varargout = {time, model, L, unit, outputFmt, beQuiet};
+    varargout = {time, model, L, unit, outputFmt, beQuiet, callChain};
 
 end
 
