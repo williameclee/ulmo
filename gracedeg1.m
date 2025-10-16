@@ -77,45 +77,43 @@
 %       More recent versions of the JPL may be available after the time of this documentation.
 %
 % Last modified by
-%   2025/05/20, williameclee@arizona.edu (@williameclee)
-%   2021/11/18, charig@arizona.edu
+%   2025/10/16, williameclee@arizona.edu (@williameclee)
+%   2021/11/18, charig@arizona.edu (@harig00)
 
 function varargout = gracedeg1(varargin)
     %% Initialisation
     % Parse inputs
-    [Pcenter, Rlevel, timeFmt, outputFmt, forceNew, saveData, beQuiet] = ...
+    [Pcenter, Rlevel, timeFmt, outputFmt, forceNew, saveData, beQuiet, callChain] = ...
         parseinputs(varargin{:});
 
     % Find the coefficient files
     [inputPath, outputPath] = getIOfiles(Pcenter, Rlevel);
 
     % Check if the output file already exists and is newer than the input
+    vars = {'deg1Plmt', 'deg1StdPlmt', 'dates'};
+
     if exist(outputPath, 'file') && ...
             (forceNew == 0 || ...
-            (forceNew == 1 && isolder(inputPath, outputPath, false)))
-        load(outputPath, 'deg1Plmt', 'deg1StdPlmt', 'dates')
+            (forceNew == 1 && isolder(inputPath, outputPath, false))) && ...
+            all(ismember(vars, who('-file', outputPath)))
+        data = load(outputPath, vars{:});
 
-        if exist('deg1Plmt', 'var') && ...
-                exist('deg1StdPlmt', 'var') && ...
-                exist('dates', 'var')
-
-            if ~beQuiet
-                fprintf('%s loaded %s\n', upper(mfilename), outputPath)
-            end
-
-            [deg1Plmt, deg1StdPlmt, dates] = ...
-                formatoutput(deg1Plmt, deg1StdPlmt, dates, timeFmt, outputFmt);
-
-            varargout = {deg1Plmt, deg1StdPlmt, dates};
-            return
+        if ~beQuiet
+            fprintf('[ULMO>%s] Loaded <a href="matlab: fprintf(''%s\\n'');open(''%s'')">degree-1 data</a>.\n', ...
+                callchaintext(callChain), outputPath, outputPath);
         end
 
+        [deg1Plmt, deg1StdPlmt, dates] = ...
+            formatoutput(data.deg1Plmt, data.deg1StdPlmt, data.dates, timeFmt, outputFmt);
+
+        varargout = {deg1Plmt, deg1StdPlmt, dates};
+        return
     end
 
     %% Reading the data
     if ~exist(inputPath, 'file') || forceNew == 2
         [inputPath, outputPath] = ...
-            downloadRemoteData(inputPath, outputPath, Pcenter, Rlevel, beQuiet);
+            downloadRemoteData(inputPath, outputPath, Pcenter, Rlevel, beQuiet, callChain);
     end
 
     data = fileread(inputPath);
@@ -150,7 +148,8 @@ function varargout = gracedeg1(varargin)
         save(outputPath, 'deg1Plmt', 'deg1StdPlmt', 'dates')
 
         if ~beQuiet
-            fprintf('%s saved %s\n', upper(mfilename), outputPath)
+            fprintf('[ULMO>%s] Saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">degree-1 data</a>.\n', ...
+                callchaintext(callChain), outputPath, outputPath);
         end
 
     end
@@ -180,6 +179,7 @@ function varargout = parseinputs(varargin)
         @(x) (islogical(x) || isnumeric(x)) && isscalar(x));
     addParameter(ip, 'BeQuiet', false, ...
         @(x) (islogical(x) || isnumeric(x)) && isscalar(x));
+    addParameter(ip, 'CallChain', {}, @iscell);
 
     if ~isempty(varargin) && iscell(varargin{1})
         varargin = [varargin{1}{1:2}, varargin(2:end)];
@@ -193,12 +193,13 @@ function varargout = parseinputs(varargin)
     forceNew = uint8(double(ip.Results.ForceNew) * 2);
     saveData = logical(ip.Results.SaveData);
     beQuiet = logical(ip.Results.BeQuiet);
+    callChain = [ip.Results.CallChain, {mfilename}];
 
     if isnumeric(Rlevel)
         Rlevel = sprintf('RL%02d', floor(Rlevel));
     end
 
-    varargout = {Pcenter, Rlevel, timeFmt, outputFmt, forceNew, saveData, beQuiet};
+    varargout = {Pcenter, Rlevel, timeFmt, outputFmt, forceNew, saveData, beQuiet, callChain};
 end
 
 % Get the input and output file names
@@ -253,7 +254,7 @@ end
 
 % Fetch remote data
 function [inputPath, outputPath] = ...
-        downloadRemoteData(inputPath, outputPath, Pcenter, Rlevel, beQuiet)
+        downloadRemoteData(inputPath, outputPath, Pcenter, Rlevel, beQuiet, callChain)
 
     if ~strcmp(Rlevel, 'RL06')
 
@@ -290,15 +291,17 @@ function [inputPath, outputPath] = ...
     try
 
         if ~beQuiet
-            loadingMsg = sprintf('%s downloading %s\nMore recent releases might be available\n', upper(mfilename), remoteInputPath);
-            fprintf(loadingMsg)
+            t = tic;
+            templine = 'this may take a while...';
+            fprintf('[ULMO>%s] Downloading TN-13, %s\n', ...
+                callchaintext(callChain), templine);
         end
 
         websave(inputPath, remoteInputPath);
 
         if ~beQuiet
-            fprintf(repmat('\b', 1, length(loadingMsg)))
-            fprintf('%s downloaded %s\nMore recent releases might be available\n', upper(mfilename), remoteInputPath)
+            fprintf(repmat('\b', 1, length(templine) + 1));
+            fprintf('took %.1f seconds.\nMore recent releases may be available.\n', toc(t));
         end
 
     catch

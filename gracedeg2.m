@@ -67,36 +67,33 @@
 function varargout = gracedeg2(varargin)
     %% Initialisation
     % Parse inputs
-    [Rlevel, timeFmt, outputFmt, forceNew, saveData, beQuiet] = ...
+    [Rlevel, timeFmt, outputFmt, forceNew, saveData, beQuiet, callChain] = ...
         parseinputs(varargin{:});
 
     [inputPath, outputPath] = getIOfiles(Rlevel);
 
+    vars = {'c2030data', 'c2030std', 'dates'};
+
     if exist(outputPath, 'file') && ...
             (forceNew == 0 || ...
-            forceNew == 1 && isolder(inputPath, outputPath, false))
+            forceNew == 1 && isolder(inputPath, outputPath, false)) && ...
+            all(ismember(vars, who('-file', outputPath)))
+        data = load(outputPath, 'c2030data', 'c2030std', 'dates');
 
-        load(outputPath, 'c2030data', 'c2030std', 'dates')
-
-        if exist('c2030data', 'var') && ...
-                exist('c2030std', 'var') && ...
-                exist('dates', 'var')
-
-            if ~beQuiet
-                fprintf('%s loaded %s\n', upper(mfilename), outputPath)
-            end
-
-            [c2030data, c2030std, dates] = ...
-                formatoutput(c2030data, c2030std, dates, timeFmt, outputFmt);
-            varargout = {c2030data, c2030std, dates};
-            return
+        if ~beQuiet
+            fprintf('[ULMO>%s] Loaded <a href="matlab: fprintf(''%s\\n'');open(''%s'')">C20/C30 data</a>.\n', ...
+                callchaintext(callChain), outputPath, outputPath);
         end
 
+        [data.c2030data, data.c2030std, data.dates] = ...
+            formatoutput(data.c2030data, data.c2030std, data.dates, timeFmt, outputFmt);
+        varargout = {data.c2030data, data.c2030std, data.dates};
+        return
     end
 
     %% Processing raw data
     if ~exist(inputPath, 'file') || forceNew == 2
-        downloadRemoteData(inputPath, beQuiet)
+        downloadRemoteData(inputPath, beQuiet, callChain);
     end
 
     data = fileread(inputPath);
@@ -116,10 +113,11 @@ function varargout = gracedeg2(varargin)
 
     % Create a save file
     if saveData
-        save(outputPath, 'c2030data', 'c2030std', 'dates')
+        save(outputPath, vars{:}, '-v7.3')
 
         if ~beQuiet
-            fprintf('%s saved %s\n', upper(mfilename), outputPath)
+            fprintf('[ULMO>%s] Saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">processed C20/C30 data</a>.\n', ...
+                callchaintext(callChain), outputPath, outputPath);
         end
 
     end
@@ -147,6 +145,7 @@ function varargout = parseinputs(varargin)
         @(x) (islogical(x) || isnumeric(x)) && isscalar(x));
     addParameter(ip, 'BeQuiet', false, ...
         @(x) (islogical(x) || isnumeric(x)) && isscalar(x));
+    addParameter(ip, 'CallChain', {}, @iscell);
 
     if ~isempty(varargin) && iscell(varargin{1})
         varargin = [varargin{1}{2}, varargin(2:end)];
@@ -159,12 +158,13 @@ function varargout = parseinputs(varargin)
     forceNew = uint8(double(ip.Results.ForceNew) * 2);
     saveData = logical(ip.Results.SaveData);
     beQuiet = logical(ip.Results.BeQuiet);
+    callChain = [ip.Results.CallChain, {mfilename}];
 
     if isnumeric(Rlevel)
         Rlevel = sprintf('RL%02d', floor(Rlevel));
     end
 
-    varargout = {Rlevel, timeFmt, outputFmt, forceNew, saveData, beQuiet};
+    varargout = {Rlevel, timeFmt, outputFmt, forceNew, saveData, beQuiet, callChain};
 end
 
 % Get the input and output file names
@@ -192,7 +192,7 @@ function [inputPath, outputPath] = getIOfiles(Rlevel)
 end
 
 % Fetch remote data
-function downloadRemoteData(inputPath, beQuiet)
+function downloadRemoteData(inputPath, beQuiet, callChain)
     remoteInputPath = 'https://archive.podaac.earthdata.nasa.gov/podaac-ops-cumulus-docs/gracefo/open/docs/TN-14_C30_C20_GSFC_SLR.txt';
 
     [~, inputFolder] = fileparts(inputPath);
@@ -204,15 +204,17 @@ function downloadRemoteData(inputPath, beQuiet)
     try
 
         if ~beQuiet
-            loadingMsg = sprintf('%s downloading %s\n', upper(mfilename), remoteInputPath);
-            fprintf(loadingMsg)
+            t = tic;
+            templine = 'this may take a while...';
+            fprintf('[ULMO>%s] Downloading TN-13, %s\n', ...
+                callchaintext(callChain), templine);
         end
 
         websave(inputPath, remoteInputPath);
 
         if ~beQuiet
-            fprintf(repmat('\b', 1, length(loadingMsg)))
-            fprintf('%s downloaded %s\n', upper(mfilename), remoteInputPath)
+            fprintf(repmat('\b', 1, length(templine) + 1));
+            fprintf('took %.1f seconds.\nMore recent releases may be available.\n', toc(t));
         end
 
     catch

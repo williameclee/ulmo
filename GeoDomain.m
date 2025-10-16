@@ -118,7 +118,7 @@ classdef GeoDomain
 
             arguments (Input)
                 obj (1, 1) GeoDomain
-                fmt (1, :) = 'short'
+                fmt (1, 1) string {mustBeMember(fmt, {'abbrevation', 'abbr', 'short', 'long'})} = 'short'
             end
 
             arguments (Output)

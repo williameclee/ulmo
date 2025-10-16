@@ -59,6 +59,7 @@
 % Special thanks to kwlewis@princeton.edu for spotting a bug.
 %
 % Last modified by
+%   2025/10/16, williameclee@arizona.edu (@williameclee)
 %   2024/08/13, williameclee@arizona.edu (@williameclee)
 %   2023/11/20, fjsimons@alum.mit.edu (@fjsimons)
 
@@ -76,7 +77,7 @@ function varargout = plm2xyz(varargin)
     end
 
     % Parse inputs
-    [lmcosi, meshSize, c11cmn, lmax, latmax, Plm, beQuiet] = ...
+    [lmcosi, meshSize, c11cmn, lmax, latmax, Plm, beQuiet, callChain] = ...
         parseinputs(varargin{:});
 
     if c11cmn(2) < c11cmn(4)
@@ -123,9 +124,8 @@ function varargout = plm2xyz(varargin)
     elseif isscalar(meshSize) && length(c11cmn) == 4
         % It's a grid
         if meshSize > maxMeshSize && ~beQuiet
-            disp('PLM2XYZ: You can do better! Ask for more spatial resolution')
-            fprintf('Spatial sampling ALLOWED: %8.3f ; REQUESTED: %6.3f\n', ...
-                maxMeshSize, meshSize)
+            fprintf('[ULMO>%s] You can do better! Requested resolution: %6.3f, allowed resolution: %6.3f\n', ...
+                callchaintext(callChain), meshSize, maxMeshSize);
         end
 
         % The number of longitude and latitude grid points that will be computed
@@ -189,7 +189,8 @@ function varargout = plm2xyz(varargin)
             load(outputPath) %#ok<LOAD>
 
             if ~beQuiet
-                fprintf('%s loaded %s\n', upper(mfilename), outputPath)
+                fprintf('[ULMO>%s] Loaded <a href="matlab: fprintf(''%s\\n'');open(''%s'')">data</a>.\n', ...
+                    callchaintext(callChain), outputPath, outputPath);
             end
 
             % AND TYPICALLY ANYTHING ELSE WOULD BE PRECOMPUTED, BUT THE GLOBAL
@@ -205,7 +206,7 @@ function varargout = plm2xyz(varargin)
             end
 
             if lup - ldown > taskmax && length(meshSize) > taskinf
-                h = waitbar(0, sprintf( ...
+                wbar = waitbar(0, sprintf( ...
                     'Evaluating Legendre polynomials between %i and %i', ...
                     ldown, lup));
             end
@@ -222,13 +223,13 @@ function varargout = plm2xyz(varargin)
                 in2 = in1 + l + 2;
 
                 if lup - ldown > taskmax && length(meshSize) > taskinf
-                    waitbar((l - ldown + 1) / (lup - ldown + 1), h)
+                    waitbar((l - ldown + 1) / (lup - ldown + 1), wbar)
                 end
 
             end
 
             if lup - ldown > taskmax && length(meshSize) > taskinf
-                delete(h)
+                delete(wbar)
             end
 
             if length(c11cmn) == 4 && isequal(c11cmn, [0, 90, 360, -90])
@@ -240,7 +241,8 @@ function varargout = plm2xyz(varargin)
                 end
 
                 if ~beQuiet
-                    fprintf('%s saved %s\n', upper(mfilename), outputPath)
+                    fprintf('[ULMO>%s] Saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">data</a>.\n', ...
+                        callchaintext(callChain), outputPath, outputPath);
                 end
 
             end
@@ -270,9 +272,13 @@ function varargout = plm2xyz(varargin)
                 f = (plm .* plm)' .* repmat(sin(col(:)), 1, l + 1);
                 c = (cos(mphi) .* cos(mphi))';
                 ntest = simpson(col, f) .* simpson(lon, c) / 4 / pi;
-                fprintf('Mean normalisation error l= %3.3i: %8.3e\n', ...
-                    l, (sum(abs(1 - ntest))) / (l + 1))
-                % For a decent test you would use "legendreprodint"
+
+                if ~beQuiet
+                    fprintf('[ULMO>%s] Mean normalisation error l= %3.3i: %8.3e\n', ...
+                        callchaintext(callChain), l, (sum(abs(1 - ntest))) / (l + 1));
+                    % For a decent test you would use "legendreprodint"
+                end
+
             end
 
             % Find the cosine and sine coefficients for this degree
@@ -366,6 +372,7 @@ function varargout = parseinputs(varargin)
     addOptional(ip, 'Plm', [], ...
         @(x) (isnumeric(x) && ismatrix(x)) || isempty(x));
     addParameter(ip, 'BeQuiet', false, @(x) islogical(x) || isnumeric(x));
+    addParameter(ip, 'CallChain', {}, @iscell);
 
     parse(ip, varargin{:});
     lmcosi = ip.Results.lmcosi;
@@ -375,6 +382,7 @@ function varargout = parseinputs(varargin)
     latmax = conddefval(ip.Results.latmax, dfOpts.latmax);
     Plm = ip.Results.Plm;
     beQuiet = logical(ip.Results.BeQuiet);
+    callChain = [ip.Results.CallChain, {mfilename}];
 
-    varargout = {lmcosi, meshSize, c11cmn, lmax, latmax, Plm, beQuiet};
+    varargout = {lmcosi, meshSize, c11cmn, lmax, latmax, Plm, beQuiet, callChain};
 end

@@ -110,7 +110,7 @@
 %   back...
 %
 % Last modified by
-%   2025/06/02, williameclee@arizona.edu (@williameclee)
+%   2025/10/16, williameclee@arizona.edu (@williameclee)
 %   2017/12/01, fjsimons@alum.mit.edu (@fjsimons)
 %   2016/06/27, charig@princeton.edu (@harig00)
 %   2016/10/11, plattner@alumni.ethz.ch (@AlainPlattner)
@@ -136,7 +136,7 @@ function varargout = glmalpha_new(varargin)
 
     % Parse inputs
     [domain, L, sord, blox, upco, resc, truncation, anti, rotb, ...
-         forceNew, saveData, beQuiet] = ...
+         forceNew, saveData, beQuiet, callChain] = ...
         parseinputs(varargin);
 
     defval('mesg', 'GLMALPHA Check passed')
@@ -147,19 +147,21 @@ function varargout = glmalpha_new(varargin)
     truncation = conddefval(truncation, ldim);
 
     % Output file
-    [dataPath, dataExists, GM2AL, MTAP, IMTAP, xver] = ...
+    vars = {'G', 'V', 'EL', 'EM', 'N', 'GM2AL', 'MTAP', 'IMTAP'};
+    [dataPath, GM2AL, MTAP, IMTAP, xver] = ...
         getoutputfile(domain, L, sord, blox, upco, resc, ...
         truncation, anti, bp, ldim, [], [], [], []);
 
-    if dataExists && ~forceNew
-        warning('off', 'MATLAB:load:variableNotFound')
-        load(dataPath, 'G', 'V', 'EL', 'EM', 'N', 'GM2AL', 'MTAP', 'IMTAP')
+    if ~forceNew && exist(dataPath, 'file') && ...
+            all(ismember(vars, who('-file', dataPath)))
+        data = load(dataPath, vars{:});
 
         if ~beQuiet
-            fprintf('%s loaded %s\n', upper(mfilename), dataPath)
+            fprintf('[ULMO>%s] Loaded <a href="matlab: fprintf(''%s\\n'');open(''%s'')">projection matrix</a>.\n', ...
+                callchaintext(callChain), outputPath, outputPath);
         end
 
-        varargout = {G, V, EL, EM, N, GM2AL, MTAP, IMTAP};
+        varargout = {data.G, data.V, data.EL, data.EM, data.N, data.GM2AL, data.MTAP, data.IMTAP};
 
         if nargout > 0
             return
@@ -167,10 +169,18 @@ function varargout = glmalpha_new(varargin)
 
         %% Plot eignvalue-weighted maps
         if ~beQuiet
-            fprintf('%s generating eigenvalue-weighted map, this make take a while...\n', upper(mfilename))
+            t = tic;
+            templine = 'this may take a while...';
+            fprintf('[ULMO>%s] Generating eigenvalue-weighted map, %s\n', ...
+                callchaintext(callChain), templine);
         end
 
-        plotvweightmap(G, V, domain)
+        plotvweightmap(data.G, data.V, domain)
+
+        if ~beQuiet
+            fprintf(repmat('\b', 1, length(templine) + 1));
+            fprintf('took %.1f seconds.\n', toc(t));
+        end
 
         return
 
@@ -202,15 +212,13 @@ function varargout = glmalpha_new(varargin)
             domain, sord, L, lp, bp, EM, EL, blkm, blox, upco, xver);
 
         if ~strcmp(dataPath, 'neveravailable') && saveData
+            save(dataPath, '-v7.3', ...
+                'G', 'V', 'EL', 'EM', 'N', 'GM2AL', 'MTAP', 'IMTAP')
+        end
 
-            try
-                save(dataPath, '-v7.3', ...
-                    'G', 'V', 'EL', 'EM', 'N', 'GM2AL', 'MTAP', 'IMTAP')
-            catch
-                save(dataPath, ...
-                    'G', 'V', 'EL', 'EM', 'N', 'GM2AL', 'MTAP', 'IMTAP')
-            end
-
+        if ~beQuiet
+            fprintf('[ULMO>%s] Saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">projection matrix</a>.\n', ...
+                callchaintext(callChain), dataPath, dataPath);
         end
 
     end
@@ -224,62 +232,72 @@ function varargout = glmalpha_new(varargin)
 
     %% Plot eignvalue-weighted maps
     if ~beQuiet
-        fprintf('%s generating eigenvalue-weighted map, this make take a while...\n', ...
-            upper(mfilename))
+        t = tic;
+        templine = 'this may take a while...';
+        fprintf('[ULMO>%s] Generating eigenvalue-weighted map, %s\n', ...
+            callchaintext(callChain), templine);
     end
 
     plotvweightmap(G, V, domain)
+
+    if ~beQuiet
+        fprintf(repmat('\b', 1, length(templine) + 1));
+        fprintf('took %.1f seconds.\n', toc(t));
+    end
+
 end
 
 %% Subfunctions
 function varargout = parseinputs(Inputs)
-    domainD = 30;
-    LD = 18;
-    sordD = [];
-    bloxD = 0;
-    upcoD = 0;
-    rescD = 0;
-    JD = [];
-    antiD = false;
-    rotateBackD = true;
+    dfOpt.domain = 30;
+    dfOpt.L = 18;
+    dfOpt.sord = [];
+    dfOpt.blox = 0;
+    dfOpt.upco = 0;
+    dfOpt.resc = 0;
+    dfOpt.J = [];
+    dfOpt.anti = false;
+    dfOpt.RotateBack = true;
 
-    p = inputParser;
-    addOptional(p, 'Domain', domainD, ...
+    ip = inputParser;
+    addOptional(ip, 'Domain', dfOpt.domain, ...
         @(x) isa(x, 'GeoDomain') || ... % GeoDomain object
         ischar(x) || isstring(x) || iscell(x) || ... % geogrpahic domain
         isnumeric(x) || isempty(x)); % polar cap or lonlat
-    addOptional(p, 'L', LD, ...
+    addOptional(ip, 'L', dfOpt.L, ...
         @(x) isnumeric(x) || isempty(x));
-    addOptional(p, 'sord', sordD, ...
+    addOptional(ip, 'sord', dfOpt.sord, ...
         @(x) isnumeric(x) || iscell(x) || isempty(x));
-    addOptional(p, 'blox', bloxD, ...
+    addOptional(ip, 'blox', dfOpt.blox, ...
         @(x) isnumeric(x) || isempty(x));
-    addOptional(p, 'upco', upcoD, ...
+    addOptional(ip, 'upco', dfOpt.upco, ...
         @(x) isnumeric(x) || isempty(x));
-    addOptional(p, 'resc', rescD, ...
+    addOptional(ip, 'resc', dfOpt.resc, ...
         @(x) isnumeric(x) || isempty(x));
-    addOptional(p, 'J', JD, ...
+    addOptional(ip, 'J', dfOpt.J, ...
         @(x) isnumeric(x) || isempty(x));
-    addOptional(p, 'anti', antiD, @(x) islogical(x) || isnumeric(x));
-    addOptional(p, 'RotateBack', rotateBackD, ...
+    addOptional(ip, 'anti', dfOpt.anti, @(x) islogical(x) || isnumeric(x));
+    addOptional(ip, 'RotateBack', dfOpt.RotateBack, ...
         @(x) isnumeric(x) || islogical(x) || isempty(x));
-    addParameter(p, 'ForceNew', false, @(x) islogical(x) || isnumeric(x));
-    addParameter(p, 'SaveData', true, @(x) islogical(x) || isnumeric(x));
-    addParameter(p, 'BeQuiet', false, @(x) islogical(x) || isnumeric(x));
-    parse(p, Inputs{:});
+    addParameter(ip, 'ForceNew', false, @(x) islogical(x) || isnumeric(x));
+    addParameter(ip, 'SaveData', true, @(x) islogical(x) || isnumeric(x));
+    addParameter(ip, 'BeQuiet', false, @(x) islogical(x) || isnumeric(x));
+    addParameter(ip, 'CallChain', {}, @iscell);
+    parse(ip, Inputs{:});
 
-    domain = conddefval(p.Results.Domain, domainD);
-    L = conddefval(p.Results.L, LD);
-    sord = conddefval(p.Results.sord, sordD);
-    blox = conddefval(p.Results.blox, bloxD);
-    upco = conddefval(p.Results.upco, upcoD);
-    resc = conddefval(p.Results.resc, rescD);
-    J = conddefval(p.Results.J, JD);
-    anti = logical(p.Results.anti);
-    rotateBack = logical(conddefval(p.Results.RotateBack, rotateBackD));
-    forceNew = p.Results.ForceNew;
-    saveData = p.Results.SaveData;
-    beQuiet = p.Results.BeQuiet;
+    domain = conddefval(ip.Results.Domain, dfOpt.domain);
+    L = conddefval(ip.Results.L, dfOpt.L);
+    sord = conddefval(ip.Results.sord, dfOpt.sord);
+    blox = conddefval(ip.Results.blox, dfOpt.blox);
+    upco = conddefval(ip.Results.upco, dfOpt.upco);
+    resc = conddefval(ip.Results.resc, dfOpt.resc);
+    J = conddefval(ip.Results.J, dfOpt.J);
+    anti = logical(ip.Results.anti);
+    rotateBack = logical(conddefval(ip.Results.RotateBack, dfOpt.RotateBack));
+    forceNew = ip.Results.ForceNew;
+    saveData = ip.Results.SaveData;
+    beQuiet = ip.Results.BeQuiet;
+    callChain = [ip.Results.CallChain, {mfilename}];
 
     % Change the domain to a GeoDomain object if appropriate
     if ischar(domain) || isstring(domain) && exist(domain, "file")
@@ -293,10 +311,10 @@ function varargout = parseinputs(Inputs)
 
     varargout = ...
         {domain, L, sord, blox, upco, resc, J, anti, rotateBack, ...
-         forceNew, saveData, beQuiet};
+         forceNew, saveData, beQuiet, callChain};
 end
 
-function [dataPath, dataExists, GM2AL, MTAP, IMTAP, xver] = ...
+function [dataPath, GM2AL, MTAP, IMTAP, xver] = ...
         getoutputfile(domain, L, sord, blox, upco, resc, truncation, ...
         anti, bp, ldim, GM2AL, MTAP, IMTAP, xver)
 
@@ -369,7 +387,6 @@ function [dataPath, dataExists, GM2AL, MTAP, IMTAP, xver] = ...
     end
 
     dataPath = fullfile(dataFolder, outputFile);
-    dataExists = isfile(dataPath);
 end
 
 function [lp, bp, maxL, ldim] = ldimension(L)

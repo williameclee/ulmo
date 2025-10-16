@@ -42,38 +42,33 @@
 %   2024/11/20, williameclee@arizona.edu (@williameclee)
 %
 % Last modified by
-%   2025/06/01, williameclee@arizona.edu (@williameclee)
+%   2025/10/16, williameclee@arizona.edu (@williameclee)
 
 function [rslLoadPlmt, rslLoadStdPlmt, dates] = grace2fingerprint(varargin)
     %% Parsing inputs
     [product, oceanDomain, landDomain, L, Loutput, ...
          giaModel, doGia, redoDeg1, rwGad, timelim, doRotation, frame, unit, ...
-         outputFmt, timeFmt, beQuiet, forceNew, saveData, oceanKernel] = parseinputs(varargin);
+         outputFmt, timeFmt, beQuiet, forceNew, saveData, oceanKernel, callChain] = parseinputs(varargin);
 
     %% Data locating
     filepath = findoutputpath( ...
         product, L, oceanDomain, landDomain, frame, giaModel, doRotation, rwGad, redoDeg1);
 
-    if exist(filepath, 'file') && ~forceNew
+    vars = {'rslLoadPlmt', 'rslLoadStdPlmt', 'dates'};
 
-        load(filepath, 'rslLoadPlmt', 'rslLoadStdPlmt', 'dates');
+    if ~forceNew && exist(filepath, 'file')
+        data = load(filepath, vars{:});
 
-        if exist('rslLoadPlmt', 'var') && exist('rslLoadStdPlmt', 'var') && exist('dates', 'var')
-
-            if beQuiet <= 1
-                fprintf('%s loaded %s\n', upper(mfilename), filepath);
-            end
-
-            [rslLoadPlmt, rslLoadStdPlmt, dates] = ...
-                formatoutput(rslLoadPlmt, rslLoadStdPlmt, dates, timelim, L, Loutput, unit, ...
-                outputFmt, timeFmt);
-
-            return
-        elseif beQuiet <= 1
-            warning(sprintf('%s:LoadData:MissingVariables', upper(mfilename)), ...
-                'One or more variables are missing in the file %s, recomputing...', ...
-                outputPath);
+        if beQuiet <= 1
+            fprintf('[ULMO>%s] Loaded <a href="matlab: fprintf(''%s\\n'');open(''%s'')">precomputed fingerprint</a>.\n', ...
+                callchaintext(callChain), filepath, filepath);
         end
+
+        [rslLoadPlmt, rslLoadStdPlmt, dates] = ...
+            formatoutput(data.rslLoadPlmt, data.rslLoadStdPlmt, data.dates, timelim, L, Loutput, unit, ...
+            outputFmt, timeFmt);
+
+        return
 
     end
 
@@ -83,10 +78,11 @@ function [rslLoadPlmt, rslLoadStdPlmt, dates] = grace2fingerprint(varargin)
 
     %% Saving and returning data
     if saveData
-        save(filepath, 'rslLoadPlmt', 'rslLoadStdPlmt', 'dates');
+        save(filepath, vars{:}, '-v7.3');
 
         if beQuiet <= 1
-            fprintf('%s saved %s\n', upper(mfilename), filepath);
+            fprintf('[ULMO>%s] Saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">fingerprint</a>.\n', ...
+                callchaintext(callChain), filepath, filepath);
         end
 
     end
@@ -211,6 +207,7 @@ function varargout = parseinputs(inputs)
         @(x) (islogical(x) || isnumeric(x)) && isscalar(x));
     addParameter(ip, 'OceanKernel', [], ...
         @(x) isnumeric(x) || isempty(x));
+    addParameter(ip, 'CallChain', {}, @iscell);
     parse(ip, inputs{:});
 
     product = ip.Results.Product;
@@ -230,6 +227,7 @@ function varargout = parseinputs(inputs)
     beQuiet = double(ip.Results.BeQuiet) * 2;
     forceNew = logical(ip.Results.ForceNew);
     saveData = logical(ip.Results.SaveData);
+    callChain = [ip.Results.CallChain, {mfilename}];
 
     oceanKernel = ip.Results.OceanKernel;
 
@@ -253,7 +251,7 @@ function varargout = parseinputs(inputs)
     varargout = ...
         {product, oceanDomain, landDomain, L, Loutput, ...
          giaModel, doGia, redoDeg1, replaceWGad, timelim, doRotation, frame, unit, ...
-         outputFmt, timeFmt, beQuiet, forceNew, saveData, oceanKernel};
+         outputFmt, timeFmt, beQuiet, forceNew, saveData, oceanKernel, callChain};
 end
 
 % Get the output path

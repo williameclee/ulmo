@@ -99,7 +99,7 @@
 %   GRACE2PLMT (GRACE2PLMT_NEW), PLM2SLEP
 %
 % Last modified by
-%   2025/05/27, williameclee@arizona.edu (@williameclee)
+%   2025/10/16, williameclee@arizona.edu (@williameclee)
 %   2024/08/30, williameclee@arizona.edu (@williameclee)
 %   2022/05/18, charig@princeton.edu (@harig00)
 %   2012/06/26, fjsimons@alum.mit.edu (@fjsimons)
@@ -110,7 +110,7 @@ function varargout = grace2slept_new(varargin)
     [product, domain, L, phi, theta, omega, unit, timelim, ...
          truncation, ...
          deg1corr, c20corr, c30corr, redoDeg1, ...
-         outputFmt, timeFmt, forceNew, saveData, beQuiet] = ...
+         outputFmt, timeFmt, forceNew, saveData, beQuiet, callChain] = ...
         parseinputs(varargin{:});
 
     % Figure out if it's low-pass or band-pass
@@ -131,22 +131,25 @@ function varargout = grace2slept_new(varargin)
     end
 
     % Output file
-    [outputPath, outputExists] = getoutputfile(domain, L, ...
+    outputPath = getoutputfile(domain, L, ...
         product, truncation, unit, bp, ...
         deg1corr, c20corr, c30corr);
 
     %% Loading existing data
     % If this expansion already exists, load it.  Otherwise, or if we force
     % it, make a new one (e.g. if you added extra months to the database).
-    if outputExists && ~forceNew
-        load(outputPath, 'slept', 'stdSlept', 'dates')
+    vars = {'slept', 'stdSlept', 'dates'};
+
+    if ~forceNew && exist(outputPath, 'file') && all(ismember(vars, who('-file', outputPath)))
+        data = load(outputPath, vars{:});
 
         if ~beQuiet
-            fprintf('%s loaded %s\n', upper(mfilename), outputPath)
+            fprintf('[ULMO>%s] Loaded <a href="matlab: fprintf(''%s\\n'');open(''%s'')">localised GRACE data</a>.\n', ...
+                callchaintext(callChain), outputPath, outputPath);
         end
 
         [slept, stdSlept, dates] = ...
-            formatoutput(slept, stdSlept, dates, timelim, outputFmt, timeFmt);
+            formatoutput(data.slept, data.stdSlept, data.dates, timelim, outputFmt, timeFmt);
 
         if nargout <= 4
             varargout = {slept, stdSlept, dates, domain};
@@ -166,7 +169,7 @@ function varargout = grace2slept_new(varargin)
         grace2plmt_new(product, "Unit", unit, ...
         "OutputFormat", 'timefirst', "TimeFormat", 'datetime', ...
         "Deg1Correction", deg1corr, "C20Correction", c20corr, "C30Correction", c30corr, "RecomputeDegree1", redoDeg1, ...
-        "BeQuiet", beQuiet);
+        "BeQuiet", beQuiet, "CallChain", callChain);
 
     % Limit everything to the window bandwidth
     if size(plmt, 2) > addmup(maxL)
@@ -192,10 +195,11 @@ function varargout = grace2slept_new(varargin)
     stdSlept = sqrt(((G .^ 2)' * (stdPlmst .^ 2)')');
 
     if saveData
-        save(outputPath, 'slept', 'stdSlept', 'dates');
+        save(outputPath, vars{:}, '-v7.3');
 
         if ~beQuiet
-            fprintf('%s saved %s\n', upper(mfilename), outputPath)
+            fprintf('[ULMO>%s] Saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">localised GRACE data</a>.\n', ...
+                callchaintext(callChain), outputPath, outputPath);
         end
 
     end
@@ -227,7 +231,7 @@ function varargout = parseinputs(varargin)
         @(x) (iscell(x) && length(x) == 3) || isempty(x));
     addOptional(ip, 'Domain', dfOpt.Domain, ...
         @(x) (ischar(x)) || isstring(x) || iscell(x) || ...
-        isa(x, 'GeoDomain') || (isnumeric(x) && size(x, 2) == 2) || ...
+        isa(x, 'GeoDomain') || (isnumeric(x) && (size(x, 2) == 2 || isscalar(x))) || ...
         (isempty(x)));
     addOptional(ip, 'L', dfOpt.L, ...
         @(x) (isnumeric(x) && (length(x) <= 2)) || (isempty(x)));
@@ -263,6 +267,15 @@ function varargout = parseinputs(varargin)
         @(x) ischar(validatestring(x, {'timefirst', 'traditional'})));
     addParameter(ip, 'TimeFormat', dfOpt.TimeFormat, ...
         @(x) ischar(validatestring(x, {'datetime', 'datenum'})));
+    addParameter(ip, 'CallChain', {}, @iscell);
+
+    if (length(nargin) >= 3) && ...
+            (isa(varargin{1}, {'char', 'string'}) && any(strcmpi(varargin{1}, {'JPL', 'CSR', 'GFZ'}))) && ...
+            ((isa(varargin{2}, {'char', 'string'}) && startsWith(varargin{2}, 'RL')) || isnumeric(varargin{2})) && ...
+            (isnumeric(varargin{3}) && varargin > 0)
+        varargin = [{{varargin{1}, varargin{2}, varargin{3}}}, varargin(4:end)];
+    end
+
     parse(ip, varargin{:});
 
     product = conddefval(ip.Results.Product, dfOpt.Product);
@@ -284,13 +297,14 @@ function varargout = parseinputs(varargin)
     redoDeg1 = ip.Results.RecomputeDegree1;
     outputFmt = ip.Results.OutputFormat;
     timeFmt = ip.Results.TimeFormat;
+    callChain = [ip.Results.CallChain, {mfilename}];
 
     if isnumeric(product{2})
         product{2} = ['RL0', num2str(product{2})];
     end
 
     % Change the domain to a GeoDomain object if appropriate
-    if ischar(domain) || isstring(domain) && exist(domain, "file")
+    if ischar(domain) || isstring(domain) && exist(domain, 'file')
         domain = GeoDomain(domain, domainSpecs{:});
     elseif iscell(domain) && length(domain) == 2
         domain = ...
@@ -314,10 +328,10 @@ function varargout = parseinputs(varargin)
          phi, theta, omega, unit, timeRange, J, ...
          deg1corr, c20corr, c30corr, redoDeg1, ...
          outputFmt, timeFmt, ...
-         forceNew, saveData, beQuiet};
+         forceNew, saveData, beQuiet, callChain};
 end
 
-function [outputPath, outputExists] = getoutputfile(domain, L, ...
+function outputPath = getoutputfile(domain, L, ...
         product, truncation, unit, bp, ...
         deg1corr, c20corr, c30corr)
 
@@ -328,6 +342,10 @@ function [outputPath, outputExists] = getoutputfile(domain, L, ...
     else
         outputFolder = fullfile(getenv('IFILES'), ...
             'GRACE', 'SlepianExpansions');
+    end
+
+    if ~exist(outputFolder, 'dir')
+        mkdir(outputFolder);
     end
 
     % File name
@@ -376,9 +394,6 @@ function [outputPath, outputExists] = getoutputfile(domain, L, ...
     end
 
     outputPath = fullfile(outputFolder, outputFile);
-
-    outputExists = isfile(outputPath);
-
 end
 
 % Get the auxiliary data (GLMALPHA, etc.)

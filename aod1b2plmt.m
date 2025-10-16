@@ -81,7 +81,7 @@
 %   GRACEDEG1, GRACEDEG2, PLM2POT, GRACE2PLMT (GRACE2PLMT_NEW)
 %
 % Last modified by
-%   2025/06/01, williameclee@arizona.edu (@williameclee)
+%   2025/10/16, williameclee@arizona.edu (@williameclee)
 %   2014/02/27, charig@princeton.edu
 %   2011/05/17, fjsimons@alum.mit.edu
 
@@ -89,30 +89,30 @@ function varargout = aod1b2plmt(varargin)
     %% Initialisation
     % Parse inputs
     [Pcenter, Rlevel, product, Loutput, unit, timelim, ...
-         outputFmt, timeFmt, rmOceanMean, oceanDomain, forceNew, saveData, beQuiet] = ...
+         outputFmt, timeFmt, ~, ~, forceNew, saveData, beQuiet, callChain] = ...
         parseinputs(varargin{:});
 
     % If this file already exists, load it.  Otherwise, or if we force it, make
     % a new one (e.g. you added extra months to the database).
     [inputFolder, outputPath] = getIOpaths(Rlevel, Pcenter, product, unit);
 
-    if exist(outputPath, 'file') && ~forceNew
+    vars = {'aod1bPlmt', 'aod1bStdPlmt', 'dates'};
+
+    if ~forceNew && exist(outputPath, 'file') && all(ismember(vars, who('-file', outputPath)))
         % Load the peocessed data
-        load(outputPath, 'aod1bPlmt', 'aod1bStdPlmt', 'dates');
+        data = load(outputPath, 'aod1bPlmt', 'aod1bStdPlmt', 'dates');
 
-        if exist('aod1bPlmt', 'var') && exist('aod1bStdPlmt', 'var') && exist('dates', 'var')
-
-            if beQuiet <= 1
-                fprintf('%s loaded %s\n', upper(mfilename), outputPath)
-            end
-
-            % Collect output
-            [aod1bPlmt, aod1bStdPlmt, dates] = ...
-                formatoutput(aod1bPlmt, aod1bStdPlmt, dates, Loutput, timelim, outputFmt, timeFmt);
-
-            varargout = {aod1bPlmt, aod1bStdPlmt, dates};
-            return
+        if beQuiet <= 1
+            fprintf('[ULMO>%s] Loaded <a href="matlab: fprintf(''%s\\n'');open(''%s'')">%s data</a>.\n', ...
+                callchaintext(callChain), outputPath, outputPath, upper(product));
         end
+
+        % Collect output
+        [aod1bPlmt, aod1bStdPlmt, dates] = ...
+            formatoutput(data.aod1bPlmt, data.aod1bStdPlmt, data.dates, Loutput, timelim, outputFmt, timeFmt);
+
+        varargout = {aod1bPlmt, aod1bStdPlmt, dates};
+        return
 
     end
 
@@ -125,8 +125,9 @@ function varargout = aod1b2plmt(varargin)
         save(outputPath, ...
             'aod1bPlmt', 'aod1bStdPlmt', 'dates', 'equatorRadius', 'gravityParam');
 
-        if ~beQuiet
-            fprintf('%s saved %s\n', upper(mfilename), outputPath)
+        if beQuiet <= 1
+            fprintf('[ULMO>%s] Saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">%s data</a>.\n', ...
+                callchaintext(callChain), outputPath, outputPath, upper(product));
         end
 
     end
@@ -226,6 +227,7 @@ function varargout = parseinputs(varargin)
         @(x) (isnumeric(x) || islogical(x)) && isscalar(x));
     addParameter(ip, 'BeQuiet', 0.5, ...
         @(x) (isnumeric(x) || islogical(x)) && isscalar(x));
+    addParameter(ip, 'CallChain', {}, @iscell);
 
     if iscell(varargin{1})
         varargin = [varargin{1}{1:2}, varargin(2:end)];
@@ -246,6 +248,7 @@ function varargout = parseinputs(varargin)
     forceNew = logical(ip.Results.ForceNew);
     saveData = logical(ip.Results.SaveData);
     beQuiet = uint8(double(ip.Results.BeQuiet) * 2);
+    callChain = [ip.Results.CallChain, {mfilename}];
 
     if isnumeric(Rlevel)
         Rlevel = sprintf('RL%02d', floor(Rlevel));
@@ -257,7 +260,7 @@ function varargout = parseinputs(varargin)
 
     varargout = ...
         {Pcenter, Rlevel, product, Loutput, unit, timelim, ...
-         outputFmt, timeFmt, rmOceanMean, oceanDomain, forceNew, saveData, beQuiet};
+         outputFmt, timeFmt, rmOceanMean, oceanDomain, forceNew, saveData, beQuiet, callChain};
 end
 
 % Get the input folder and output file names

@@ -25,13 +25,13 @@
 %   'North America'
 %
 % Last modified by
-%   2025/10/01, williameclee@arizona.edu (@williameclee)
+%   2025/10/16, williameclee@arizona.edu (@williameclee)
 
 function domainName = domainname(domain, format)
 
     arguments (Input)
         domain {mustBeA(domain, {'char', 'string', 'cell'})}
-        format {mustBeA(format, {'char', 'string'}), mustBeMember(format, {'abbrevation', 'abbr', 'short', 'long'})} = 'short'
+        format char {mustBeMember(format, {'abbrevation', 'abbr', 'short', 'long'})} = 'short'
     end
 
     arguments (Output)

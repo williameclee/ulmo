@@ -79,8 +79,9 @@
 %
 % Authored by
 %	2025/05/19, williameclee@arizona.edu (@williameclee)
+%
 % Last modified by
-%	2025/10/01, williameclee@arizona.edu (@williameclee)
+%	2025/10/16, williameclee@arizona.edu (@williameclee)
 
 function [ssh, sshSigma, dates, lon, lat] = ssh2lonlatt(product, timestep, meshsize, timelim, options)
 
@@ -98,6 +99,7 @@ function [ssh, sshSigma, dates, lon, lat] = ssh2lonlatt(product, timestep, meshs
         options.ForceNew (1, 1) {mustBeNumericOrLogical} = false
         options.BeQuiet (1, 1) {mustBeNumericOrLogical} = 0.5
         options.SaveData (1, 1) {mustBeNumericOrLogical} = true
+        options.CallChain {mustBeCell} = {}
     end
 
     arguments (Output)
@@ -116,6 +118,7 @@ function [ssh, sshSigma, dates, lon, lat] = ssh2lonlatt(product, timestep, meshs
     forceNew = logical(options.ForceNew);
     beQuiet = uint8(double(options.BeQuiet) * 2);
     saveData = logical(options.SaveData);
+    callChain = [options.CallChain, {mfilename}];
 
     if ~isempty(timestep) && isnumeric(timestep)
         timestep = days(timestep);
@@ -138,7 +141,7 @@ function [ssh, sshSigma, dates, lon, lat] = ssh2lonlatt(product, timestep, meshs
         % No interpolation duration given, load the raw data
         [data.sshs, data.sshErrors, data.dates, data.lon, data.lat] = ...
             loadAggregatedRawData(product, ...
-            forceNew, beQuiet, saveData, outputFolder, inputFolder);
+            forceNew, beQuiet, saveData, outputFolder, inputFolder, callChain);
 
         if nargout > 0
             [ssh, sshSigma, dates, lon, lat] = formatoutput( ...
@@ -162,8 +165,8 @@ function [ssh, sshSigma, dates, lon, lat] = ssh2lonlatt(product, timestep, meshs
         if beQuiet <= 1
             t = tic;
             msg = 'this may take a while...';
-            fprintf('[ULMO><a href="matlab: open(''%s'')">%s</a>] Loading <a href="matlab: fprintf(''%s\\n'');open(''%s'')">interpolated SSH product</a>, %s\n', ...
-                mfilename("fullpath"), mfilename, intpOutputPath, intpOutputPath, msg);
+            fprintf('[ULMO>%s] Loading <a href="matlab: fprintf(''%s\\n'');open(''%s'')">interpolated SSH product</a>, %s\n', ...
+                callchaintext(callChain), intpOutputPath, intpOutputPath, msg);
         end
 
         data = load(intpOutputPath, 'sshs', 'sshErrors', 'dates', 'lon', 'lat');
@@ -187,7 +190,7 @@ function [ssh, sshSigma, dates, lon, lat] = ssh2lonlatt(product, timestep, meshs
 
     [data.sshs, data.sshErrors, data.dates, data.lon, data.lat] = ...
         loadAggregatedRawData(product, ...
-        forceNew, beQuiet, saveData, outputFolder, inputFolder);
+        forceNew, beQuiet, saveData, outputFolder, inputFolder, callChain);
 
     if ~isempty(timestep)
         data.sshs = interptemporal( ...
@@ -207,9 +210,9 @@ function [ssh, sshSigma, dates, lon, lat] = ssh2lonlatt(product, timestep, meshs
         end
 
         data.sshs = interpspatial( ...
-            data.lon, data.lat, data.sshs, meshsize, lonOrigin, intpMthd, beQuiet);
+            data.lon, data.lat, data.sshs, meshsize, lonOrigin, intpMthd, beQuiet, callChain);
         [data.sshErrors, data.lon, data.lat] = interpspatial( ...
-            data.lon, data.lat, data.sshErrors, meshsize, lonOrigin, intpMthd, beQuiet);
+            data.lon, data.lat, data.sshErrors, meshsize, lonOrigin, intpMthd, beQuiet, callChain);
     end
 
     if saveData
@@ -217,8 +220,8 @@ function [ssh, sshSigma, dates, lon, lat] = ssh2lonlatt(product, timestep, meshs
             '-struct', 'data', 'sshs', 'sshErrors', 'dates', 'lon', 'lat', '-v7.3');
 
         if beQuiet <= 1
-            fprintf('[ULMO><a href="matlab: open(''%s'')">%s</a>] Saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">SSH product</a>.\n', ...
-                mfilename("fullpath"), mfilename, intpOutputPath, intpOutputPath);
+            fprintf('[ULMO>%s] Saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">SSH product</a>.\n', ...
+                callchaintext(callChain), intpOutputPath, intpOutputPath);
         end
 
     end
@@ -237,8 +240,8 @@ function [meshIntp, datesIntp] = ...
     if beQuiet == 0
         t = tic;
         templine = 'this may take a while...';
-        fprintf('[ULMO><a href="matlab: open(''%s'')">%s</a>] Interpolating temporally, %s\n', ...
-            mfilename("fullpath"), mfilename, templine);
+        fprintf('[ULMO>%s] Interpolating temporally, %s\n', ...
+            callChain, templine);
     end
 
     if ischar(timeStep) && strcmpi(timeStep, 'midmonth')
@@ -271,13 +274,13 @@ function [meshIntp, datesIntp] = ...
 end
 
 function [meshIntp, lonIntp, latIntp] = ...
-        interpspatial(lon, lat, mesh, meshSize, lonOrigin, intpMthd, beQuiet)
+        interpspatial(lon, lat, mesh, meshSize, lonOrigin, intpMthd, beQuiet, callChain)
 
     if beQuiet == 0
         t = tic;
         templine = 'this may take a while...';
-        fprintf('[ULMO><a href="matlab: open(''%s'')">%s</a>] Interpolating spatially, %s\n', ...
-            mfilename("fullpath"), mfilename, templine);
+        fprintf('[ULMO>%s] Interpolating spatially, %s\n', ...
+            callchaintext(callChain), templine);
     end
 
     ogLonOrigin = 180;
@@ -311,7 +314,7 @@ end
 
 % Load the aggregated raw data (i.e. data from all time stamps in the same array)
 function [sshs, sshErrors, dates, lon, lat] = loadAggregatedRawData( ...
-        product, forceNew, beQuiet, saveData, outputFolder, inputFolder)
+        product, forceNew, beQuiet, saveData, outputFolder, inputFolder, callChain)
     vars = {'sshs', 'sshErrors', 'dates', 'lon', 'lat'};
     % Output location
     outputFile = sprintf('%s.mat', product);
@@ -324,8 +327,8 @@ function [sshs, sshErrors, dates, lon, lat] = loadAggregatedRawData( ...
         if beQuiet <= 1
             t = tic;
             msg = 'this may take a while...';
-            fprintf('[ULMO><a href="matlab: open(''%s'')">%s</a>] Loading <a href="matlab: fprintf(''%s\\n'');open(''%s'')">SSH product</a>, %s\n', ...
-                mfilename("fullpath"), mfilename, outputPath, outputPath, msg);
+            fprintf('[ULMO>%s] Loading <a href="matlab: fprintf(''%s\\n'');open(''%s'')">SSH product</a>, %s\n', ...
+                callchaintext(callChain), outputPath, outputPath, msg);
         end
 
         data = load(outputPath, vars{:});
@@ -424,7 +427,8 @@ function [sshs, sshErrors, dates, lon, lat] = loadAggregatedRawData( ...
     delete(wbar);
 
     if beQuiet <= 1
-        fprintf('%s: Saved %s\n', upper(mfilename), outputPath);
+        fprintf('[ULMO>%s] Saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">SSH product</a>.\n', ...
+            callchaintext(callChain), outputPath, outputPath);
     end
 
 end
