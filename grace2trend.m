@@ -72,12 +72,12 @@
 %   sleptRes - Residual time series for each Slepian coefficient
 %
 % Last modified by
-%   2024/09/07, williameclee@arizona.edu (@williameclee)
+%   2025/10/16, williameclee@arizona.edu (@williameclee)
 
 function varargout = grace2trend(domain, varargin)
     %% Initialisation
     [domain, L, timeRange, fitwhat, product, gia, deg1cor, c20cor, ...
-         c30cor, ~, beQuiet, saveData, forceNew, normalise, onlytrend] = ...
+         c30cor, ~, beQuiet, saveData, forceNew, normalise, onlytrend, callChain] = ...
         parseinputs(domain, varargin{:});
 
     [outputPath, ~, outputExists] = outputfile(domain);
@@ -176,7 +176,8 @@ function varargout = grace2trend(domain, varargin)
         save(outputPath, 'G2T');
 
         if ~beQuiet
-            fprintf('%s saved %s\n', upper(mfilename), outputPath);
+            fprintf('[ULMO>%s] Saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">data</a>.\n', ...
+                callchaintext(callChain), outputPath, outputPath);
         end
 
     end
@@ -228,6 +229,7 @@ function varargout = parseinputs(varargin)
     addParameter(ip, 'ForceNew', false, @istruefalse);
     addParameter(ip, 'Normalisation', true, @(x) ischar(x) || istruefalse(x));
     addParameter(ip, 'OnlyTrend', false, @(x) ischar(x) || istruefalse(x));
+    addParameter(ip, 'CallChain', {mfilename}, @iscell);
     parse(ip, varargin{:});
 
     domain = ip.Results.Domain;
@@ -245,6 +247,7 @@ function varargout = parseinputs(varargin)
     forceNew = ip.Results.ForceNew;
     normalise = logical(ip.Results.Normalisation);
     onlytrend = logical(ip.Results.OnlyTrend);
+    callChain = [ip.Results.CallChain, {mfilename}];
 
     % Change the domain to a GeoDomain object if appropriate
     if ischar(domain) || isstring(domain) && exist(domain, "file")
@@ -266,7 +269,7 @@ function varargout = parseinputs(varargin)
 
     varargout = ...
         {domain, L, timeRange, fitwhat, DataProduct, giaModel, ...
-         deg1cor, c20cor, c30cor, truncation, beQuiet, saveData, forceNew, normalise, onlytrend};
+         deg1cor, c20cor, c30cor, truncation, beQuiet, saveData, forceNew, normalise, onlytrend, callChain};
 end
 
 function [outputPath, outputFolder, outputExists] = outputfile(domain)
@@ -274,8 +277,6 @@ function [outputPath, outputFolder, outputExists] = outputfile(domain)
 
     if ~exist(outputFolder, 'dir')
         mkdir(outputFolder);
-        fprintf('%s created directory %s\n', ...
-            upper(mfilename), outputFolder);
     end
 
     outputFile = sprintf('%s-%s.mat', mfilename, domain.Domain);

@@ -427,7 +427,6 @@ function [outputPath, outputFile, deg1Id] = ...
 
     if ~exist(outputFolder, 'dir')
         mkdir(outputFolder);
-        fprintf('%s created folder %s\n', upper(mfilename), outputFolder);
     end
 
     gadFlag = '';

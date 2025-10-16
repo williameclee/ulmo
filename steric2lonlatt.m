@@ -82,8 +82,9 @@
 %
 % Authored by
 %	2025/07/22, williameclee@arizona.edu (@williameclee)
+%
 % Last modified by
-%	2025/10/01, williameclee@arizona.edu (@williameclee)
+%	2025/10/16, williameclee@arizona.edu (@williameclee)
 
 function [steric, stericSigma, dates, lon, lat] = steric2lonlatt(product, timestep, meshsize, timelim, options)
     %% Initialisation
@@ -206,7 +207,7 @@ function [steric, stericSigma, dates, lon, lat] = steric2lonlatt(product, timest
 
     if ~isempty(timestep)
         [data.(stericVar), data.dates] = interptemporal( ...
-            data.dates, data.(stericVar), timestep, intpMthd, beQuiet);
+            data.dates, data.(stericVar), timestep, intpMthd, beQuiet, callChain);
     end
 
     if ~(isempty(meshsize) && isempty(lonOrigin))
@@ -220,7 +221,7 @@ function [steric, stericSigma, dates, lon, lat] = steric2lonlatt(product, timest
         end
 
         [data.(stericVar), data.lon, data.lat] = interpspatial( ...
-            data.lon, data.lat, data.(stericVar), meshsize, lonOrigin, intpMthd, beQuiet);
+            data.lon, data.lat, data.(stericVar), meshsize, lonOrigin, intpMthd, beQuiet, callChain);
     end
 
     if saveData
@@ -252,7 +253,7 @@ end
 %% Subfunctions
 % Interpolation
 function [meshIntp, datesIntp] = ...
-        interptemporal(dates, mesh, timeStep, intpMthd, beQuiet)
+        interptemporal(dates, mesh, timeStep, intpMthd, beQuiet, callChain)
 
     if ischar(timeStep) && strcmpi(timeStep, 'midmonth')
         datesIntp = midmonth([dates(1), dates(end)]);
@@ -274,8 +275,8 @@ function [meshIntp, datesIntp] = ...
     if beQuiet == 0
         t = tic;
         templine = 'this may take a while...';
-        fprintf('[ULMO><a href="matlab: open(''%s'')">%s</a>] Interpolating temporally, %s\n', ...
-            mfilename("fullpath"), mfilename, templine);
+        fprintf('[ULMO>%s] Interpolating temporally, %s\n', ...
+            callchaintext(callChain), templine);
     end
 
     meshFlat = reshape(mesh, [], size(mesh, 3))';
@@ -290,7 +291,7 @@ function [meshIntp, datesIntp] = ...
 end
 
 function [meshIntp, lonIntp, latIntp] = ...
-        interpspatial(lon, lat, mesh, meshSize, lonOrigin, intpMthd, beQuiet)
+        interpspatial(lon, lat, mesh, meshSize, lonOrigin, intpMthd, beQuiet, callChain)
 
     ogLonOrigin = (min(lon) + max(lon)) / 2;
     lonIntp = (-180:meshSize:180) + lonOrigin;
@@ -304,8 +305,8 @@ function [meshIntp, lonIntp, latIntp] = ...
     if beQuiet == 0
         t = tic;
         templine = 'this may take a while...';
-        fprintf('[ULMO><a href="matlab: open(''%s'')">%s</a>] Interpolating spatially, %s\n', ...
-            mfilename("fullpath"), mfilename, templine);
+        fprintf('[ULMO>%s] Interpolating spatially, %s\n', ...
+            callchaintext(callChain), templine);
     end
 
     [lonnIntp, lattIntp] = meshgrid(lonIntp, latIntp);

@@ -8,7 +8,7 @@
 %   eigfunINT = INTEGRATEBASIS(eigfun, r, J, phi, theta)
 %
 % Input arguments
-%   eigfun - The eigenfunctions
+%   eigfun - The eigfun
 %       This can be either the G you get from GLMALPHA or a cell array of
 %       the functions as in LOCALIZATION.
 %   domain - The region
@@ -20,7 +20,7 @@
 %       functions does not affect their integration
 %
 % Output arguments
-%   eigfunINT - The integrals of the eigenfunctions over the region
+%   eigfunINT - The integrals of the eigfun over the region
 %       These are in real sphere area, depending on your radius.
 %
 % See also
@@ -30,12 +30,12 @@
 %   The function is not properly tested yet.
 %
 % Last modified by
-%   2025/02/05, williameclee@arizona.edu (@williameclee)
+%   2025/10/16, williameclee@arizona.edu (@williameclee)
 %   2024/08/15, williameclee@arizona.edu (@williameclee)
 %   2016/11/01, charig@email.arizona.edu (@harig00)
 
 function varargout = integratebasis_new(varargin)
-    [eigfun, domain, J, phi, theta, forceNew, saveData, beQuiet] = ...
+    [eigfun, domain, J, phi, theta, forceNew, saveData, beQuiet, callChain] = ...
         parseinputs(varargin{:});
 
     %% Initialisation
@@ -81,14 +81,14 @@ function varargout = integratebasis_new(varargin)
     domainType = domaintype(domain);
 
     if strcmp(domainType, 'geographic')
-        [dataFile, fileExists] = ...
-            getoutputfile(domain, L);
+        dataFile = getoutputfile(domain, L);
 
-        if fileExists && ~forceNew
+        if ~forceNew && exist(dataFile, 'file')
             load(dataFile, 'eigfunINT');
 
             if ~beQuiet
-                fprintf('%s loaded %s \n', upper(mfilename), dataFile);
+                fprintf('[ULMO>%s] Loaded <a href="matlab: fprintf(''%s\\n'');open(''%s'')">integrated basis functions</a>.\n', ...
+                    callchaintext(callChain), dataFile, dataFile);
             end
 
             if ~isempty(J)
@@ -180,7 +180,8 @@ function varargout = integratebasis_new(varargin)
         save(dataFile, 'eigfunINT');
 
         if ~beQuiet
-            fprintf('%s saved %s \n', upper(mfilename), dataFile);
+            fprintf('[ULMO>%s] Saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">integrated basis functions</a>.\n', ...
+                callchaintext(callChain), dataFile, dataFile);
         end
 
     end
@@ -190,35 +191,37 @@ end
 
 %% Subfunctions
 function varargout = parseinputs(varargin)
-    eigfunD = '[~, eigfun] = localization(15, domain);';
-    domainD = 'africa';
-    truncationD = [];
-    phiD = 0;
-    thetaD = 0;
+    dfOpt.eigfun = '[~, eigfun] = localization(15, domain);';
+    dfOpt.domain = 'africa';
+    dfOpt.truncation = [];
+    dfOpt.phi = 0;
+    dfOpt.theta = 0;
 
-    p = inputParser;
-    addOptional(p, 'Eigenfunctions', eigfunD);
-    addOptional(p, 'Domain', domainD, ...
+    ip = inputParser;
+    addOptional(ip, 'eigfun', dfOpt.eigfun);
+    addOptional(ip, 'Domain', dfOpt.domain, ...
         @(x) ischar(x) || isstring(x) || iscell(x) ...
         || isa(x, 'GeoDomain') || isnumeric(x) || isempty(x));
-    addOptional(p, 'J', truncationD);
-    addOptional(p, 'phi', phiD);
-    addOptional(p, 'theta', thetaD);
-    addOptional(p, 'MoreRegionSpecs', {});
-    addParameter(p, 'ForceNew', false, @(x) islogical(x) || isnumeric(x));
-    addParameter(p, 'SaveData', true, @(x) islogical(x) || isnumeric(x));
-    addParameter(p, 'BeQuiet', false, @(x) islogical(x) || isnumeric(x));
-    parse(p, varargin{:});
+    addOptional(ip, 'J', dfOpt.truncation);
+    addOptional(ip, 'phi', dfOpt.phi);
+    addOptional(ip, 'theta', dfOpt.theta);
+    addOptional(ip, 'MoreRegionSpecs', {});
+    addParameter(ip, 'ForceNew', false, @(x) islogical(x) || isnumeric(x));
+    addParameter(ip, 'SaveData', true, @(x) islogical(x) || isnumeric(x));
+    addParameter(ip, 'BeQuiet', false, @(x) islogical(x) || isnumeric(x));
+    addParameter(ip, 'CallChain', {}, @iscell);
+    parse(ip, varargin{:});
 
-    eigfun = conddefval(p.Results.Eigenfunctions, eigfunD);
-    domain = conddefval(p.Results.Domain, domainD);
-    J = conddefval(p.Results.J, truncationD);
-    phi = conddefval(p.Results.phi, phiD);
-    theta = conddefval(p.Results.theta, thetaD);
-    moreRegionSpecs = p.Results.MoreRegionSpecs;
-    forceNew = logical(p.Results.ForceNew);
-    saveData = logical(p.Results.SaveData);
-    beQuiet = logical(p.Results.BeQuiet);
+    eigfun = conddefval(ip.Results.eigfun, dfOpt.eigfun);
+    domain = conddefval(ip.Results.Domain, dfOpt.domain);
+    J = conddefval(ip.Results.J, dfOpt.truncation);
+    phi = conddefval(ip.Results.phi, dfOpt.phi);
+    theta = conddefval(ip.Results.theta, dfOpt.theta);
+    moreRegionSpecs = ip.Results.MoreRegionSpecs;
+    forceNew = logical(ip.Results.ForceNew);
+    saveData = logical(ip.Results.SaveData);
+    beQuiet = logical(ip.Results.BeQuiet);
+    callChain = [ip.Results.CallChain, {mfilename}];
 
     if ischar(domain) || isstring(domain) && exist(domain, "file")
         domain = GeoDomain(domain, moreRegionSpecs{:});
@@ -236,7 +239,7 @@ function varargout = parseinputs(varargin)
     end
 
     varargout = ...
-        {eigfun, domain, J, phi, theta, forceNew, saveData, beQuiet};
+        {eigfun, domain, J, phi, theta, forceNew, saveData, beQuiet, callChain};
 end
 
 function domainType = domaintype(domain)
@@ -260,17 +263,14 @@ function domainType = domaintype(domain)
 
 end
 
-function [filePath, fileExists] = getoutputfile(domain, L)
+function filePath = getoutputfile(domain, L)
     dataFolder = fullfile(getenv('IFILES'), 'EIGFUNINT');
 
     if ~exist(dataFolder, 'dir')
         mkdir(dataFolder);
-        fprintf('%s created folder %s to store data\n', ...
-            upper(mfilename), dataFolder);
     end
 
     fileName = sprintf('EIGFUNINT-%s-%d.mat', domain.Id, L);
 
     filePath = fullfile(dataFolder, fileName);
-    fileExists = isfile(filePath);
 end

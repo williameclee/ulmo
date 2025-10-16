@@ -80,6 +80,102 @@
       }
     ]
   },
+  "glmalpha_new": {
+    "inputs": [
+      {
+        "name": "domain",
+        "kind": "required",
+        "type": [["char"], ["string"], ["cell"], ["GeoDomain"], ["numeric", "ncols=2", "real"]]
+      },
+      {
+        "name": "L",
+        "kind": "required",
+        "type": ["numeric", "integer", "scalar", ">0"]
+      },
+      {
+        "name": "RotateBack",
+        "kind": "namevalue",
+        "type": ["logical", "scalar"],
+        "purpose": "whether to rotate Slepian functions back to original position"
+      },
+      {
+        "name": "ForceNew",
+        "kind": "namevalue",
+        "type": ["logical", "scalar"],
+        "purpose": "whether to force recomputation"
+      },
+      {
+        "name": "SaveData",
+        "kind": "namevalue",
+        "type": ["logical", "scalar"],
+        "purpose": "whether to save computed data"
+      },
+      {
+        "name": "BeQuiet",
+        "kind": "namevalue",
+        "type": ["logical", "scalar"],
+        "purpose": "whether to suppress output messages"
+      }
+    ]
+  },
+  "integratebasis_new": {
+    "inputs": [
+      {
+        "name": "eigfun",
+        "kind": "required"
+      },
+      {
+        "name": "Domain",
+        "kind": "required",
+        "type": [["char"], ["string"], ["cell"], ["GeoDomain"], ["numeric", "ncols=2", "real"]],
+        "purpose": "region of interest"
+      },
+      {
+        "name": "J",
+        "kind": "ordered",
+        "type": [["numeric", "integer", "scalar", ">0"], ["numel=0"]],
+        "purpose": "number of Slepian functions to integrate"
+      },
+      {
+        "name": "ForceNew",
+        "kind": "namevalue",
+        "type": ["logical", "scalar"],
+        "purpose": "whether to force recomputation"
+      },
+      {
+        "name": "SaveData",
+        "kind": "namevalue",
+        "type": ["logical", "scalar"],
+        "purpose": "whether to save computed data"
+      },
+      {
+        "name": "BeQuiet",
+        "kind": "namevalue",
+        "type": ["logical", "scalar"],
+        "purpose": "whether to suppress output messages"
+      }
+    ]
+  },
+  "plm2xyz": {
+    "inputs": [
+      {
+        "name": "lmcosi",
+        "kind": "required"
+      },
+      {
+        "name": "meshSize",
+        "kind": "ordered",
+        "type": ["numeric", "scalar", ">0"],
+        "purpose": "spatial resolution of output grid [°]"
+      },
+      {
+        "name": "BeQuiet",
+        "kind": "namevalue",
+        "type": ["logical", "scalar"],
+        "purpose": "whether to suppress output messages"
+      }
+    ]
+  },
   "grace2slept_new": {
     "inputs": [
       {
@@ -98,7 +194,7 @@
         "name": "L",
         "kind": "required",
         "type": ["numeric", "integer", "scalar", ">0"],
-        "purpose": "maximum spherical harmonic degree/order"
+        "purpose": "maximum SH degree/order"
       },
       {
         "name": "Truncation",
@@ -189,7 +285,7 @@
         "name": "L",
         "kind": "required",
         "type": ["numeric", "integer", "scalar", ">0"],
-        "purpose": "maximum spherical harmonic degree/order"
+        "purpose": "maximum SH degree/order"
       },
       {
         "name": "phi",
@@ -277,6 +373,200 @@
       }
     ]
   },
+  "gracedeg1": {
+    "inputs": [
+      {
+        "name": "Pcenter",
+        "kind": "required",
+        "type": ["string", "choices={'CSR', 'JPL', 'GFZ'}"],
+        "purpose": "data centre"
+      },
+      {
+        "name": "Rlevel",
+        "kind": "required",
+        "type": ["string", "choices={'RL06'}"],
+        "purpose": "release level"
+      },
+      {
+        "name": "TimeFormat",
+        "kind": "namevalue",
+        "type": ["char", "choices={'datetime','datenum'}"],
+        "purpose": "type of the time vector"
+      },
+      {
+        "name": "OutputFormat",
+        "kind": "namevalue",
+        "type": ["char", "choices={'timefirst','traditional'}"],
+        "purpose": "dimension order of output"
+      },
+      {
+        "name": "ForceNew",
+        "kind": "namevalue",
+        "type": ["logical", "scalar"],
+        "purpose": "whether to force recomputation"
+      },
+      {
+        "name": "SaveData",
+        "kind": "namevalue",
+        "type": ["logical", "scalar"],
+        "purpose": "whether to save computed data"
+      },
+      {
+        "name": "BeQuiet",
+        "kind": "namevalue",
+        "type": ["logical", "scalar"],
+        "purpose": "whether to suppress output messages"
+      }
+    ]
+  },
+  "gracedeg2": {
+    "inputs": [
+      {
+        "name": "Rlevel",
+        "kind": "required",
+        "type": ["string", "choices={'RL06'}"],
+        "purpose": "release level"
+      },
+      {
+        "name": "TimeFormat",
+        "kind": "namevalue",
+        "type": ["char", "choices={'datetime','datenum'}"],
+        "purpose": "type of the time vector"
+      },
+      {
+        "name": "OutputFormat",
+        "kind": "namevalue",
+        "type": ["char", "choices={'timefirst','traditional'}"],
+        "purpose": "dimension order of output"
+      },
+      {
+        "name": "ForceNew",
+        "kind": "namevalue",
+        "type": ["logical", "scalar"],
+        "purpose": "whether to force recomputation"
+      },
+      {
+        "name": "SaveData",
+        "kind": "namevalue",
+        "type": ["logical", "scalar"],
+        "purpose": "whether to save computed data"
+      },
+      {
+        "name": "BeQuiet",
+        "kind": "namevalue",
+        "type": ["logical", "scalar"],
+        "purpose": "whether to suppress output messages"
+      }
+    ]
+  },
+  "grace2fingerprint": {
+    "inputs": [
+      {
+        "name": "product",
+        "kind": "required",
+        "type": ["cell", "numel=3"]
+      },
+      {
+        "name": "L",
+        "kind": "required",
+        "type": ["numeric", "integer", "scalar", ">0"],
+        "purpose": "SLE SH degree/order"
+      },
+      {
+        "name": "oceanDomain",
+        "kind": "ordered",
+        "type": [["char"], ["string"], ["cell"], ["GeoDomain"], ["numeric", "ncols=2", "real"]],
+        "purpose": "ocean domain for SLE"
+      },
+      {
+        "name": "GIA",
+        "kind": "ordered",
+        "type": ["char", "choices={'Caron18', 'Caron19', 'A13', 'ICE6GD', 'Paulson07', 'LM17.3'}"],
+        "purpose": "GIA model"
+      },
+      {
+        "name": "RotationFeeback",
+        "kind": "ordered",
+        "type": ["logical", "scalar"],
+        "purpose": "whether to include rotational feedback"
+      },
+      {
+        "name": "ReplaceWithGAD",
+        "kind": "ordered",
+        "type": ["logical", "scalar"],
+        "purpose": "whether to replace GAC correction with GAD"
+      },
+      {
+        "name": "RecomputeDegree1",
+        "kind": "namevalue",
+        "type": ["logical", "scalar"],
+        "purpose": "whether to recompute degree 1 coefficients"
+      },
+      {
+        "name": "Frame",
+        "kind": "namevalue",
+        "type": ["char", "choices={'CF', 'CM'}"],
+        "purpose": "reference frame"
+      },
+      {
+        "name": "LandDomain",
+        "kind": "namevalue",
+        "type": [["char"], ["string"], ["cell"], ["GeoDomain"], ["numeric", "ncols=2", "real"]],
+        "purpose": "land domain for forcing"
+      },
+      {
+        "name": "Truncation",
+        "kind": "namevalue",
+        "type": [["numeric", "integer", "scalar", ">0"]],
+        "purpose": "maximum SH degree/order"
+      },
+      {
+        "name": "Unit",
+        "kind": "namevalue",
+        "type": ["char", "string", "choices={'SD','POT'}"],
+        "purpose": "unit of output"
+      },
+      {
+        "name": "TimeRange",
+        "kind": "namevalue",
+        "type": [
+          ["numeric", "numel=2"],
+          ["datetime", "numel=2"]
+        ],
+        "purpose": "time range of data to read"
+      },
+      {
+        "name": "OutputFormat",
+        "kind": "namevalue",
+        "type": ["char", "string", "choices={'timefirst','traditional'}"],
+        "purpose": "dimension order of output"
+      },
+      {
+        "name": "TimeFormat",
+        "kind": "namevalue",
+        "type": ["char", "string", "choices={'datetime','datenum'}"],
+        "purpose": "Type of the time vector"
+      },
+      {
+        "name": "BeQuiet",
+        "kind": "namevalue",
+        "type": ["logical", "scalar"],
+        "purpose": "whether to suppress output messages"
+      },
+      {
+        "name": "ForceNew",
+        "kind": "namevalue",
+        "type": ["logical", "scalar"],
+        "purpose": "whether to force recomputation"
+      },
+      {
+        "name": "SaveData",
+        "kind": "namevalue",
+        "type": ["logical", "scalar"],
+        "purpose": "whether to save computed data"
+      }
+    ]
+  },
   "ssh2lonlatt": {
     "inputs": [
       {
@@ -350,6 +640,91 @@
       }
     ]
   },
+  "aod1b2plmt": {
+    "inputs": [
+      {
+        "name": "Pcenter",
+        "kind": "required",
+        "type": ["string", "choices={'CSR', 'JPL', 'GFZ'}"],
+        "purpose": "data centre"
+      },
+      {
+        "name": "Rlevel",
+        "kind": "required",
+        "type": ["string", "choices={'RL06'}"],
+        "purpose": "release level"
+      },
+      {
+        "name": "product",
+        "kind": "required",
+        "type": ["string", "choices={'GAC', 'GAD'}"],
+        "purpose": "product type"
+      },
+      {
+        "name": "L",
+        "kind": "ordered",
+        "type": ["numeric", "integer", "scalar", ">0"],
+        "purpose": "maximum SH degree/order"
+      },
+      {
+        "name": "Unit",
+        "kind": "ordered",
+        "type": ["char", "string", "choices={'SD','POT'}"],
+        "purpose": "unit of output"
+      },
+      {
+        "name": "TimeRange",
+        "kind": "ordered",
+        "type": [
+          ["numeric", "numel=2"],
+          ["datetime", "numel=2"]
+        ],
+        "purpose": "time range of data to read"
+      },
+      {
+        "name": "OutputFormat",
+        "kind": "namevalue",
+        "type": ["char", "string", "choices={'timefirst','traditional'}"],
+        "purpose": "dimension order of output"
+      },
+      {
+        "name": "TimeFormat",
+        "kind": "namevalue",
+        "type": ["char", "string", "choices={'datetime','datenum'}"],
+        "purpose": "Type of the time vector"
+      },
+      {
+        "name": "RemoveOceanMean",
+        "kind": "namevalue",
+        "type": ["logical", "scalar"],
+        "purpose": "whether to remove ocean mean from (GAD) data"
+      },
+      {
+        "name": "OceanDomain",
+        "kind": "namevalue",
+        "type": [["char"], ["string"], ["cell"], ["GeoDomain"], ["numeric", "ncols=2", "real"]],
+        "purpose": "ocean domain for mean removal"
+      },
+      {
+        "name": "ForceNew",
+        "kind": "namevalue",
+        "type": ["logical", "scalar"],
+        "purpose": "whether to force recomputation"
+      },
+      {
+        "name": "SaveData",
+        "kind": "namevalue",
+        "type": ["logical", "scalar"],
+        "purpose": "whether to save computed data"
+      },
+      {
+        "name": "BeQuiet",
+        "kind": "namevalue",
+        "type": ["logical", "scalar"],
+        "purpose": "whether to suppress output messages"
+      }
+    ]
+  },
   "gia2plmt": {
     "inputs": [
       {
@@ -368,7 +743,7 @@
         "name": "L",
         "kind": "ordered",
         "type": ["numeric"],
-        "purpose": "degree/order of spherical harmonics"
+        "purpose": "SH degree/order"
       },
       {
         "name": "Unit",
