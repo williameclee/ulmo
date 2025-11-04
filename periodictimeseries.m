@@ -4,7 +4,7 @@
 %   2025/06/03, williameclee@arizona.edu (@williameclee)
 %
 % Last modified by:
-%   2025/07/19, williameclee@arizona.edu (@williameclee)
+%   2025/11/03, williameclee@arizona.edu (@williameclee)
 
 function varargout = periodictimeseries(t, varargin)
     ip = inputParser;
@@ -12,7 +12,7 @@ function varargout = periodictimeseries(t, varargin)
         @(x) (isnumeric(x) && (isvector(x) || ismatrix(x))) || ...
         ((isdatetime(x) || isduration(x)) && isvector(x)));
     ip.addOptional('x', [], @(x) isnumeric(x) && isvector(x));
-    ip.addOptional('sigma', [], @(x) isnumeric(x) && isvector(x));
+    ip.addOptional('sigma', [], @(x) (isnumeric(x) && isvector(x)) | isempty(x));
     ip.addOptional('p', 2, @(x) isnumeric(x) && isscalar(x));
     ip.addOptional('periods', [], @(x) isnumeric(x) || isduration(x));
     ip.addParameter('PeriodicFormat', 'cos-sin', @(x) ischar(validatestring(x, {'sin-cos', 'cos-sin', 'amp-phase'})));
@@ -72,39 +72,51 @@ function varargout = periodictimeseries(t, varargin)
         t = years(t - datetime(year(t(1)), 1, 1));
     end
 
+    isValid = ~isnan(t) & ~isnan(x);
+    t_tofit = t(isValid);
+    x_tofit = x(isValid);
+
+    if ~isempty(sigma)
+        sigma_tofit = sigma(isValid);
+    else
+        sigma_tofit = [];
+    end
+
+    N = numel(t_tofit);
+
     if ~isempty(periods) && isduration(periods)
         periods = years(periods);
     end
 
     X = zeros([N, p + 1 + 2 * numel(periods)]);
-    X(:, 1:p + 1) = t .^ (0:p);
+    X(:, 1:p + 1) = t_tofit .^ (0:p);
 
     for i = 1:numel(periods)
 
         switch periodicFormat
             case "sin-cos"
                 X(:, p + 1 + (i - 1) * 2 + [1, 2]) = ...
-                    [sin(2 * pi * t / periods(i)), cos(2 * pi * t / periods(i))];
+                    [sin(2 * pi * t_tofit / periods(i)), cos(2 * pi * t_tofit / periods(i))];
             otherwise
                 X(:, p + 1 + (i - 1) * 2 + [1, 2]) = ...
-                    [cos(2 * pi * t / periods(i)), sin(2 * pi * t / periods(i))];
+                    [cos(2 * pi * t_tofit / periods(i)), sin(2 * pi * t_tofit / periods(i))];
         end
 
     end
 
-    if ~isempty(sigma)
-        W = diag(1 ./ sigma .^ 2);
-        coeffs = (X' * W * X) \ (X' * W * x);
-        residuals = x - X * coeffs;
-        weighted_residual_variance = sum((residuals ./ sigma) .^ 2) / (N - size(X, 2));
-        cov_matrix = weighted_residual_variance \ (X' * W * X);
+    if ~isempty(sigma_tofit)
+        W = diag(1 ./ sigma_tofit .^ 2);
+        coeffs = (X' * W * X) \ (X' * W * x_tofit);
+        residuals = x_tofit - X * coeffs;
+        weighted_residual_variance = sum((residuals ./ sigma_tofit) .^ 2) / (N - size(X, 2));
+        cov_matrix = weighted_residual_variance * inv(X' * W * X);
         coeffSigmas = sqrt(diag(cov_matrix));
     else
-        coeffs = X \ x;
+        coeffs = X \ x_tofit;
         % Estimate uncertainties of coeffs when sigma is not provided
-        residuals = x - X * coeffs;
+        residuals = x_tofit - X * coeffs;
         residual_variance = sum(residuals .^ 2) / (N - size(X, 2));
-        cov_matrix = residual_variance \ (X' * X);
+        cov_matrix = residual_variance * inv(X' * X);
         coeffSigmas = sqrt(diag(cov_matrix));
     end
 

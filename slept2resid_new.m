@@ -101,14 +101,14 @@
 %       integrals.
 %
 % Last modified by
-%   2025/06/02, williameclee@arizona.edu (@williameclee)
+%   2025/11/03, williameclee@arizona.edu (@williameclee)
 %   2012/06/26, charig@princeton.edu (@harig00)
 
 function varargout = slept2resid_new(varargin)
     %% Initialisation
     % Parse inputs
     [slept, date, fitwhat, givenerrors, spTerms, domain, truncation, ...
-         unit, beQuiet, doNormalisation, transFlag] = parseinputs(varargin{:});
+         unit, doNormalisation, transFlag, beQuiet, callChain] = parseinputs(varargin{:});
 
     % Format dates
 
@@ -299,20 +299,20 @@ function varargout = slept2resid_new(varargin)
     % get the monthly values.  This is much faster.
 
     if isa(domain, 'GeoDomain') || ismatrix(domain)
-        G = glmalpha_new(domain, L, "BeQuiet", beQuiet);
+        G = glmalpha_new(domain, L, "BeQuiet", beQuiet, "CallChain", callChain);
 
         try
             eigfunINT = integratebasis_new( ...
-                G, domain, truncation, "BeQuiet", beQuiet);
+                G, domain, truncation, "BeQuiet", beQuiet, "CallChain", callChain);
         catch
             eigfunINT = integratebasis_new( ...
-                G, domain, truncation, "BeQuiet", beQuiet, "ForceNew", true);
+                G, domain, truncation, "BeQuiet", beQuiet, "ForceNew", true, " CallChain", callChain);
         end
 
     else
-        G = glmalpha_new(domain, L, phi, theta, omega, "BeQuiet", beQuiet);
+        G = glmalpha_new(domain, L, phi, theta, omega, "BeQuiet", beQuiet, "CallChain", callChain);
         eigfunINT = integratebasis_new( ...
-            G, domain, truncation, phi, theta, "BeQuiet", beQuiet);
+            G, domain, truncation, phi, theta, "BeQuiet", beQuiet, "CallChain", callChain);
     end
 
     % Since Int should have units of (fn * m^2), need to go from fractional
@@ -387,33 +387,35 @@ function varargout = parseinputs(varargin)
     domainD = [];
     ND = [];
 
-    p = inputParser;
-    addOptional(p, 'slept', sleptD);
-    addOptional(p, 'date', dateD, @(x) isnumeric(x) || isdatetime(x));
-    addOptional(p, 'Fit', fitwhatD);
-    addOptional(p, 'givenerrors', givenerrorsD);
-    addOptional(p, 'specialterms', specialtermsD);
-    addOptional(p, 'Domain', domainD, ...
+    ip = inputParser;
+    addOptional(ip, 'slept', sleptD);
+    addOptional(ip, 'date', dateD, @(x) isnumeric(x) || isdatetime(x));
+    addOptional(ip, 'Fit', fitwhatD);
+    addOptional(ip, 'givenerrors', givenerrorsD);
+    addOptional(ip, 'specialterms', specialtermsD);
+    addOptional(ip, 'Domain', domainD, ...
         @(x) ischar(x) || isstring(x) || iscell(x) ...
         || isa(x, 'GeoDomain') || isnumeric(x) || isempty(x));
-    addOptional(p, 'N', ND);
-    addOptional(p, 'MoreDomainSpecs', {});
-    addParameter(p, 'Unit', 'original', @(x) ischar(x) ...
+    addOptional(ip, 'N', ND);
+    addOptional(ip, 'MoreDomainSpecs', {});
+    addParameter(ip, 'Unit', 'original', @(x) ischar(x) ...
         && ismember(x, {'original', 'year'}));
-    addParameter(p, 'BeQuiet', false, @(x) islogical(x) || isnumeric(x));
-    addParameter(p, 'Normalisation', true, @istruefalse)
-    parse(p, varargin{:});
-    slept = conddefval(p.Results.slept, sleptD);
-    date = conddefval(p.Results.date, dateD);
-    fitwhat = conddefval(p.Results.Fit, fitwhatD);
-    givenerrors = conddefval(p.Results.givenerrors, givenerrorsD);
-    specialterms = conddefval(p.Results.specialterms, specialtermsD);
-    domain = conddefval(p.Results.Domain, domainD);
-    N = conddefval(p.Results.N, ND);
-    moreDomainSpecs = p.Results.MoreDomainSpecs;
-    unit = p.Results.Unit;
-    beQuiet = logical(p.Results.BeQuiet);
-    doNormalisation = logical(p.Results.Normalisation);
+    addParameter(ip, 'BeQuiet', false, @(x) islogical(x) || isnumeric(x));
+    addParameter(ip, 'Normalisation', true, @istruefalse);
+    addParameter(ip, 'CallChain', {}, @iscell);
+    parse(ip, varargin{:});
+    slept = conddefval(ip.Results.slept, sleptD);
+    date = conddefval(ip.Results.date, dateD);
+    fitwhat = conddefval(ip.Results.Fit, fitwhatD);
+    givenerrors = conddefval(ip.Results.givenerrors, givenerrorsD);
+    specialterms = conddefval(ip.Results.specialterms, specialtermsD);
+    domain = conddefval(ip.Results.Domain, domainD);
+    N = conddefval(ip.Results.N, ND);
+    moreDomainSpecs = ip.Results.MoreDomainSpecs;
+    unit = ip.Results.Unit;
+    doNormalisation = logical(ip.Results.Normalisation);
+    beQuiet = logical(ip.Results.BeQuiet);
+    callChain = [ip.Results.CallChain, {mfilename}];
 
     if isdatetime(date)
         date = datenum(date); %#ok<DATNM>
@@ -450,5 +452,5 @@ function varargout = parseinputs(varargin)
         givenerrors = conddefval(givenerrors, ones(size(slept)));
     end
 
-    varargout = {slept, date, fitwhat, givenerrors, specialterms, domain, N, unit, beQuiet, doNormalisation, transFlag};
+    varargout = {slept, date, fitwhat, givenerrors, specialterms, domain, N, unit, doNormalisation, transFlag, beQuiet, callChain};
 end

@@ -70,18 +70,18 @@
 %   By default, if the output unit is geoid (POT), it is shifted vertically to represent the sea surface height change to conserve the ocean mass. To remove such effect, simply set the degree-0 coefficient to zero.
 %
 % Last modified by
-%   2025/07/21, williameclee@arizona.edu (@williameclee)
+%   2025/11/02, williameclee@arizona.edu (@williameclee)
 
 function varargout = gia2slept(varargin)
     %% Initialisation
     % Parse inputs
-    [date, model, domain, L, phi, theta, omega, unit, beQuiet] = ...
+    [date, model, domain, L, phi, theta, omega, unit, beQuiet, callChain] = ...
         parseinputs(varargin{:});
 
     %% Loading the model
     warning('off', 'SLEPIAN:gia2plmt:noBoundsToReturn');
     [plm, plmU, plmL] = gia2plmt( ...
-        [], model, L, "Unit", unit, "BeQuiet", beQuiet);
+        [], model, L, "Unit", unit, "BeQuiet", beQuiet, "CallChain", callChain);
 
     switch unit
         case 'SD'
@@ -106,7 +106,8 @@ function varargout = gia2slept(varargin)
 
     %% Computing the basis
     [falpha, falphaU, falphaL, N, G] = findslepianbasis( ...
-        plm, plmU, plmL, domain, phi, theta, omega, L, hasBounds, beQuiet);
+        plm, plmU, plmL, domain, phi, theta, omega, L, hasBounds, ...
+        "BeQuiet", beQuiet, "CallChain", callChain);
 
     %% Getting the trend
     if isempty(date) || isscalar(date)
@@ -134,10 +135,10 @@ function varargout = gia2slept(varargin)
 
     if isa(domain, 'GeoDomain') || ismatrix(domain)
         eigfunINT = integratebasis_new( ...
-            G, domain, truncation, "BeQuiet", beQuiet);
+            G, domain, truncation, "BeQuiet", beQuiet, "CallChain", callChain);
     else
         eigfunINT = integratebasis_new( ...
-            G, domain, truncation, phi, theta, "BeQuiet", beQuiet);
+            G, domain, truncation, phi, theta, "BeQuiet", beQuiet, "CallChain", callChain);
     end
 
     eigfunINT = eigfunINT(1:truncation);
@@ -193,40 +194,42 @@ function varargout = parseinputs(varargin)
     end
 
     % Parsing inputs
-    p = inputParser;
-    addOptional(p, 'Time', [], ...
+    ip = inputParser;
+    addOptional(ip, 'Time', [], ...
         @(x) isnumeric(x) || isdatetime(x) || isempty(x));
-    addOptional(p, 'Model', modelD, ...
+    addOptional(ip, 'Model', modelD, ...
         @(x) ischar(x) || (iscell(x) && length(x) == 3) || isempty(x));
-    addOptional(p, 'Domain', domainD, ...
+    addOptional(ip, 'Domain', domainD, ...
         @(x) ischar(x) || isstring(x) || iscell(x) ...
         || isa(x, 'GeoDomain') || isnumeric(x) || isempty(x));
-    addOptional(p, 'L', [], ...
+    addOptional(ip, 'L', [], ...
         @(x) isnumeric(x) || isempty(x));
-    addOptional(p, 'phi', phiD, @(x) isnumeric);
-    addOptional(p, 'theta', thetaD, @(x) isnumeric);
-    addOptional(p, 'omega', omegaD, @(x) isnumeric);
-    addParameter(p, 'Unit', 'SD', ...
+    addOptional(ip, 'phi', phiD, @(x) isnumeric);
+    addOptional(ip, 'theta', thetaD, @(x) isnumeric);
+    addOptional(ip, 'omega', omegaD, @(x) isnumeric);
+    addParameter(ip, 'Unit', 'SD', ...
         @(x) ischar(validatestring(x, {'massdensity', 'geoid', 'SD', 'POT'})));
-    addParameter(p, 'BeQuiet', 0.5, @(x) islogical(x) || isnumeric(x));
+    addParameter(ip, 'BeQuiet', 0.5, @(x) islogical(x) || isnumeric(x));
+    addParameter(ip, 'CallChain', {}, @iscell);
 
-    parse(p, varargin{:});
-    time = p.Results.Time(:);
-    model = conddefval(p.Results.Model, modelD);
-    domain = conddefval(p.Results.Domain, domainD);
-    L = p.Results.L;
-    phi = conddefval(p.Results.phi, phiD);
-    theta = conddefval(p.Results.theta, thetaD);
-    omega = conddefval(p.Results.omega, omegaD);
-    unit = p.Results.Unit;
-    beQuiet = uint8(double(p.Results.BeQuiet) * 2);
+    parse(ip, varargin{:});
+    time = ip.Results.Time(:);
+    model = conddefval(ip.Results.Model, modelD);
+    domain = conddefval(ip.Results.Domain, domainD);
+    L = ip.Results.L;
+    phi = conddefval(ip.Results.phi, phiD);
+    theta = conddefval(ip.Results.theta, thetaD);
+    omega = conddefval(ip.Results.omega, omegaD);
+    unit = ip.Results.Unit;
+    beQuiet = uint8(double(ip.Results.BeQuiet) * 2);
+    callChain = [ip.Results.CallChain, {mfilename}];
 
     if isnumeric(time)
         time = datetime(time, 'ConvertFrom', 'datenum');
     end
 
     % Change the domain to a GeoDomain object if appropriate
-    if ischar(domain) || isstring(domain) && exist(domain, "file")
+    if ischar(domain) || isstring(domain) && exist(domain, 'file')
         domain = GeoDomain(domain);
     elseif iscell(domain) && length(domain) == 2
         domain = ...
@@ -242,35 +245,50 @@ function varargout = parseinputs(varargin)
             unit = 'POT';
     end
 
-    varargout = {time, model, domain, L, phi, theta, omega, unit, beQuiet};
+    varargout = {time, model, domain, L, phi, theta, omega, unit, beQuiet, callChain};
 
 end
 
 function varargout = findslepianbasis(plm, plmU, plmL, domain, phi, theta, omega, ...
-        L, hasBounds, beQuiet)
+        L, hasBounds, options)
+
+    arguments (Input)
+        plm
+        plmU
+        plmL
+        domain
+        phi
+        theta
+        omega
+        L
+        hasBounds
+        options.BeQuiet (1, 1) = false
+        options.CallChain cell = {}
+    end
+
     falphaU = nan;
     falphaL = nan;
 
     if isa(domain, 'GeoDomain') || ismatrix(domain)
         [falpha, ~, N, ~, G] = plm2slep_new( ...
-            plm, domain, L, "BeQuiet", beQuiet);
+            plm, domain, L, "BeQuiet", options.BeQuiet, "CallChain", options.CallChain);
 
         if hasBounds
             falphaU = plm2slep_new( ...
-                plmU, domain, L, "BeQuiet", beQuiet);
+                plmU, domain, L, "BeQuiet", options.BeQuiet, "CallChain", options.CallChain);
             falphaL = plm2slep_new( ...
-                plmL, domain, L, "BeQuiet", beQuiet);
+                plmL, domain, L, "BeQuiet", options.BeQuiet, "CallChain", options.CallChain);
         end
 
     else
         [falpha, ~, N, ~, G] = plm2slep_new( ...
-            plm, domain, L, phi, theta, omega, "BeQuiet", beQuiet);
+            plm, domain, L, phi, theta, omega, "BeQuiet", options.BeQuiet, "CallChain", options.CallChain);
 
         if hasBounds
             falphaU = plm2slep_new(plmU, domain, L, ...
-                phi, theta, omega, "BeQuiet", beQuiet);
+                phi, theta, omega, "BeQuiet", options.BeQuiet, "CallChain", options.CallChain);
             falphaL = plm2slep_new(plmL, domain, L, ...
-                phi, theta, omega, "BeQuiet", beQuiet);
+                phi, theta, omega, "BeQuiet", options.BeQuiet, "CallChain", options.CallChain);
         end
 
     end

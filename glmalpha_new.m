@@ -110,7 +110,7 @@
 %   back...
 %
 % Last modified by
-%   2025/10/16, williameclee@arizona.edu (@williameclee)
+%   2025/11/03, williameclee@arizona.edu (@williameclee)
 %   2017/12/01, fjsimons@alum.mit.edu (@fjsimons)
 %   2016/06/27, charig@princeton.edu (@harig00)
 %   2016/10/11, plattner@alumni.ethz.ch (@AlainPlattner)
@@ -147,7 +147,7 @@ function varargout = glmalpha_new(varargin)
     truncation = conddefval(truncation, ldim);
 
     % Output file
-    vars = {'G', 'V', 'EL', 'EM', 'N', 'GM2AL', 'MTAP', 'IMTAP'};
+    vars = {'G', 'V', 'EL', 'EM', 'N'};
     [dataPath, GM2AL, MTAP, IMTAP, xver] = ...
         getoutputfile(domain, L, sord, blox, upco, resc, ...
         truncation, anti, bp, ldim, [], [], [], []);
@@ -158,10 +158,10 @@ function varargout = glmalpha_new(varargin)
 
         if ~beQuiet
             fprintf('[ULMO>%s] Loaded <a href="matlab: fprintf(''%s\\n'');open(''%s'')">projection matrix</a>.\n', ...
-                callchaintext(callChain), outputPath, outputPath);
+                callchaintext(callChain), dataPath, dataPath);
         end
 
-        varargout = {data.G, data.V, data.EL, data.EM, data.N, data.GM2AL, data.MTAP, data.IMTAP};
+        varargout = {data.G, data.V, data.EL, data.EM, data.N, GM2AL, MTAP, IMTAP};
 
         if nargout > 0
             return
@@ -195,7 +195,7 @@ function varargout = glmalpha_new(varargin)
         upscale = sord;
         [G, V, N] = glmalpha_geographic( ...
             maxL, domain, upscale, anti, rotb, ldim, bp, EL, EM, xver, ...
-            beQuiet, forceNew, mesg);
+            beQuiet, forceNew, mesg, callChain);
 
         G = G(:, 1:truncation);
         V = V(1:truncation);
@@ -212,8 +212,7 @@ function varargout = glmalpha_new(varargin)
             domain, sord, L, lp, bp, EM, EL, blkm, blox, upco, xver);
 
         if ~strcmp(dataPath, 'neveravailable') && saveData
-            save(dataPath, '-v7.3', ...
-                'G', 'V', 'EL', 'EM', 'N', 'GM2AL', 'MTAP', 'IMTAP')
+            save(dataPath, vars{:}, '-v7.3')
         end
 
         if ~beQuiet
