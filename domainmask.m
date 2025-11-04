@@ -49,7 +49,7 @@
 %	2025/07/25, williameclee@arizona.edu (@williameclee)
 %
 % Last modified by
-%	2025/09/15, williameclee@arizona.edu (@williameclee)
+%	2025/11/03, williameclee@arizona.edu (@williameclee)
 
 function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshsize, options)
 
@@ -107,7 +107,7 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
     end
 
     if isa(domain, 'GeoDomain')
-        domainPoly = domain.Lonlat("OutputFormat", 'polyshape', "LonOrigin", mean(lonlim));
+        domainPoly = domain.Lonlat(mean(lonlim), "OutputFormat", 'polyshape');
     elseif ismatrix(domain) && isnumeric(domain) && size(domain, 2) == 2
         domainPoly = polyshape(domain);
     elseif ischar(domain)

@@ -81,15 +81,15 @@
 %	2025/05/19, williameclee@arizona.edu (@williameclee)
 %
 % Last modified by
-%	2025/10/16, williameclee@arizona.edu (@williameclee)
+%	2025/11/03, williameclee@arizona.edu (@williameclee)
 
 function [ssh, sshSigma, dates, lon, lat] = ssh2lonlatt(product, timestep, meshsize, timelim, options)
 
     arguments (Input)
         product SSHProduct {mustBeScalarOrEmpty} = 'MEaSUREs'
         timestep {mustBeTimeStep} = []
-        meshsize {mustBePositive} = []
-        timelim (1, 2) {mustBeA(timelim, {'datetime', 'numeric'})} = []
+        meshsize = []
+        timelim {mustBeTimeRange} = []
         options.LonOrigin {mustBeFinite, mustBeReal} = []
         options.Interpolation ...
             {mustBeTextScalar, mustBeMember(options.Interpolation, {'linear', 'nearest', 'next', 'previous', 'spline', 'pchip'})} = 'linear'
@@ -99,7 +99,7 @@ function [ssh, sshSigma, dates, lon, lat] = ssh2lonlatt(product, timestep, meshs
         options.ForceNew (1, 1) {mustBeNumericOrLogical} = false
         options.BeQuiet (1, 1) {mustBeNumericOrLogical} = 0.5
         options.SaveData (1, 1) {mustBeNumericOrLogical} = true
-        options.CallChain {mustBeCell} = {}
+        options.CallChain cell = {}
     end
 
     arguments (Output)
@@ -120,6 +120,24 @@ function [ssh, sshSigma, dates, lon, lat] = ssh2lonlatt(product, timestep, meshs
     saveData = logical(options.SaveData);
     callChain = [options.CallChain, {mfilename}];
 
+    if numel(meshsize) == 2 && isempty(lonOrigin)
+        lonOrigin = meshsize(2);
+        meshsize = meshsize(1);
+    elseif numel(meshsize) > 2
+        error('ULMO:InvalidInput', ...
+            'meshsize must be a scalar or a 2-element vector of (h, lonOrigin), got %d elements.', ...
+            numel(meshsize));
+    end
+
+    if meshsize < 0
+        error('ULMO:InvalidMeshSize', ...
+            'Mesh size must be a positive real scalar, got %f.', meshsize);
+    elseif isnan(meshsize)
+        warning('ULMO:InvalidMeshSize', ...
+        'Mesh size is NaN, argument ignored.');
+        meshsize = [];
+    end
+
     if ~isempty(timestep) && isnumeric(timestep)
         timestep = days(timestep);
     end
@@ -133,34 +151,14 @@ function [ssh, sshSigma, dates, lon, lat] = ssh2lonlatt(product, timestep, meshs
         timelim = fliplr(timelim);
     end
 
-    outputFolder = fullfile(getenv('IFILES'), char(product));
-    inputFolder = fullfile(outputFolder, 'raw');
-
-    %% No interpolation
-    if isempty(timestep) && isempty(meshsize) && isempty(lonOrigin)
-        % No interpolation duration given, load the raw data
-        [data.sshs, data.sshErrors, data.dates, data.lon, data.lat] = ...
-            loadAggregatedRawData(product, ...
-            forceNew, beQuiet, saveData, outputFolder, inputFolder, callChain);
-
-        if nargout > 0
-            [ssh, sshSigma, dates, lon, lat] = formatoutput( ...
-                data.sshs, data.sshErrors, data.dates, data.lon, data.lat, ...
-                timelim, timeFmt, outputFmt, unit);
-        else
-            plotsealeveltseries(data.dates, data.sshs, data.lon, data.lat, ...
-                product, unit, 'Global mean sea surface height');
-        end
-
-        return
-
-    end
-
-    %% With interpolation
+    %% Checking for existing data
     intpOutputPath = ...
-        outputpath(product, intpMthd, timestep, meshsize, lonOrigin, outputFolder);
+        outputpath(product, intpMthd, timestep, meshsize, lonOrigin);
 
-    if exist(intpOutputPath, 'file') && ~forceNew
+    vars = {'sshs', 'dates', 'lon', 'lat'};
+
+    if ~forceNew && exist(intpOutputPath, 'file') && ...
+            all(ismember(vars, who('-file', intpOutputPath)))
 
         if beQuiet <= 1
             t = tic;
@@ -169,7 +167,12 @@ function [ssh, sshSigma, dates, lon, lat] = ssh2lonlatt(product, timestep, meshs
                 callchaintext(callChain), intpOutputPath, intpOutputPath, msg);
         end
 
-        data = load(intpOutputPath, 'sshs', 'sshErrors', 'dates', 'lon', 'lat');
+        if ismember('sshErrors', who('-file', intpOutputPath))
+            data = load(intpOutputPath, vars{:}, 'sshErrors');
+        else
+            data = load(intpOutputPath, vars{:});
+            data.sshErrors = [];
+        end
 
         if beQuiet <= 1
             fprintf(repmat('\b', 1, length(msg) + 1));
@@ -188,15 +191,35 @@ function [ssh, sshSigma, dates, lon, lat] = ssh2lonlatt(product, timestep, meshs
         return
     end
 
-    [data.sshs, data.sshErrors, data.dates, data.lon, data.lat] = ...
-        loadAggregatedRawData(product, ...
-        forceNew, beQuiet, saveData, outputFolder, inputFolder, callChain);
+    %% Main
+    inputPath = outputpath(product);
+
+    if ~exist(inputPath, 'file')
+        error('ULMO:InputDataNotFound', ...
+            'Input data not found at %s.', inputPath);
+    elseif ~all(ismember(vars, who('-file', inputPath)))
+        notFoundVars = vars(~ismember(vars, who('-file', inputPath)));
+        error('ULMO:InputDataIncomplete', ...
+            'Input data at %s is missing variables: %s.', ...
+            inputPath, strjoin(notFoundVars, ', '));
+    end
+
+    if ismember('sshErrors', who('-file', inputPath))
+        data = load(inputPath, vars{:}, 'sshErrors');
+    else
+        data = load(inputPath, vars{:});
+        data.sshErrors = [];
+    end
 
     if ~isempty(timestep)
-        data.sshs = interptemporal( ...
-            data.dates, data.sshs, timestep, intpMthd, beQuiet);
-        [data.sshErrors, data.dates] = interptemporal( ...
-            data.dates, data.sshErrors, timestep, intpMthd, beQuiet);
+        [data.sshs, data.dates] = interptemporal( ...
+            data.dates, data.sshs, timestep, intpMthd, BeQuiet = beQuiet, CallChain = callChain);
+
+        if ~isempty(data.sshErrors)
+            data.sshErrors = interptemporal( ...
+                data.dates, data.sshErrors, timestep, intpMthd, beQuiet, BeQuiet = beQuiet, CallChain = callChain);
+        end
+
     end
 
     if ~isempty(meshsize) || ~isempty(lonOrigin)
@@ -209,10 +232,14 @@ function [ssh, sshSigma, dates, lon, lat] = ssh2lonlatt(product, timestep, meshs
             lonOrigin = 180;
         end
 
-        data.sshs = interpspatial( ...
+        [data.sshs, data.lon, data.lat] = interpspatial( ...
             data.lon, data.lat, data.sshs, meshsize, lonOrigin, intpMthd, beQuiet, callChain);
-        [data.sshErrors, data.lon, data.lat] = interpspatial( ...
-            data.lon, data.lat, data.sshErrors, meshsize, lonOrigin, intpMthd, beQuiet, callChain);
+
+        if ~isempty(data.sshErrors)
+            data.sshErrors = interpspatial( ...
+                data.lon, data.lat, data.sshErrors, meshsize, lonOrigin, intpMthd, beQuiet, callChain);
+        end
+
     end
 
     if saveData
@@ -226,55 +253,30 @@ function [ssh, sshSigma, dates, lon, lat] = ssh2lonlatt(product, timestep, meshs
 
     end
 
-    [ssh, sshSigma, dates, lon, lat] = formatoutput( ...
-        data.sshs, data.sshErrors, data.dates, data.lon, data.lat, ...
-        timelim, timeFmt, outputFmt, unit);
+    if nargout > 0
+        [ssh, sshSigma, dates, lon, lat] = formatoutput( ...
+            data.sshs, data.sshErrors, data.dates, data.lon, data.lat, ...
+            timelim, timeFmt, outputFmt, unit);
+    else
+        plotsealeveltseries(data.dates, data.sshs, data.lon, data.lat, ...
+            product, unit, 'Global mean sea surface height');
+    end
 
 end
 
 %% Subfunctions
 % Interpolation
-function [meshIntp, datesIntp] = ...
-        interptemporal(dates, mesh, timeStep, intpMthd, beQuiet)
-
-    if beQuiet == 0
-        t = tic;
-        templine = 'this may take a while...';
-        fprintf('[ULMO>%s] Interpolating temporally, %s\n', ...
-            callChain, templine);
-    end
-
-    if ischar(timeStep) && strcmpi(timeStep, 'midmonth')
-        startDate = datetime(year(dates(1)), month(dates(1)), 1, 0, 0, 0);
-        endDate = datetime(year(dates(end)), month(dates(end)), 1, 0, 0, 0) + calmonths(1);
-        dmonths = ceil((endDate - startDate) / days(28));
-        startDates = startDate + calmonths(0:dmonths - 1);
-        endDates = startDate + calmonths(1:dmonths);
-        datesIntp = startDates + (endDates - startDates) / 2;
-        datesIntp = datesIntp(datesIntp >= dates(1) & datesIntp <= dates(end));
-    else
-
-        if mean(diff(dates)) > timeStep
-            warning(sprintf('%s:InterpolationStepTooSmall', upper(mfilename)), ...
-                'The interpolation time step (%s) is smaller than the mean data resolution (%s)', timeStep, mean(diff(dates)));
-        end
-
-        datesIntp = dates(1):timeStep:dates(end);
-    end
-
-    meshFlat = reshape(mesh, [prod(size(mesh, 1:2)), size(mesh, 3)])';
-    meshIntp = interp1(dates, meshFlat, datesIntp, intpMthd)';
-    meshIntp = reshape(meshIntp, [size(mesh, 1:2), length(datesIntp)]);
-
-    if beQuiet == 0
-        fprintf(repmat('\b', 1, length(templine) + 1));
-        fprintf('took %.1f seconds.\n', toc(t));
-    end
-
-end
-
 function [meshIntp, lonIntp, latIntp] = ...
         interpspatial(lon, lat, mesh, meshSize, lonOrigin, intpMthd, beQuiet, callChain)
+
+    lonIntp = (-180:meshSize:180) + lonOrigin;
+    latIntp = -90:meshSize:90;
+    [lonnIntp, lattIntp] = meshgrid(lonIntp, latIntp);
+
+    if isequal(lonIntp(:), lon(:)) && isequal(latIntp(:), lat(:))
+        meshIntp = mesh;
+        return
+    end
 
     if beQuiet == 0
         t = tic;
@@ -283,24 +285,36 @@ function [meshIntp, lonIntp, latIntp] = ...
             callchaintext(callChain), templine);
     end
 
-    ogLonOrigin = 180;
-    lonIntp = (-180:meshSize:180) + lonOrigin;
-    latIntp = -90:meshSize:90;
-    [lonnIntp, lattIntp] = meshgrid(lonIntp, latIntp);
-    lonnIntp(lonnIntp < ogLonOrigin - 180) = lonnIntp(lonnIntp < ogLonOrigin - 180) + 360;
-    lonnIntp(lonnIntp > ogLonOrigin + 180) = lonnIntp(lonnIntp > ogLonOrigin + 180) - 360;
-    lonPad = [lon(end) - 360; lon; lon(1) + 360];
-    meshPad = cat(1, mesh(end, :, :), mesh, mesh(1, :, :));
-    [lonn, latt] = meshgrid(lonPad, lat);
+    % lonnIntp(lonnIntp < ogLonOrigin - 180) = lonnIntp(lonnIntp < ogLonOrigin - 180) + 360;
+    % lonnIntp(lonnIntp > ogLonOrigin + 180) = lonnIntp(lonnIntp > ogLonOrigin + 180) - 360;
 
-    meshPad = permute(meshPad, [2, 1, 3]);
+    lon = lon - 360 * floor(lon(1) / 360);
+
+    if lon(1) ~= 0
+
+        if lon(end) - lon(1) == 360
+            lon = lon(1:end - 1);
+            mesh = mesh(1:end - 1, :, :);
+        end
+
+        [lon, idx] = sort(mod(lon, 360));
+        mesh = mesh(idx, :, :);
+    end
+
+    if lon(end) - lon(1) ~= 360
+        lon = [lon(end) - 360; lon; lon(1) + 360];
+        mesh = cat(1, mesh(end, :, :), mesh, mesh(1, :, :));
+    end
+
+    [lonn, latt] = meshgrid(lon, lat);
+    mesh = permute(mesh, [2, 1, 3]);
 
     meshIntp = nan([length(latIntp), length(lonIntp), size(mesh, 3)], 'single');
 
     for iDate = 1:size(meshIntp, 3)
         meshIntp(:, :, iDate) = ...
-            interp2(lonn, latt, squeeze(meshPad(:, :, iDate)), ...
-            lonnIntp, lattIntp, intpMthd);
+            interp2(lonn, latt, squeeze(mesh(:, :, iDate)), ...
+            mod(lonnIntp, 360), lattIntp, intpMthd);
     end
 
     meshIntp = permute(meshIntp, [2, 1, 3]);
@@ -312,167 +326,171 @@ function [meshIntp, lonIntp, latIntp] = ...
 
 end
 
-% Load the aggregated raw data (i.e. data from all time stamps in the same array)
-function [sshs, sshErrors, dates, lon, lat] = loadAggregatedRawData( ...
-        product, forceNew, beQuiet, saveData, outputFolder, inputFolder, callChain)
-    vars = {'sshs', 'sshErrors', 'dates', 'lon', 'lat'};
-    % Output location
-    outputFile = sprintf('%s.mat', product);
-    outputPath = fullfile(outputFolder, outputFile);
+% % Load the aggregated raw data (i.e. data from all time stamps in the same array)
+% function [sshs, sshErrors, dates, lon, lat] = loadAggregatedRawData( ...
+%         product, forceNew, beQuiet, saveData, outputFolder, inputFolder, callChain)
+%     vars = {'sshs', 'sshErrors', 'dates', 'lon', 'lat'};
+%     % Output location
+%     outputFile = sprintf('%s.mat', product);
+%     outputPath = fullfile(outputFolder, outputFile);
 
-    %% Checking output file
-    if exist(outputPath, 'file') && ~forceNew && ...
-            all(ismember(vars, who('-file', outputPath)))
+%     %% Checking output file
+%     if exist(outputPath, 'file') && ~forceNew && ...
+%             all(ismember(vars, who('-file', outputPath)))
 
-        if beQuiet <= 1
-            t = tic;
-            msg = 'this may take a while...';
-            fprintf('[ULMO>%s] Loading <a href="matlab: fprintf(''%s\\n'');open(''%s'')">SSH product</a>, %s\n', ...
-                callchaintext(callChain), outputPath, outputPath, msg);
-        end
+%         if beQuiet <= 1
+%             t = tic;
+%             msg = 'this may take a while...';
+%             fprintf('[ULMO>%s] Loading <a href="matlab: fprintf(''%s\\n'');open(''%s'')">SSH product</a>, %s\n', ...
+%                 callchaintext(callChain), outputPath, outputPath, msg);
+%         end
 
-        data = load(outputPath, vars{:});
-        sshs = data.sshs;
-        sshErrors = data.sshErrors;
-        dates = data.dates;
-        lon = data.lon;
-        lat = data.lat;
+%         data = load(outputPath, vars{:});
+%         sshs = data.sshs;
+%         sshErrors = data.sshErrors;
+%         dates = data.dates;
+%         lon = data.lon;
+%         lat = data.lat;
 
-        if beQuiet <= 1
-            fprintf(repmat('\b', 1, length(msg) + 1));
-            fprintf('took %.1f seconds.\n', toc(t));
-        end
+%         if beQuiet <= 1
+%             fprintf(repmat('\b', 1, length(msg) + 1));
+%             fprintf('took %.1f seconds.\n', toc(t));
+%         end
 
-        return
+%         return
 
-    end
+%     end
 
-    if ~exist(inputFolder, 'dir')
-        error('ULMO:LoadData:FileNotFound', ...
-            'Input folder not found at %s\n', inputFolder);
-    end
+%     if ~exist(inputFolder, 'dir')
+%         error('ULMO:LoadData:FileNotFound', ...
+%             'Input folder not found at %s\n', inputFolder);
+%     end
 
-    inputFileTemplate = 'ssh_grids_*.nc';
-    inputFiles = {dir(fullfile(inputFolder, inputFileTemplate)).name};
+%     inputFileTemplate = 'ssh_grids_*.nc';
+%     inputFiles = {dir(fullfile(inputFolder, inputFileTemplate)).name};
 
-    if isempty(inputFiles)
-        error('ULMO:LoadData:FileNotFound', ...
-            'No input files found at %s, data can be accessed from <a href="%s">PO.DAAC</a>\n', ...
-            inputFolder, 'https://podaac.jpl.nasa.gov/dataset/SEA_SURFACE_HEIGHT_ALT_GRIDS_L4_2SATS_5DAY_6THDEG_V_JPL2205');
-    end
+%     if isempty(inputFiles)
+%         error('ULMO:LoadData:FileNotFound', ...
+%             'No input files found at %s, data can be accessed from <a href="%s">PO.DAAC</a>\n', ...
+%             inputFolder, 'https://podaac.jpl.nasa.gov/dataset/SEA_SURFACE_HEIGHT_ALT_GRIDS_L4_2SATS_5DAY_6THDEG_V_JPL2205');
+%     end
 
-    inputFiles = sort(inputFiles);
+%     inputFiles = sort(inputFiles);
 
-    nDates = length(inputFiles);
+%     nDates = length(inputFiles);
 
-    iDate = 1;
-    inputFile = inputFiles{iDate};
-    inputPath = fullfile(inputFolder, inputFile);
+%     iDate = 1;
+%     inputFile = inputFiles{iDate};
+%     inputPath = fullfile(inputFolder, inputFile);
 
-    %% Initialisation and preallocation
-    wbar = waitbar(iDate / nDates, ...
-        sprintf('Reading raw data (%d/%d)', iDate, nDates), ...
-        "Name", upper(mfilename), "CreateCancelBtn", 'setappdata(gcbf,''canceling'',1)');
+%     %% Initialisation and preallocation
+%     wbar = waitbar(iDate / nDates, ...
+%         sprintf('Reading raw data (%d/%d)', iDate, nDates), ...
+%         "Name", upper(mfilename), "CreateCancelBtn", 'setappdata(gcbf,''canceling'',1)');
 
-    [ssh, sshError, date, dateRef, lon, lat] = readRawData(inputPath);
+%     [ssh, sshError, date, dateRef, lon, lat] = readRawData(inputPath);
 
-    sshsSize = [length(lon), length(lat), nDates];
-    dates = nan([1, nDates]);
-    sshs = nan(sshsSize, 'single');
-    sshErrors = nan(sshsSize, 'single');
+%     sshsSize = [length(lon), length(lat), nDates];
+%     dates = nan([1, nDates]);
+%     sshs = nan(sshsSize, 'single');
+%     sshErrors = nan(sshsSize, 'single');
 
-    dates(iDate) = date;
-    sshs(:, :, iDate) = ssh;
-    sshErrors(:, :, iDate) = sshError;
+%     dates(iDate) = date;
+%     sshs(:, :, iDate) = ssh;
+%     sshErrors(:, :, iDate) = sshError;
 
-    %% Looping over all files
-    for iDate = 2:nDates
-        waitbar(iDate / nDates, wbar, ...
-            sprintf('Reading raw data (%d/%d)', iDate, nDates));
+%     %% Looping over all files
+%     for iDate = 2:nDates
+%         waitbar(iDate / nDates, wbar, ...
+%             sprintf('Reading raw data (%d/%d)', iDate, nDates));
 
-        if getappdata(wbar, 'canceling')
-            delete(wbar);
-            warning(sprintf('%s:ProcessCancelledByUser', upper(mfilename)), ...
-            'Processing cancelled');
-            return
-        end
+%         if getappdata(wbar, 'canceling')
+%             delete(wbar);
+%             warning(sprintf('%s:ProcessCancelledByUser', upper(mfilename)), ...
+%             'Processing cancelled');
+%             return
+%         end
 
-        % Read the data
-        [ssh, sshError, date] = ...
-            readRawData(fullfile(inputFolder, inputFiles{iDate}));
+%         % Read the data
+%         [ssh, sshError, date] = ...
+%             readRawData(fullfile(inputFolder, inputFiles{iDate}));
 
-        % Store the data
-        dates(iDate) = date;
-        sshs(:, :, iDate) = ssh;
-        sshErrors(:, :, iDate) = sshError;
-    end
+%         % Store the data
+%         dates(iDate) = date;
+%         sshs(:, :, iDate) = ssh;
+%         sshErrors(:, :, iDate) = sshError;
+%     end
 
-    dates = dateRef + days(dates);
+%     dates = dateRef + days(dates);
 
-    if ~saveData
-        delete(wbar);
-        return
-    end
+%     if ~saveData
+%         delete(wbar);
+%         return
+%     end
 
-    waitbar(iDate / nDates, wbar, 'Saving data (this may take a while)');
+%     waitbar(iDate / nDates, wbar, 'Saving data (this may take a while)');
 
-    if getappdata(wbar, 'canceling')
-        delete(wbar);
-        warning(sprintf('%s:ProcessCancelledByUser', upper(mfilename)), ...
-        'Saving cancelled');
-        return
-    end
+%     if getappdata(wbar, 'canceling')
+%         delete(wbar);
+%         warning(sprintf('%s:ProcessCancelledByUser', upper(mfilename)), ...
+%         'Saving cancelled');
+%         return
+%     end
 
-    save(outputPath, vars{:}, '-v7.3');
-    delete(wbar);
+%     save(outputPath, vars{:}, '-v7.3');
+%     delete(wbar);
 
-    if beQuiet <= 1
-        fprintf('[ULMO>%s] Saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">SSH product</a>.\n', ...
-            callchaintext(callChain), outputPath, outputPath);
-    end
+%     if beQuiet <= 1
+%         fprintf('[ULMO>%s] Saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">SSH product</a>.\n', ...
+%             callchaintext(callChain), outputPath, outputPath);
+%     end
 
-end
+% end
 
-% Read the raw data of a sigle time stamp from the NetCDF file
-function [ssh, sshError, time, timeRef, lon, lat] = readRawData(inputPath)
-    % Read the data
-    ssh = ncread(inputPath, 'SLA');
-    sshError = ncread(inputPath, 'SLA_ERR');
-    time = ncread(inputPath, 'Time');
+% % Read the raw data of a sigle time stamp from the NetCDF file
+% function [ssh, sshError, time, timeRef, lon, lat] = readRawData(inputPath)
+%     % Read the data
+%     ssh = ncread(inputPath, 'SLA');
+%     sshError = ncread(inputPath, 'SLA_ERR');
+%     time = ncread(inputPath, 'Time');
 
-    % Convert format
-    ssh = single(ssh);
-    sshError = single(sshError);
+%     % Convert format
+%     ssh = single(ssh);
+%     sshError = single(sshError);
 
-    if nargout <= 3
-        return
-    end
+%     if nargout <= 3
+%         return
+%     end
 
-    % Read the time reference if asked
-    inputInfo = ncinfo(inputPath);
-    timeInfo = ...
-        inputInfo.Variables(strcmp({inputInfo.Variables.Name}, 'Time')).Attributes;
-    timeRef = timeInfo(strcmp({timeInfo.Name}, 'units')).Value;
-    timeRef = ...
-        datetime(strrep(timeRef, 'Days since ', ''), ...
-        "InputFormat", 'yyyy-MM-dd HH:mm:ss');
+%     % Read the time reference if asked
+%     inputInfo = ncinfo(inputPath);
+%     timeInfo = ...
+%         inputInfo.Variables(strcmp({inputInfo.Variables.Name}, 'Time')).Attributes;
+%     timeRef = timeInfo(strcmp({timeInfo.Name}, 'units')).Value;
+%     timeRef = ...
+%         datetime(strrep(timeRef, 'Days since ', ''), ...
+%         "InputFormat", 'yyyy-MM-dd HH:mm:ss');
 
-    % Read lon/lat if asked
-    lon = ncread(inputPath, 'Longitude');
-    lat = ncread(inputPath, 'Latitude');
-    lon = single(lon);
-    lat = single(lat);
-end
+%     % Read lon/lat if asked
+%     lon = ncread(inputPath, 'Longitude');
+%     lat = ncread(inputPath, 'Latitude');
+%     lon = single(lon);
+%     lat = single(lat);
+% end
 
 % Format the output
-function varargout = ...
+function [sshs, sshErrors, dates, lon, lat] = ...
         formatoutput(sshs, sshErrors, dates, lon, lat, timelim, timeFmt, outputFmt, unit)
 
     if ~isempty(timelim)
         isValidTime = ...
             (dates >= timelim(1)) & (dates <= timelim(2));
         sshs = sshs(:, :, isValidTime);
-        sshErrors = sshErrors(:, :, isValidTime);
+
+        if ~isempty(sshErrors)
+            sshErrors = sshErrors(:, :, isValidTime);
+        end
+
         dates = dates(isValidTime);
     end
 
@@ -485,7 +503,11 @@ function varargout = ...
             lon = lon(:)';
             lat = lat(:);
             sshs = permute(sshs, [2, 1, 3]);
-            sshErrors = permute(sshErrors, [2, 1, 3]);
+
+            if ~isempty(sshErrors)
+                sshErrors = permute(sshErrors, [2, 1, 3]);
+            end
+
         case 'ndgrid'
             lon = lon(:);
             lat = lat(:)';
@@ -495,16 +517,39 @@ function varargout = ...
         case 'm'
         case 'mm'
             sshs = sshs * 1e3;
-            sshErrors = sshErrors * 1e3;
-    end
 
-    varargout = {sshs, sshErrors, dates, lon, lat};
+            if ~isempty(sshErrors)
+                sshErrors = sshErrors * 1e3;
+            end
+
+    end
 
 end
 
 % Get output path for interpolated data
 function outputPath = ...
-        outputpath(product, intpMthd, timeStep, meshSize, lonOrigin, outputFolder)
+        outputpath(product, intpMthd, timeStep, meshSize, lonOrigin)
+
+    arguments (Input)
+        product (1, :) char
+        intpMthd (1, :) char = []
+        timeStep {mustBeTimeStep} = []
+        meshSize {mustBePositive} = []
+        lonOrigin {mustBeFinite, mustBeReal} = []
+    end
+
+    arguments (Output)
+        outputPath (1, :) char
+    end
+
+    outputFolder = fullfile(getenv('IFILES'), 'SSH');
+
+    if isempty(intpMthd) && isempty(timeStep) && ...
+            isempty(meshSize) && isempty(lonOrigin)
+        outputPath = fullfile(outputFolder, sprintf('%s.mat', product));
+        return
+    end
+
     timeStepStr = '';
 
     if ~isempty(timeStep)
