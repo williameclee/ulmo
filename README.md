@@ -1,18 +1,20 @@
 # Unified Localisation of Mass over Oceans (ULMO)
 
-A pipeline for using GRACE satellite gravimetry and altimetry-steric (in development) measurements to study ocean mass change over ocean basins, with extended functionalities for Slepian functions and sea level equation modelling.
+A pipeline for using GRACE satellite gravimetry and altimetry-steric measurements to study ocean mass change over ocean basins, with extended functionalities for Slepian functions and sea level equation modelling.
+
+Research findings using this code were presented at the [AGU24 Fall Meeting](https://agu.confex.com/agu/agu24/meetingapp.cgi/Paper/1579620). A manuscript is in preparation.
 
 ![Example of Slepian functions over the Pacific Ocean](images/cover.svg)
+
+## Functionalities
+
+See the [Functions](docs/functions.md) page for a list of public functions in this repository, along with their descriptions and dependencies.
 
 ## Installation
 
 1. Download or clone this repository to your local machine.
 2. Add the repository folder and subfolders to your MATLAB path.
 3. Install the dependencies listed below and ensure their paths are configured properly, and the search order is set correctly (ULMO should be at the top of the order in `pathdef.m`).
-
-## Functionalities
-
-See [Functions](docs/functions.md) for a list of public functions in this repository, along with their descriptions and dependencies.
 
 ## Dependencies
 
@@ -25,4 +27,4 @@ Functions in this repository may call or overwrite functions from the following 
 
 ---
 
-Last modified: 2025/10/16, [@williameclee](mailto:williameclee@arizona.edu)
+Last modified: 2025/11/03, [En-Chi Lee (@williameclee)](mailto:williameclee@arizona.edu)
