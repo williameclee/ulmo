@@ -15,7 +15,7 @@
 %       for, e.g. GAD).
 %       Unit: kg/m^2 (SD, equivalent to mm of fresh water)
 %       Data type: DOUBLE
-%       Dimension: [addmup(L) x 4] (lmcosi) | [addmup(L) x 2] (cosi) |
+%       Dimension: [addmup(L), 4] (lmcosi) | [addmup(L) x 2] (cosi) |
 %           [addmup(L) x 4 x N] (lmcosi, t) | [addmup(L) x 2 x N] (cosi, t)
 %           (detected automatically, the GRACE2PLMT output format should be
 %           set to 'traditional' (lmcosi, t))
@@ -83,21 +83,25 @@
 %   2024/11/20, williameclee@arizona.edu (@williameclee)
 %
 % Last modified by
-%   2025/08/14, williameclee@arizona.edu (@williameclee)
+%   2025/11/02, williameclee@arizona.edu (@williameclee)
 
 function varargout = solvesle(varargin)
     %% Initialisation
+    % Load all missing variables and convert to correct formats
+
     % Parse input arguments
     [forcingLoadPlm, forcingLoadStdPlm, includesDO, computeError, ...
          L, ocean, frame, doRotationFeedback, maxIter, ...
          oceanKernel, oceanFunPlm, kernelOrder, initialPlm, beQuiet] = ...
         parseinputs(varargin{:});
 
+    % Create progress bar
     if ~beQuiet
         wbar = waitbar(0, 'Initialising', ...
             "Name", upper(mfilename), "CreateCancelBtn", 'setappdata(gcbf,''canceling'',1)');
     end
 
+    % Load the ocean function if not provided
     if isempty(oceanFunPlm)
 
         if ~beQuiet
@@ -107,10 +111,12 @@ function varargout = solvesle(varargin)
         [~, ~, ~, ~, ~, oceanFunPlm] = geoboxcap(L, ocean, "BeQuiet", true);
     end
 
+    % Remove the d/o columns if present
     if size(oceanFunPlm, 2) == 4
         oceanFunPlm = oceanFunPlm(:, 3:4);
     end
 
+    % Load the ocean kernel if not provided
     if isempty(oceanKernel)
 
         if ~beQuiet
@@ -120,15 +126,17 @@ function varargout = solvesle(varargin)
         oceanKernel = kernelcp_new(L, ocean, "BeQuiet", true);
     end
 
+    % Precompute the squared ocean kernel for error computation
     oceanKernelSquare = oceanKernel .^ 2;
 
+    % Load the permutation order from cosi -> flat
     if isempty(kernelOrder)
         kernelOrder = kernelorder(L);
     end
 
     kernelOrder = kernelOrder(:);
 
-    % Truncate the input to the correct degree
+    % Truncate SH input to correct d/o
     if ismatrix(forcingLoadPlm)
 
         if size(forcingLoadPlm, 1) < addmup(L)
@@ -170,6 +178,8 @@ function varargout = solvesle(varargin)
     oceanFunPlms = oceanFunPlm(kernelOrder);
 
     %% Constants
+    % Define constants and precompute SLE kernel
+
     if ~beQuiet
         waitbar(0, wbar, 'Constructing SLE kernel');
     end
@@ -195,10 +205,12 @@ function varargout = solvesle(varargin)
     tlnFactors = 1 + tlnGeoids - tlnVlms;
     llnGeoid2 = lovenumber(2, 'LLN geoid', frame);
 
-    % Constructing the SLE kernel
+    % Construct the SLE kernel
+    % Gravitational potential
     sleKernel = sparse(diag(3 / EARTH_DENSITY * llnFactors ./ (2 * degrees + 1)));
 
     if doRotationFeedback
+        % Rotation potential
         c00c20Factor = 2/3 * EARTH_RADIUS ^ 2 * EARTH_ANGULAR_VELOCITY ^ 2 ...
             * (- (1 + llnGeoid2) / POLAR_INERTIA) * 8 * pi / 3 * EARTH_RADIUS ^ 4;
         c21s21Factor = -1 / sqrt(15) * EARTH_RADIUS ^ 2 * EARTH_ANGULAR_VELOCITY ^ 2 ...
@@ -218,6 +230,9 @@ function varargout = solvesle(varargin)
     end
 
     %% Iteration
+    % Solve the SLE iteratively
+
+    % Initial guess
     gmsl =- forcingLoadPlms(1, :) / oceanFunPlms(1, :) / WATER_DENSITY;
 
     if ~isempty(initialPlm)
@@ -257,6 +272,7 @@ function varargout = solvesle(varargin)
         rslOceanPlms(1, :) = -forcingLoadPlms(1, :) / WATER_DENSITY;
         rslPlms(1, :) = rslOceanPlms(1, :) / oceanFunPlms(1, :);
 
+        % Compute error if required
         if ~computeError
             continue
         end
@@ -276,7 +292,7 @@ function varargout = solvesle(varargin)
     end
 
     rslLoadPlms = rslPlms * WATER_DENSITY;
-    gmsl = rslOceanPlms(1, :) ./ oceanFunPlms(1, :) * 1e3; % m -> mm
+    gmsl = rslOceanPlms(1, :) ./ oceanFunPlms(1, :) * 1e3; % m -> mm (= kg/m^2)
 
     if isvector(rslLoadPlms)
         rslLoadPlm = zeros([addmup(L), 2]);

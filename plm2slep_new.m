@@ -87,7 +87,7 @@ function varargout = plm2slep_new(varargin)
     end
 
     % Parse inputs
-    [lmcosi, domain, L, phi, theta, omega, nosort, J, beQuiet, GVN, fmt, isError] = ...
+    [lmcosi, domain, L, phi, theta, omega, nosort, J, beQuiet, GVN, fmt, isError, callChain] = ...
         parseinputs(varargin{:});
 
     maxL = max(L);
@@ -112,7 +112,7 @@ function varargout = plm2slep_new(varargin)
         % versions this will make no sense at all anymore
         % Glmalpha can handle a string, cell, or coordinates as TH, so this is ok
         [G, V, ~, ~, N, ~, MTAP, ~] = ...
-            glmalpha_new(domain, L, "J", J, "BeQuiet", beQuiet);
+            glmalpha_new(domain, L, "J", J, "BeQuiet", beQuiet, "CallChain", callChain);
 
     else
         % Need to get a complete GLMALPHA but for the rotated basis
@@ -238,6 +238,7 @@ function varargout = parseinputs(varargin)
         @(x) (isnumeric(x) || islogical(x)) && isscalar(x));
     addParameter(ip, 'BeQuiet', dfOpt.BeQuiet, ...
         @(x) (isnumeric(x) || islogical(x)) && isscalar(x));
+    addParameter(ip, "CallChain", {}, @iscell);
     parse(ip, varargin{:});
 
     lmcosi = ip.Results.lmcosi;
@@ -254,6 +255,7 @@ function varargout = parseinputs(varargin)
     GVN = ip.Results.GVN;
     fmt = ip.Results.Format;
     isError = logical(ip.Results.IsError);
+    callChain = [ip.Results.CallChain, {mfilename}];
 
     if isnumeric(domain) && isvector(domain)
 
@@ -274,5 +276,5 @@ function varargout = parseinputs(varargin)
         domain = GeoDomain(domain{1}, "Upscale", upscale, domain{2:end});
     end
 
-    varargout = {lmcosi, domain, L, phi, theta, omega, nosort, J, beQuiet, GVN, fmt, isError};
+    varargout = {lmcosi, domain, L, phi, theta, omega, nosort, J, beQuiet, GVN, fmt, isError, callChain};
 end
