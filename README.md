@@ -1,6 +1,6 @@
 # Unified Localisation of Mass over Oceans (ULMO)
 
-A pipeline for using GRACE satellite gravimetry and altimetry-steric measurements to study ocean mass change over ocean basins, with extended functionalities for Slepian functions and sea level equation modelling.
+A pipeline for using GRACE satellite gravimetry, altimetry-steric measurements, and forward modelling to study ocean mass change over ocean basins, with extended functionalities for Slepian functions and sea level equation modelling.
 
 Research findings using this code were presented at the [AGU24 Fall Meeting](https://agu.confex.com/agu/agu24/meetingapp.cgi/Paper/1579620). A manuscript is in preparation.
 
