@@ -9,7 +9,7 @@
 % of leaving them as geopotential or converting them to surface mass
 % density using the method of Wahr et al. 1998, based on Love numbers.
 %
-% % Syntax
+% Syntax
 %   [plmt, stdPlmt, dates] = grace2plmt(Pcenter, Rlevel, unit)
 %   [plmt, stdPlmt, dates] = grace2plmt(__, 'Name', Value)
 %
@@ -118,7 +118,7 @@
 %   printed to the log file instead.
 %
 % Last modified by
-%   2025/10/16, williameclee@arizona.edu (@williameclee)
+%   2025/11/02, williameclee@arizona.edu (@williameclee)
 %   2022/05/18, charig@email.arizona.edu (@harig00)
 %   2020/11/09, lashokkumar@arizona.edu
 %   2019/03/18, mlubeck@email.arizona.edu
@@ -173,7 +173,7 @@ function [gracePlmt, graceStdPlmt, dates] = grace2plmt_new(varargin)
     % Recalculate degree 1 coefficients
     if iscell(redoDeg1)
         [myDeg1, myDeg1Std, myDeg1Dates] = ...
-            solvedegree1(Pcenter, Rlevel, redoDeg1{:}, "Unit", unit, ...
+            solvedegree1(Pcenter, Rlevel, Ldata, redoDeg1{:}, "Unit", unit, ...
             "BeQuiet", beQuiet, "CallChain", callChain);
 
         if size(myDeg1, 1) > size(gracePlmt, 1)
@@ -395,8 +395,12 @@ function varargout = parseinputs(varargin)
         @(x) (isnumeric(x) || islogical(x)) && isscalar(x));
     addParameter(ip, 'CallChain', {}, @iscell);
 
-    if ~isempty(varargin) && iscell(varargin{1})
-        varargin = [varargin{1}{:}, varargin(2:end)];
+    if ~isempty(varargin) && iscell(varargin{1}) && numel(varargin{1}) == 3
+        product = varargin{1};
+        varargin = [cell(1, 3), varargin(2:end)];
+        varargin{1} = product{1};
+        varargin{2} = product{2};
+        varargin{3} = product{3};
     end
 
     parse(ip, varargin{:});
