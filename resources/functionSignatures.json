@@ -1,12 +1,33 @@
 {
   "_schemaVersion": "0.1.0",
+  "_typedefs": {
+    "GRACE_product": {
+      "purpose": "GRACE product",
+      "type": "cell",
+      "elements": [
+        {
+          "type": ["char", "choices={'CSR', 'JPL', 'GFZ'}"],
+          "purpose": "data centre"
+        },
+        {
+          "type": ["char", "choices={'RL06'}"],
+          "purpose": "release level"
+        },
+        {
+          "type": ["numeric", "choices={60,96}"],
+          "purpose": "SH d/o"
+        }
+      ]
+    }
+  },
   "GeoDomain": {
+    "purpose": "Class representing a geographical domain",
     "inputs": [
       {
         "name": "domain",
         "kind": "required",
-        "type": [["char"], ["string"], ["cell"]],
-        "purpose": "domain name"
+        "type": [["char"], ["cell"]],
+        "purpose": "name"
       },
       {
         "name": "Upscale",
@@ -18,19 +39,22 @@
         "name": "Buffer",
         "kind": "ordered",
         "type": [["numeric", "scalar", "real", ">=0"], ["numel=0"]],
-        "purpose": "buffer [°] to add around domain"
+        "purpose": "buffer around domain"
       },
       {
         "name": "Latlim",
         "kind": "ordered",
-        "type": [["numeric", "numel=2"], ["char", "choices={'default'}"], ["string", "choices={'default'}"], ["numel=0"]],
-        "purpose": "latitude limits [°] of domain"
+        "type": [
+          ["numeric", "numel=2"],
+          ["char", "choices={'default'}"]
+        ],
+        "purpose": "latitude limits"
       },
       {
         "name": "MoreBuffers",
         "kind": "ordered",
-        "type": [["cell"], ["char", "string", "choices={'default'}"]],
-        "purpose": "additional buffers add around specific domains"
+        "type": [["cell"], ["char", "choices={'default'}"]],
+        "purpose": "additional buffers"
       },
       {
         "name": "NearBy",
@@ -47,36 +71,37 @@
     ]
   },
   "kernelcp_new": {
+    "purpose": "Compute the Slepian localisation kernel matrix (parallel)",
     "inputs": [
       {
         "name": "L",
         "kind": "required",
         "type": ["numeric", "integer", "scalar", ">0"],
-        "purpose": "maximum SH degree/order"
+        "purpose": "maximum SH d/o"
       },
       {
         "name": "Domain",
         "kind": "required",
-        "type": [["char"], ["string"], ["cell"], ["GeoDomain"], ["numeric", "ncols=2", "real"]],
+        "type": [["char"], ["cell"], ["GeoDomain"], ["numeric", "ncols=2", "real"]],
         "purpose": "type of region"
       },
       {
         "name": "ForceNew",
         "kind": "namevalue",
         "type": ["logical", "scalar"],
-        "purpose": "whether to force recomputation"
+        "purpose": "re-do computation?"
       },
       {
         "name": "SaveData",
         "kind": "namevalue",
         "type": ["logical", "scalar"],
-        "purpose": "whether to save computed data"
+        "purpose": "save results?"
       },
       {
         "name": "BeQuiet",
         "kind": "namevalue",
         "type": ["logical", "scalar"],
-        "purpose": "whether to suppress output messages"
+        "purpose": "log to screen?"
       }
     ]
   },
@@ -85,7 +110,7 @@
       {
         "name": "domain",
         "kind": "required",
-        "type": [["char"], ["string"], ["cell"], ["GeoDomain"], ["numeric", "ncols=2", "real"]]
+        "type": [["char"], ["cell"], ["GeoDomain"], ["numeric", "ncols=2", "real"]]
       },
       {
         "name": "L",
@@ -102,19 +127,19 @@
         "name": "ForceNew",
         "kind": "namevalue",
         "type": ["logical", "scalar"],
-        "purpose": "whether to force recomputation"
+        "purpose": "re-do computation?"
       },
       {
         "name": "SaveData",
         "kind": "namevalue",
         "type": ["logical", "scalar"],
-        "purpose": "whether to save computed data"
+        "purpose": "save results?"
       },
       {
         "name": "BeQuiet",
         "kind": "namevalue",
         "type": ["logical", "scalar"],
-        "purpose": "whether to suppress output messages"
+        "purpose": "log to screen?"
       }
     ]
   },
@@ -127,7 +152,7 @@
       {
         "name": "Domain",
         "kind": "required",
-        "type": [["char"], ["string"], ["cell"], ["GeoDomain"], ["numeric", "ncols=2", "real"]],
+        "type": [["char"], ["cell"], ["GeoDomain"], ["numeric", "ncols=2", "real"]],
         "purpose": "region of interest"
       },
       {
@@ -140,19 +165,19 @@
         "name": "ForceNew",
         "kind": "namevalue",
         "type": ["logical", "scalar"],
-        "purpose": "whether to force recomputation"
+        "purpose": "re-do computation?"
       },
       {
         "name": "SaveData",
         "kind": "namevalue",
         "type": ["logical", "scalar"],
-        "purpose": "whether to save computed data"
+        "purpose": "save results?"
       },
       {
         "name": "BeQuiet",
         "kind": "namevalue",
         "type": ["logical", "scalar"],
-        "purpose": "whether to suppress output messages"
+        "purpose": "log to screen?"
       }
     ]
   },
@@ -172,7 +197,113 @@
         "name": "BeQuiet",
         "kind": "namevalue",
         "type": ["logical", "scalar"],
-        "purpose": "whether to suppress output messages"
+        "purpose": "log to screen?"
+      }
+    ]
+  },
+  "grace2plmt_new": {
+    "purpose": "Load GRACE spherical harmonic coefficients",
+    "inputs": [
+      {
+        "name": "product",
+        "type": ["cell:GRACE_product", "size=1,3"],
+        "kind": "required",
+        "purpose": "product code"
+      },
+      {
+        "name": "unit",
+        "type": ["char", "choices={'SD','POT','GRAV'}"],
+        "kind": "ordered",
+        "purpose": "output field"
+      },
+      {
+        "name": "TimeRange",
+        "type": [
+          ["numeric", "numel=2"],
+          ["datetime", "numel=2"]
+        ],
+        "kind": "ordered",
+        "purpose": "time range"
+      },
+      {
+        "name": "OutputFormat",
+        "type": ["char", "choices={'timefirst','traditional'}"],
+        "kind": "namevalue",
+        "purpose": "dimension order of output"
+      },
+      {
+        "name": "TimeFormat",
+        "type": ["char", "choices={'datetime','datenum'}"],
+        "kind": "namevalue",
+        "purpose": "Type of the time vector"
+      }
+    ]
+  },
+  "grace2plmt_new": {
+    "purpose": "Load GRACE spherical harmonic coefficients",
+    "inputs": [
+      {
+        "name": "Pcenter",
+        "type": ["char", "choices={'CSR', 'JPL', 'GFZ'}"],
+        "kind": "required",
+        "purpose": "data centre"
+      },
+      {
+        "name": "Rlevel",
+        "type": ["char", "choices={'RL06'}"],
+        "kind": "required",
+        "purpose": "release level"
+      },
+      {
+        "name": "L",
+        "type": ["numeric", "choices={60,96}"],
+        "kind": "required",
+        "purpose": "SH d/o"
+      },
+      {
+        "name": "unit",
+        "type": ["char", "choices={'SD','POT','GRAV'}"],
+        "kind": "ordered",
+        "purpose": "output field"
+      },
+      {
+        "name": "TimeRange",
+        "type": [
+          ["numeric", "numel=2"],
+          ["datetime", "numel=2"]
+        ],
+        "kind": "ordered",
+        "purpose": "time range"
+      },
+      {
+        "name": "OutputFormat",
+        "type": ["char", "choices={'timefirst','traditional'}"],
+        "kind": "namevalue",
+        "purpose": "dimension order of output"
+      },
+      {
+        "name": "TimeFormat",
+        "type": ["char", "choices={'datetime','datenum'}"],
+        "kind": "namevalue",
+        "purpose": "Type of the time vector"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "plmt",
+        "type": [
+          ["numeric", "size=N,4,N"],
+          ["numeric", "size=N,N,4"]
+        ],
+        "purpose": "GRACE SH coefficients"
+      },
+      {
+        "name": "std",
+        "type": [
+          ["numeric", "size=N,4,N"],
+          ["numeric", "size=N,N,4"]
+        ],
+        "purpose": "STD of GRACE SH coefficients"
       }
     ]
   },
@@ -181,20 +312,20 @@
       {
         "name": "product",
         "kind": "required",
-        "type": ["cell", "numel=3"],
-        "purpose": "code of the GRACE product"
+        "type": ["cell:GRACE_product", "numel=3"],
+        "purpose": "product code"
       },
       {
         "name": "domain",
         "kind": "required",
-        "type": [["char"], ["string", "numel=1"], ["cell"], ["GeoDomain"], ["numeric", "ncols=2", "real"]],
+        "type": [["char"], ["cell"], ["GeoDomain"], ["numeric", "ncols=2", "real"]],
         "purpose": "region of interest"
       },
       {
         "name": "L",
         "kind": "required",
         "type": ["numeric", "integer", "scalar", ">0"],
-        "purpose": "maximum SH degree/order"
+        "purpose": "maximum SH d/o"
       },
       {
         "name": "Truncation",
@@ -205,8 +336,8 @@
       {
         "name": "Unit",
         "kind": "namevalue",
-        "type": ["char", "string", "choices={'SD','POT'}"],
-        "purpose": "unit of output"
+        "type": ["char", "choices={'SD','POT'}"],
+        "purpose": "output field"
       },
       {
         "name": "TimeRange",
@@ -215,7 +346,7 @@
           ["numeric", "numel=2"],
           ["datetime", "numel=2"]
         ],
-        "purpose": "time range of data to read"
+        "purpose": "time range"
       },
       {
         "name": "Deg1Correction",
@@ -245,24 +376,24 @@
         "name": "ForceNew",
         "kind": "namevalue",
         "type": ["logical", "scalar"],
-        "purpose": "force reprocess data"
+        "purpose": "re-process data?"
       },
       {
         "name": "SaveData",
         "kind": "namevalue",
         "type": ["logical", "scalar"],
-        "purpose": "save processed data"
+        "purpose": "save results?"
       },
       {
         "name": "BeQuiet",
         "kind": "namevalue",
         "type": ["logical", "scalar"],
-        "purpose": "suppress output messages"
+        "purpose": "log to screen?"
       },
       {
         "name": "TimeFormat",
         "kind": "namevalue",
-        "type": ["char", "string", "choices={'datetime','datenum'}"],
+        "type": ["char", "choices={'datetime','datenum'}"],
         "purpose": "Type of the time vector"
       }
     ]
@@ -272,8 +403,8 @@
       {
         "name": "product",
         "kind": "required",
-        "type": ["cell", "numel=3", "@(product) ismember(product{1}, {'JPL','CSR','GFZ'})"],
-        "purpose": "name of the GRACE product"
+        "type": ["cell:GRACE_product", "numel=3"],
+        "purpose": "product code"
       },
       {
         "name": "radius",
@@ -285,7 +416,7 @@
         "name": "L",
         "kind": "required",
         "type": ["numeric", "integer", "scalar", ">0"],
-        "purpose": "maximum SH degree/order"
+        "purpose": "maximum SH d/o"
       },
       {
         "name": "phi",
@@ -311,8 +442,8 @@
       {
         "name": "Unit",
         "kind": "namevalue",
-        "type": ["char", "string", "choices={'SD','POT'}"],
-        "purpose": "unit of output"
+        "type": ["char", "choices={'SD','POT'}"],
+        "purpose": "output field"
       },
       {
         "name": "TimeRange",
@@ -321,7 +452,7 @@
           ["numeric", "numel=2"],
           ["datetime", "numel=2"]
         ],
-        "purpose": "time range of data to read"
+        "purpose": "time range"
       },
       {
         "name": "Deg1Correction",
@@ -345,24 +476,24 @@
         "name": "ForceNew",
         "kind": "namevalue",
         "type": ["logical", "scalar"],
-        "purpose": "force reprocess data"
+        "purpose": "re-process data?"
       },
       {
         "name": "SaveData",
         "kind": "namevalue",
         "type": ["logical", "scalar"],
-        "purpose": "save processed data"
+        "purpose": "save results?"
       },
       {
         "name": "BeQuiet",
         "kind": "namevalue",
         "type": ["logical", "scalar"],
-        "purpose": "suppress output messages"
+        "purpose": "log to screen?"
       },
       {
         "name": "TimeFormat",
         "kind": "namevalue",
-        "type": ["char", "string", "choices={'datetime','datenum'}"],
+        "type": ["char", "choices={'datetime','datenum'}"],
         "purpose": "Type of the time vector"
       },
       {
@@ -378,13 +509,13 @@
       {
         "name": "Pcenter",
         "kind": "required",
-        "type": ["string", "choices={'CSR', 'JPL', 'GFZ'}"],
+        "type": ["char", "choices={'CSR', 'JPL', 'GFZ'}"],
         "purpose": "data centre"
       },
       {
         "name": "Rlevel",
         "kind": "required",
-        "type": ["string", "choices={'RL06'}"],
+        "type": ["char", "choices={'RL06'}"],
         "purpose": "release level"
       },
       {
@@ -403,19 +534,19 @@
         "name": "ForceNew",
         "kind": "namevalue",
         "type": ["logical", "scalar"],
-        "purpose": "whether to force recomputation"
+        "purpose": "re-do computation?"
       },
       {
         "name": "SaveData",
         "kind": "namevalue",
         "type": ["logical", "scalar"],
-        "purpose": "whether to save computed data"
+        "purpose": "save results?"
       },
       {
         "name": "BeQuiet",
         "kind": "namevalue",
         "type": ["logical", "scalar"],
-        "purpose": "whether to suppress output messages"
+        "purpose": "log to screen?"
       }
     ]
   },
@@ -424,7 +555,7 @@
       {
         "name": "Rlevel",
         "kind": "required",
-        "type": ["string", "choices={'RL06'}"],
+        "type": ["char", "choices={'RL06'}"],
         "purpose": "release level"
       },
       {
@@ -443,19 +574,19 @@
         "name": "ForceNew",
         "kind": "namevalue",
         "type": ["logical", "scalar"],
-        "purpose": "whether to force recomputation"
+        "purpose": "re-process data?"
       },
       {
         "name": "SaveData",
         "kind": "namevalue",
         "type": ["logical", "scalar"],
-        "purpose": "whether to save computed data"
+        "purpose": "save results?"
       },
       {
         "name": "BeQuiet",
         "kind": "namevalue",
         "type": ["logical", "scalar"],
-        "purpose": "whether to suppress output messages"
+        "purpose": "log to screen?"
       }
     ]
   },
@@ -464,18 +595,19 @@
       {
         "name": "product",
         "kind": "required",
-        "type": ["cell", "numel=3"]
+        "type": ["cell:GRACE_product", "numel=3"],
+        "purpose": "product code"
       },
       {
         "name": "L",
         "kind": "required",
         "type": ["numeric", "integer", "scalar", ">0"],
-        "purpose": "SLE SH degree/order"
+        "purpose": "SLE SH d/o"
       },
       {
         "name": "oceanDomain",
         "kind": "ordered",
-        "type": [["char"], ["string"], ["cell"], ["GeoDomain"], ["numeric", "ncols=2", "real"]],
+        "type": [["char"], ["cell"], ["GeoDomain"], ["numeric", "ncols=2", "real"]],
         "purpose": "ocean domain for SLE"
       },
       {
@@ -511,20 +643,20 @@
       {
         "name": "LandDomain",
         "kind": "namevalue",
-        "type": [["char"], ["string"], ["cell"], ["GeoDomain"], ["numeric", "ncols=2", "real"]],
+        "type": [["char"], ["cell"], ["GeoDomain"], ["numeric", "ncols=2", "real"]],
         "purpose": "land domain for forcing"
       },
       {
         "name": "Truncation",
         "kind": "namevalue",
         "type": [["numeric", "integer", "scalar", ">0"]],
-        "purpose": "maximum SH degree/order"
+        "purpose": "maximum SH d/o"
       },
       {
         "name": "Unit",
         "kind": "namevalue",
-        "type": ["char", "string", "choices={'SD','POT'}"],
-        "purpose": "unit of output"
+        "type": ["char", "choices={'SD','POT'}"],
+        "purpose": "output field"
       },
       {
         "name": "TimeRange",
@@ -533,37 +665,37 @@
           ["numeric", "numel=2"],
           ["datetime", "numel=2"]
         ],
-        "purpose": "time range of data to read"
+        "purpose": "time range"
       },
       {
         "name": "OutputFormat",
         "kind": "namevalue",
-        "type": ["char", "string", "choices={'timefirst','traditional'}"],
+        "type": ["char", "choices={'timefirst','traditional'}"],
         "purpose": "dimension order of output"
       },
       {
         "name": "TimeFormat",
         "kind": "namevalue",
-        "type": ["char", "string", "choices={'datetime','datenum'}"],
+        "type": ["char", "choices={'datetime','datenum'}"],
         "purpose": "Type of the time vector"
       },
       {
         "name": "BeQuiet",
         "kind": "namevalue",
         "type": ["logical", "scalar"],
-        "purpose": "whether to suppress output messages"
+        "purpose": "log to screen?"
       },
       {
         "name": "ForceNew",
         "kind": "namevalue",
         "type": ["logical", "scalar"],
-        "purpose": "whether to force recomputation"
+        "purpose": "re-do computation?"
       },
       {
         "name": "SaveData",
         "kind": "namevalue",
         "type": ["logical", "scalar"],
-        "purpose": "whether to save computed data"
+        "purpose": "save results?"
       }
     ]
   },
@@ -572,29 +704,29 @@
       {
         "name": "product",
         "kind": "ordered",
-        "type": ["char", "string", "choices={'MEaSUREs'}"],
-        "purpose": "name of the SSH product"
+        "type": ["char", "choices={'MEaSUREs', 'ORAS5', 'Copernicus'}"],
+        "purpose": "product name"
       },
       {
         "name": "timestep",
         "kind": "ordered",
         "type": [
           ["duration", ["numeric", ">0"]],
-          ["char", "string", "choices={'midmonth'}"]
+          ["char", "choices={'midmonth'}"]
         ],
         "purpose": "interpolation time step"
       },
       {
         "name": "meshsize",
         "kind": "ordered",
-        "type": ["numeric"],
-        "purpose": "interpolation time step"
+        "type": ["numeric", ">0"],
+        "purpose": "interpolation mesh size"
       },
       {
         "name": "timelim",
         "kind": "ordered",
-        "type": ["numeric", "datetime"],
-        "purpose": "time range of data to read"
+        "type": [["numeric", "numel=2"], ["datetime", "numel=2"], ["numel=0"]],
+        "purpose": "time range"
       },
       {
         "name": "LonOrigin",
@@ -605,38 +737,114 @@
       {
         "name": "Interpolation",
         "kind": "namevalue",
-        "type": ["char", "string", "choices={'linear','nearest','spline','pchio'}"],
-        "purpose": "longitude centre of output grid"
+        "type": ["char", "choices={'linear','nearest','spline','pchio'}"],
+        "purpose": "interpolation method"
       },
       {
         "name": "TimeFormat",
         "kind": "namevalue",
-        "type": ["char", "string", "choices={'datetime','datenum'}"],
-        "purpose": "Type of the time vector"
+        "type": ["char", "choices={'datetime','datenum'}"],
+        "purpose": "time vector type"
       },
       {
         "name": "Unit",
         "kind": "namevalue",
-        "type": ["char", "string", "choices={'m','mm'}"],
-        "purpose": "unit of output"
+        "type": ["char", "choices={'m','mm'}"],
+        "purpose": "output unit"
       },
       {
         "name": "ForceNew",
         "kind": "namevalue",
         "type": ["logical"],
-        "purpose": "force reprocess data"
-      },
-      {
-        "name": "BeQuiet",
-        "kind": "namevalue",
-        "type": ["logical"],
-        "purpose": "suppress output messages"
+        "purpose": "re-process data?"
       },
       {
         "name": "SaveData",
         "kind": "namevalue",
         "type": ["logical"],
-        "purpose": "save processed data"
+        "purpose": "save results?"
+      },
+      {
+        "name": "BeQuiet",
+        "kind": "namevalue",
+        "type": ["logical"],
+        "purpose": "log to screen?"
+      }
+    ]
+  },
+  "steric2lonlatt": {
+    "inputs": [
+      {
+        "name": "product",
+        "kind": "ordered",
+        "type": ["char", "choices={'EN4c14', 'ORAS5', 'SIO','NOAA','CMEMS'}"],
+        "purpose": "product name"
+      },
+      {
+        "name": "timestep",
+        "kind": "ordered",
+        "type": [
+          ["duration", ["numeric", ">0"]],
+          ["char", "choices={'midmonth'}"]
+        ],
+        "purpose": "interpolation time step"
+      },
+      {
+        "name": "meshsize",
+        "kind": "ordered",
+        "type": [
+          ["numeric", ">0"],
+          ["numeric", "numel=2"]
+        ],
+        "purpose": "interpolation mesh size"
+      },
+      {
+        "name": "timelim",
+        "kind": "ordered",
+        "type": [["numeric", "numel=2"], ["datetime", "numel=2"], ["numel=0"]],
+        "purpose": "time range"
+      },
+      {
+        "name": "LonOrigin",
+        "kind": "namevalue",
+        "type": ["numeric"],
+        "purpose": "longitude centre of output grid"
+      },
+      {
+        "name": "Interpolation",
+        "kind": "namevalue",
+        "type": ["char", "choices={'linear','nearest','spline','pchio'}"],
+        "purpose": "interpolation method"
+      },
+      {
+        "name": "TimeFormat",
+        "kind": "namevalue",
+        "type": ["char", "choices={'datetime','datenum'}"],
+        "purpose": "Type of the time vector"
+      },
+      {
+        "name": "Unit",
+        "kind": "namevalue",
+        "type": ["char", "choices={'m','mm'}"],
+        "purpose": "output unit"
+      },
+      {
+        "name": "ForceNew",
+        "kind": "namevalue",
+        "type": ["logical", "scalar"],
+        "purpose": "re-process data?"
+      },
+      {
+        "name": "SaveData",
+        "kind": "namevalue",
+        "type": ["logical", "scalar"],
+        "purpose": "save results?"
+      },
+      {
+        "name": "BeQuiet",
+        "kind": "namevalue",
+        "type": ["logical", "scalar"],
+        "purpose": "log to screen?"
       }
     ]
   },
@@ -645,32 +853,32 @@
       {
         "name": "Pcenter",
         "kind": "required",
-        "type": ["string", "choices={'CSR', 'JPL', 'GFZ'}"],
+        "type": ["char", "choices={'CSR', 'JPL', 'GFZ'}"],
         "purpose": "data centre"
       },
       {
         "name": "Rlevel",
         "kind": "required",
-        "type": ["string", "choices={'RL06'}"],
+        "type": ["char", "choices={'RL06'}"],
         "purpose": "release level"
       },
       {
         "name": "product",
         "kind": "required",
-        "type": ["string", "choices={'GAC', 'GAD'}"],
-        "purpose": "product type"
+        "type": ["char", "choices={'GAC', 'GAD'}"],
+        "purpose": "product field"
       },
       {
         "name": "L",
         "kind": "ordered",
         "type": ["numeric", "integer", "scalar", ">0"],
-        "purpose": "maximum SH degree/order"
+        "purpose": "maximum SH d/o"
       },
       {
         "name": "Unit",
         "kind": "ordered",
-        "type": ["char", "string", "choices={'SD','POT'}"],
-        "purpose": "unit of output"
+        "type": ["char", "choices={'SD','POT'}"],
+        "purpose": "output field"
       },
       {
         "name": "TimeRange",
@@ -679,18 +887,18 @@
           ["numeric", "numel=2"],
           ["datetime", "numel=2"]
         ],
-        "purpose": "time range of data to read"
+        "purpose": "time range"
       },
       {
         "name": "OutputFormat",
         "kind": "namevalue",
-        "type": ["char", "string", "choices={'timefirst','traditional'}"],
+        "type": ["char", "choices={'timefirst','traditional'}"],
         "purpose": "dimension order of output"
       },
       {
         "name": "TimeFormat",
         "kind": "namevalue",
-        "type": ["char", "string", "choices={'datetime','datenum'}"],
+        "type": ["char", "choices={'datetime','datenum'}"],
         "purpose": "Type of the time vector"
       },
       {
@@ -702,26 +910,26 @@
       {
         "name": "OceanDomain",
         "kind": "namevalue",
-        "type": [["char"], ["string"], ["cell"], ["GeoDomain"], ["numeric", "ncols=2", "real"]],
+        "type": [["char"], ["cell"], ["GeoDomain"], ["numeric", "ncols=2", "real"]],
         "purpose": "ocean domain for mean removal"
       },
       {
         "name": "ForceNew",
         "kind": "namevalue",
         "type": ["logical", "scalar"],
-        "purpose": "whether to force recomputation"
+        "purpose": "re-process data?"
       },
       {
         "name": "SaveData",
         "kind": "namevalue",
         "type": ["logical", "scalar"],
-        "purpose": "whether to save computed data"
+        "purpose": "save results?"
       },
       {
         "name": "BeQuiet",
         "kind": "namevalue",
         "type": ["logical", "scalar"],
-        "purpose": "whether to suppress output messages"
+        "purpose": "log to screen?"
       }
     ]
   },
@@ -736,32 +944,32 @@
       {
         "name": "model",
         "kind": "ordered",
-        "type": ["char", "string", "choices={'Caron18', 'Caron19', 'A13', 'ICE6GD', 'Paulson07}"],
+        "type": ["char", "choices={'Caron18', 'Caron19', 'A13', 'ICE6GD', 'Paulson07','LM17.3'}"],
         "purpose": "name of the GIA model"
       },
       {
         "name": "L",
         "kind": "ordered",
         "type": ["numeric"],
-        "purpose": "SH degree/order"
+        "purpose": "SH d/o"
       },
       {
         "name": "Unit",
         "kind": "namevalue",
-        "type": ["char", "string", "choices={'SD','POT'}"],
-        "purpose": "Unit of output"
+        "type": ["char", "choices={'SD','POT'}"],
+        "purpose": "output field"
       },
       {
         "name": "OutputFormat",
         "kind": "namevalue",
-        "type": ["char", "string", "choices={'timefirst','traditional'}"],
+        "type": ["char", "choices={'timefirst','traditional'}"],
         "purpose": "dimension order of output"
       },
       {
         "name": "BeQuiet",
         "kind": "namevalue",
-        "type": ["logical"],
-        "purpose": "suppress output messages"
+        "type": ["logical", "scalar"],
+        "purpose": "log to screen?"
       }
     ]
   }
