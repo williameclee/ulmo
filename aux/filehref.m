@@ -1,8 +1,14 @@
+%% FILEHREF
+% Generate an HTML hyperlink to a file in MATLAB command window.
+%
+% Last modified by
+%	2025/11/11, williameclee@arizona.edu (@williameclee)
+
 function urltxt = filehref(url, txt)
 
     arguments (Input)
-        url (1, :) char
-        txt (1, :) char = NaN
+        url {mustBeTextScalar}
+        txt {mustBeTextScalar} = NaN
     end
 
     arguments (Output)
@@ -14,6 +20,6 @@ function urltxt = filehref(url, txt)
         txt = [name, ext];
     end
 
-    urltxt = sprintf('<a href="matlab: fprintf(''%s'');open(''%s'')">%s</a>', url, url, txt);
+    urltxt = sprintf('<a href="matlab: fprintf(''%s\\n'');open(''%s'')">%s</a>', url, url, txt);
 
 end
