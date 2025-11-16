@@ -933,6 +933,91 @@
       }
     ]
   },
+  "aod1b2plmt": {
+    "inputs": [
+      {
+        "name": "Pcenter",
+        "kind": "required",
+        "type": ["string", "choices={'CSR', 'JPL', 'GFZ'}"],
+        "purpose": "data centre"
+      },
+      {
+        "name": "Rlevel",
+        "kind": "required",
+        "type": ["string", "choices={'RL06'}"],
+        "purpose": "release level"
+      },
+      {
+        "name": "product",
+        "kind": "required",
+        "type": ["string", "choices={'GAC', 'GAD'}"],
+        "purpose": "product type"
+      },
+      {
+        "name": "L",
+        "kind": "ordered",
+        "type": ["numeric", "integer", "scalar", ">0"],
+        "purpose": "maximum SH degree/order"
+      },
+      {
+        "name": "Unit",
+        "kind": "ordered",
+        "type": ["char", "string", "choices={'SD','POT'}"],
+        "purpose": "unit of output"
+      },
+      {
+        "name": "TimeRange",
+        "kind": "ordered",
+        "type": [
+          ["numeric", "numel=2"],
+          ["datetime", "numel=2"]
+        ],
+        "purpose": "time range of data to read"
+      },
+      {
+        "name": "OutputFormat",
+        "kind": "namevalue",
+        "type": ["char", "string", "choices={'timefirst','traditional'}"],
+        "purpose": "dimension order of output"
+      },
+      {
+        "name": "TimeFormat",
+        "kind": "namevalue",
+        "type": ["char", "string", "choices={'datetime','datenum'}"],
+        "purpose": "Type of the time vector"
+      },
+      {
+        "name": "RemoveOceanMean",
+        "kind": "namevalue",
+        "type": ["logical", "scalar"],
+        "purpose": "whether to remove ocean mean from (GAD) data"
+      },
+      {
+        "name": "OceanDomain",
+        "kind": "namevalue",
+        "type": [["char"], ["string"], ["cell"], ["GeoDomain"], ["numeric", "ncols=2", "real"]],
+        "purpose": "ocean domain for mean removal"
+      },
+      {
+        "name": "ForceNew",
+        "kind": "namevalue",
+        "type": ["logical", "scalar"],
+        "purpose": "whether to force recomputation"
+      },
+      {
+        "name": "SaveData",
+        "kind": "namevalue",
+        "type": ["logical", "scalar"],
+        "purpose": "whether to save computed data"
+      },
+      {
+        "name": "BeQuiet",
+        "kind": "namevalue",
+        "type": ["logical", "scalar"],
+        "purpose": "whether to suppress output messages"
+      }
+    ]
+  },
   "gia2plmt": {
     "inputs": [
       {
