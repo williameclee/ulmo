@@ -49,7 +49,7 @@
 %	2025/07/25, williameclee@arizona.edu (@williameclee)
 %
 % Last modified by
-%	2025/09/15, williameclee@arizona.edu (@williameclee)
+%	2025/11/11, williameclee@arizona.edu (@williameclee)
 
 function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshsize, options)
 
@@ -91,11 +91,9 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
 
         lon = lonlim(1):meshsize:lonlim(2);
         lat = latlim(1):meshsize:latlim(2);
-
     elseif isempty(lon) || isempty(lat)
         error('Both LON and LAT must be provided');
     else
-
         if isscalar(unique([diff(unique(lon(:))); diff(unique(lat(:)))]))
             meshsize = abs(unique([diff(unique(lon(:))); diff(unique(lat(:)))]));
             lonlim = [min(lon), max(lon)];
@@ -106,20 +104,6 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
 
     end
 
-    if isa(domain, 'GeoDomain')
-        domainPoly = domain.Lonlat("OutputFormat", 'polyshape', "LonOrigin", mean(lonlim));
-    elseif ismatrix(domain) && isnumeric(domain) && size(domain, 2) == 2
-        domainPoly = polyshape(domain);
-    elseif ischar(domain)
-        domainPoly = polyshape(feval(domain));
-    elseif iscell(domain)
-        domainPoly = polyshape(feval(domain{:}));
-    elseif isa(domain, 'polyshape')
-        domainPoly = domain;
-    else
-        error('Unsupported domain type: %s', class(domain));
-    end
-
     if isvector(lon) && isvector(lat)
         lon = lon(:)';
         lat = lat(:);
@@ -128,17 +112,17 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
         error('LON and LAT must be vectors or matrices of the same size');
     end
 
-    %% Main
+    %% Check for existing data
     dataPath = datapath(domain, meshsize, lonlim, latlim);
     vars = {'mask' 'lon' 'lat'};
 
-    if ~forceNew && ~(isscalar(dataPath) && isnan(dataPath)) && exist(dataPath, 'file') && ...
-            all(ismember(vars, who('-file', dataPath)))
+    if ~forceNew && ~(isscalar(dataPath) && isnan(dataPath)) && ...
+            exist(dataPath, 'file') && all(ismember(vars, who('-file', dataPath)))
         data = load(dataPath, vars{:});
 
         if ~beQuiet
-            fprintf('[ULMO>%s] Loaded <a href="matlab: fprintf(''%s\\n'');open(''%s'')">domain mask</a>.\n', ...
-                callchaintext(callChain), dataPath, dataPath);
+            fprintf('[ULMO>%s] Loaded %s.\n', ...
+                callchaintext(callChain), filehref(dataPath, 'domain mask'));
         end
 
         mask = data.mask;
@@ -160,25 +144,53 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
         return
     end
 
-    if ~beQuiet
-        t = tic;
-        msg = 'computing domain mask, this may take a while ... ';
-        fprintf('[ULMO>%s] %s\n', callchaintext(callChain), msg);
+    %% Main
+    if isa(domain, 'GeoDomain')
+        domainPoly = ...
+            domain.Lonlat(round(mean(lonlim) / 180) * 180, "OutputFormat", 'polyshape');
+    elseif ismatrix(domain) && isnumeric(domain) && size(domain, 2) == 2
+        domainPoly = polyshape(domain);
+    elseif ischar(domain)
+        domainPoly = polyshape(feval(domain));
+    elseif iscell(domain)
+        domainPoly = polyshape(feval(domain{:}));
+    elseif isa(domain, 'polyshape')
+        domainPoly = domain;
+    else
+        error('Unsupported domain type: %s', class(domain));
     end
 
-    try
+    if min(domainPoly.Vertices(:, 1)) > max(lon)
+        error('ULMO:domainmask:InvalidInput', ...
+            'Domain longitude range (min: %f) is outside the provided LON range (max: %f).', ...
+            min(domainPoly.Vertices(:, 1)), max(lon));
+    elseif max(domainPoly.Vertices(:, 1)) < min(lon)
+        error('ULMO:domainmask:InvalidInput', ...
+            'Domain longitude range (max: %f) is outside the provided LON range (min: %f).', ...
+            max(domainPoly.Vertices(:, 1)), min(lon));
+    end
+
+    if numel(lonn) < 1e4
+        % Run all at once for small grids
         mask = isinterior(domainPoly, lonn(:), latt(:));
         mask = reshape(mask, size(lonn));
-    catch
-        mask = false(size(lonn));
-        nDiv = 64;
-        divStart = floor((0:nDiv - 1) * numel(lonn) / nDiv) + 1;
-        divEnd = [divStart(2:end), numel(lonn)];
+    else
+        % For large grids, use arrayfyn (can be parallelised)
+        if ~beQuiet
+            t = tic;
+            msg = 'this may take a while ... ';
+            fprintf('[ULMO>%s] Computing domain mask in parts, %s\n', ...
+                callchaintext(callChain), msg);
+        end
 
-        for i = 1:nDiv
-            iRange = divStart(i):divEnd(i);
-            mask(iRange) = ...
-                isinterior(domainPoly, lonn(iRange), latt(iRange));
+        mask = false(size(lonn));
+        mask = arrayfun(@(i) isinterior(domainPoly, lonn(:, i), latt(:, i)), 1:size(mask, 2), ...
+            "UniformOutput", false);
+        mask = reshape(cell2mat(mask), size(lonn));
+
+        if ~beQuiet
+            fprintf(repmat('\b', 1, length(msg) + 1));
+            fprintf('took %.1f seconds.\n', toc(t));
         end
 
     end
@@ -187,9 +199,8 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
         save(dataPath, vars{:}, '-v7.3');
 
         if ~beQuiet
-            fprintf(repmat('\b', 1, length(msg) + 1));
-            fprintf('saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">domain mask</a>, took %.1f seconds.\n', ...
-                dataPath, dataPath, toc(t));
+            fprintf('[ULMO>%s] Saved %s.\n', ...
+                callchaintext(callChain), filehref(dataPath, 'domainMask'));
         end
 
     end

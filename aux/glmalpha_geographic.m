@@ -17,7 +17,7 @@
 %       This corresponds to the argument SORD in GLMALPHA.
 %   anti - Whether to use the anti-domain
 %   rotb - Whether to rotate back the domain
-%       This is only available for an GeoDomain object, where the domain 
+%       This is only available for an GeoDomain object, where the domain
 %       function supports the argument 'rotated'.
 %   ldim - The dimension of the kernel
 %   bp - is a band-pass L
@@ -26,11 +26,11 @@
 %   GLMALPHA, KERNELC, KERNELCP, LOCALIZATION
 %
 % Last modified by
-% 	2025/06/03, williameclee@arizona.edu
+% 	2025/11/03, williameclee@arizona.edu
 
 function [G, V, N] = glmalpha_geographic( ...
         L, domain, upscale, isAntiDomain, rotateBack, ldim, isBp, ...
-        EL, EM, xver, beQuiet, forceNew, mesg)
+        EL, EM, xver, beQuiet, forceNew, mesg, callChain)
     %% Computing the kernel
     % See if we can run this calculation in parallel
     canRunParallel = license('test', 'distrib_computing_toolbox') && ...
@@ -39,18 +39,9 @@ function [G, V, N] = glmalpha_geographic( ...
         ~verLessThan('matlab', '8.2'));
     % Actually computing the kernel
     if canRunParallel
-
-        if ~beQuiet
-            fprintf('%s calling KERNELCP (parallel)\n', upper(mfilename));
-        end
-
-        Kernel = kernelcp_new(L, domain, upscale, "ForceNew", forceNew);
+        Kernel = kernelcp_new(L, domain, upscale, "ForceNew", forceNew, ...
+            "BeQuiet", beQuiet, "CallChain", callChain);
     else
-
-        if ~beQuiet
-            disp('No open matlabpool. Running KERNELC (non-parallel).');
-        end
-
         Kernel = kernelc(L, domain, upscale);
     end
 
@@ -147,6 +138,7 @@ function [G, V, N] = glmalpha_geographic( ...
             G = rotateGp(G, lonc, latc);
         catch
         end
+
     end
 
 end

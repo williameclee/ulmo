@@ -9,25 +9,29 @@
 %
 % Input arguments
 %   mass - Mass
-%       The unit is specified by the inputUnit argument.
-%       The default unit is Gton (1e12 kg).
-%   domain - Domain of the mass
-%   density - Density of the water
-%       It can be either 'water' or 'seawater', or a numeric value.
-%       The default value is 'water'.
-%   unit - Unit of the water equivalent
-%       It can be either 'mm', 'cm', or 'm'.
-%       The default value is 'mm'.
-%   inputUnit - Unit of the mass
-%       It can be either 'Gton' or 'kg'.
-%       The default value is 'Gton'.
+%       The unit is specified by the 'inputUnit' parameter.
+%   domain - Domain over which the mass is defined
+%       - GeoDomain object
+%       - Numeric scalar specifying the area in m^2
+%       - Nx2 numeric array of (lon, lat) vertices defining a polygon
+%   density - Density of the material (default: 'water')
+%       - Numeric scalar specifying the density in kg/m^3
+%       - 'water' (1000 kg/m^3)
+%       - 'seawater' (1028 kg/m^3)
+%   unit - Unit of the output water equivalent (default: 'mm')
+%       - 'mm' (millimeters)
+%       - 'cm' (centimeters)
+%       - 'm' (meters)
+%   inputUnit - Unit of the input mass (default: 'Gton')
+%       - 'Gton' (gigatons, 1 Gton = 1e12 kg)
+%       - 'kg' (kilograms)
 %
 % Output arguments
 %   weq - Mass in water equivalent
 %   convFac - Conversion factor from mass to water equivalent
 %
 % Last modified by
-%   2024/03/28, williameclee@arizona.edu (@williameclee)
+%   2025/11/03, williameclee@arizona.edu (@williameclee)
 
 function varargout = mass2weq(varargin)
     %% Initialisation
