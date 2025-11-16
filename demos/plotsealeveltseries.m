@@ -8,9 +8,9 @@
 %	STERIC2LONLATT, SSH2LONLATT
 %
 % Last modified by
-%	2025/09/15, williameclee@arizona.edu (@williameclee)
+%	2025/11/03, williameclee@arizona.edu (@williameclee)
 
-function plotsealeveltseries(dates, sl, lon, lat, product, unit, figtitle)
+function msl = plotsealeveltseries(dates, sl, lon, lat, product, unit, figtitle, options)
 
     arguments (Input)
         dates datetime {mustBeVector}
@@ -20,6 +20,7 @@ function plotsealeveltseries(dates, sl, lon, lat, product, unit, figtitle)
         product (1, :) char = ''
         unit (1, :) char = ''
         figtitle (1, :) char = ''
+        options.Visible (1, 1) logical = true
     end
 
     if size(sl, 1) == length(lon)
@@ -32,8 +33,12 @@ function plotsealeveltseries(dates, sl, lon, lat, product, unit, figtitle)
     gridWeights = domainMask .* cosd(lat(:));
     gridWeights(~domainMask) = 0;
     gridWeights = gridWeights ./ sum(gridWeights, 'all', 'omitmissing');
-    steric = squeeze(sum(sl .* gridWeights, [1, 2], 'omitmissing'));
-    steric = steric - mean(steric, 'omitmissing');
+    msl = squeeze(sum(sl .* gridWeights, [1, 2], 'omitmissing'));
+    msl = msl - mean(msl, 'omitmissing');
+
+    if ~options.Visible
+        return
+    end
 
     figure()
 
@@ -43,7 +48,7 @@ function plotsealeveltseries(dates, sl, lon, lat, product, unit, figtitle)
 
     clf
 
-    p = plot(dates, steric);
+    p = plot(dates, msl);
 
     if ~isempty(product)
         p.DisplayName = sprintf('Product: %s', char(product));

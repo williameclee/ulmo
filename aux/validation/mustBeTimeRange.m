@@ -5,7 +5,7 @@ function mustBeTimeRange(timelim)
         return
     end
 
-    if ~isnumeric(timelim) || ~isdatetime(timelim)
+    if ~(isnumeric(timelim) || isdatetime(timelim))
         error(eid, 'Time range must be a numeric or datetime array.');
     end
 

@@ -45,7 +45,7 @@
 %   SPHAREA
 %
 % Last modified by
-%   2025/10/01, williameclee@arizona.edu (@williameclee)
+%   2025/11/03, williameclee@arizona.edu (@williameclee)
 
 classdef GeoDomain
 
@@ -230,7 +230,7 @@ classdef GeoDomain
             end
 
             arguments (Output)
-                area (1, 1) double {mustBeFinitemustBeFinite, mustBeBetween(area, 0, 1)}
+                area (1, 1) double {mustBeFinite, mustBeBetween(area, 0, 1)}
             end
 
             area = spharea(obj.Lonlat);
@@ -435,7 +435,7 @@ function obj = ...
     obj.Buffer = conddefval(buf, dafaultBuffer);
 
     if strcmpi(latlim, 'default') || any(isnan(latlim)) || ...
-            (useDefaultParams && isempty(p.Results.Latlim))
+            (useDefaultParams && isempty(latlim))
 
         switch obj.Domain
             case {'spacific', 'satlantic', 'indian'}
