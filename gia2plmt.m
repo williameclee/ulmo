@@ -95,7 +95,7 @@
 %       PANGAEA, doi: 10.1594/PANGAEA.932462
 %
 % Last modified by
-%   2025/08/04, williameclee@arizona.edu (@williameclee)
+%   2025/11/16, williameclee@arizona.edu (@williameclee)
 
 function varargout = gia2plmt(varargin)
     %% Initialisation
@@ -109,6 +109,11 @@ function varargout = gia2plmt(varargin)
     inputUnit = unit;
 
     if exist(inputPath, 'file')
+
+        if beQuiet
+            warning('off', 'MATLAB:load:variableNotFound');
+        end
+
         data = load(inputPath, 'lmcosiM', 'lmcosiU', 'lmcosiL');
 
         if ~beQuiet

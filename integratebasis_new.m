@@ -58,7 +58,7 @@ function varargout = integratebasis_new(varargin)
         % Collect the eigenvector output into a format that PLM2XYZ knows
         % how to interpret
 
-        for j = 1:J
+        for j = 1:round(J)
             % Create the blanks
             cosi = lmcosi(:, 3:4);
             % Stick in the coefficients of the 1st eigentaper
@@ -163,13 +163,13 @@ function varargout = integratebasis_new(varargin)
     % Run parallel if possible
     if exist('eigfunINT', 'var')
 
-        parfor h = length(eigfunINT) + 1:J
+        parfor h = length(eigfunINT) + 1:round(J)
             eigfunINT(h) = plm2avg(eigfun{h}, XY);
         end
 
     else
 
-        parfor h = 1:J
+        parfor h = 1:round(J)
             eigfunINT(h) = plm2avg(eigfun{h}, XY);
         end
 
