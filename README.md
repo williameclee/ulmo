@@ -1,5 +1,7 @@
 # Unified Localisation of Mass over Oceans (ULMO)
 
+[![DOI](https://zenodo.org/badge/839424980.svg)](https://doi.org/10.5281/zenodo.17625698)
+
 A pipeline for using GRACE satellite gravimetry, altimetry-steric measurements, and forward modelling to study ocean mass change over ocean basins, with extended functionalities for Slepian functions and sea level equation modelling.
 
 Research findings using this code were presented at the [AGU24 Fall Meeting](https://agu.confex.com/agu/agu24/meetingapp.cgi/Paper/1579620). A manuscript is in preparation.
