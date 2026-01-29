@@ -181,6 +181,37 @@
       }
     ]
   },
+  "plm2avgp": {
+    "inputs": [
+      {
+        "name": "lmcosi",
+        "kind": "required",
+        "purpose": "spherical harmonic coefficients"
+      },
+      {
+        "name": "domain",
+        "kind": "required",
+        "type": [["char"], ["cell"], ["GeoDomain"], ["numeric", "ncols=2", "real"]],
+        "purpose": "region of interest"
+      },
+      {
+        "name": "BeQuiet",
+        "kind": "namevalue",
+        "type": ["logical", "scalar"],
+        "purpose": "log to screen?"
+      }
+    ]
+  },
+  "plm2avgp": {
+    "inputs": [
+      {
+        "name": "demo",
+        "kind": "required",
+        "type": ["char", "choices={'demo1','demo2'}"],
+        "purpose": "which demo to run"
+      }
+    ]
+  },
   "plm2xyz": {
     "inputs": [
       {
