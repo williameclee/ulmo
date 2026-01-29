@@ -29,12 +29,12 @@
 %   KERNELC, SPHAREA, FIBONACCI_GRID
 %
 % Last modified by
-% 	2026/01/28, williameclee@arizona.edu
+% 	2026/01/29, williameclee@arizona.edu
 % 	2011/01/25, charig@princeton.edu
 
-function varargout = plm2avgp_new(varargin)
+function varargout = plm2avgp(varargin)
 
-    if nargin >= 1 && ischar(varargin{1}) && ...
+    if nargin >= 1 && (ischar(varargin{1}) || isStringScalar(varargin{1})) && ...
             (strcmp(varargin{1}, 'demo1') || strcmp(varargin{1}, 'demo2'))
         demoCase = varargin{1};
 

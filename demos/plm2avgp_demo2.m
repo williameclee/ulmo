@@ -24,7 +24,7 @@ function plm2avgp_demo2
     % discretized due to the equal area Fibonacci grid
     IntF = sum(rF) / length(rF);
     % Do the same integration with plm2avg
-    [Int, A] = plm2avg(v(:, 1:4), dom);
+    [Int, A] = plm2avgp(v(:, 1:4), dom);
     % Now check the averages.
     indx = find(rF);
     AF = sum(rF(indx)) / length(indx);

@@ -7,7 +7,7 @@ function vout = plm2avgp_demo1(varargin)
     dom = 'australia';
     L = 60;
     [~, ~, ~, ~, ~, lmcosi] = geoboxcap(L, dom, act = 1);
-    [Int, A, miniK, XY] = plm2avgp_new(lmcosi, dom);
+    [Int, A, miniK, XY] = plm2avgp(lmcosi, dom);
     plotplm(lmcosi, [], [], 4);
     colorbar
     fprintf("\nIntegration check... This should equal the area of the region with error mostly from GEOBOXCAP\n");
