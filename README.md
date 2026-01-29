@@ -25,8 +25,9 @@ Functions in this repository may call or overwrite functions from the following 
 - [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git): Computation of Slepian functions on the sphere
 - [slepian_bravo](https://github.com/csdms-contrib/slepian_bravo.git): Conversion between spherical harmonics and Slepian functions
 - [slepian_delta](https://github.com/csdms-contrib/slepian_delta.git): Processing GRACE data and GIA models
+- [ISSM](https://github.com/ISSMteam/ISSM.git) or [ALMA3](https://github.com/danielemelini/ALMA3.git) if you wish ot use their Love numbers
 - [Gibbs Seawater Toolbox (GSW)](https://www.teos-10.org/software.htm): Computation of steric sea level from temperature and salinity
 
 ---
 
-Last modified: 2025/11/03, [En-Chi Lee (@williameclee)](mailto:williameclee@arizona.edu)
+Last modified: 2026/01/29, [En-Chi Lee (@williameclee)](mailto:williameclee@arizona.edu)
