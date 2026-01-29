@@ -10,12 +10,12 @@
 %   2025/05/22, williameclee@arizona.edu (@williameclee)
 %
 % Last modified by
-%   2025/08/`3, williameclee@arizona.edu (@williameclee)
+%   2026/01/29, williameclee@arizona.edu (@williameclee)
 
 function output = convertgravity(varargin)
     %% Initialisation
-    [input, inputUnit, outputUnit, gravityParam, equatorRadius, ...
-         inputFmt, timeDim, L, avgDensity] = parseinputs(varargin{:});
+    [input, inputUnit, outputUnit, ~, equatorRadius, ...
+         inputFmt, timeDim, L, avgDensity, lovenumSrc] = parseinputs(varargin{:});
 
     if strcmpi(inputUnit, outputUnit)
         output = input;
@@ -27,15 +27,15 @@ function output = convertgravity(varargin)
             output = grav2pot(input, equatorRadius, inputFmt, timeDim);
         case strjoin({'GRAV', 'SD'})
             output = grav2pot(input, equatorRadius, inputFmt, timeDim);
-            output = pot2sd(output, L, avgDensity, inputFmt, timeDim);
+            output = pot2sd(output, L, avgDensity, inputFmt, timeDim, lovenumSrc);
         case strjoin({'POT', 'GRAV'})
             output = pot2grav(input, equatorRadius, inputFmt, timeDim);
         case strjoin({'POT', 'SD'})
-            output = pot2sd(input, L, avgDensity, inputFmt, timeDim);
+            output = pot2sd(input, L, avgDensity, inputFmt, timeDim, lovenumSrc);
         case strjoin({'SD', 'POT'})
-            output = sd2pot(input, L, avgDensity, inputFmt, timeDim);
+            output = sd2pot(input, L, avgDensity, inputFmt, timeDim, lovenumSrc);
         case strjoin({'SD', 'GRAV'})
-            output = sd2pot(input, L, avgDensity, inputFmt, timeDim);
+            output = sd2pot(input, L, avgDensity, inputFmt, timeDim, lovenumSrc);
             output = pot2grav(output, equatorRadius, inputFmt, timeDim);
     end
 
@@ -94,7 +94,7 @@ function grav = pot2grav(pot, equatorRadius, inputFmt, timeDim)
 
 end
 
-function sd = pot2sd(pot, degree, avgDensity, inputFmt, timeDim)
+function sd = pot2sd(pot, degree, avgDensity, inputFmt, timeDim, lovenumSrc)
 
     switch inputFmt
         case 'lmcosi'
@@ -105,14 +105,14 @@ function sd = pot2sd(pot, degree, avgDensity, inputFmt, timeDim)
 
                 switch timeDim
                     case 'timefirst'
-                        degree = pot(:, :, 1);
+                        degree = pot(1, :, 1);
                     case 'traditional'
-                        degree = pot(:, 1, :);
+                        degree = pot(:, 1, 1);
                 end
 
             end
 
-            lovenum = lovenumber(degree, 'loadinggravitationalpotential');
+            lovenum = lovenumber(degree, 'loadinggravitationalpotential', "Source", lovenumSrc);
             % lovenum = lovenums('Wahr', degree);
             % lovenum = reshape(lovenum(:, 2), size(degree));
 
@@ -136,13 +136,13 @@ function sd = pot2sd(pot, degree, avgDensity, inputFmt, timeDim)
         case 'cosi'
             error('Not implemented yet for COSI format');
         case 'L'
-            lovenum = lovenumber(degree, 'loadinggravitationalpotential');
+            lovenum = lovenumber(degree, 'loadinggravitationalpotential', "Source", lovenumSrc);
             sd = avgDensity / 3 * (2 .* degree + 1) ./ (1 + lovenum) .* pot;
     end
 
 end
 
-function pot = sd2pot(sd, degree, avgDensity, inputFmt, timeDim)
+function pot = sd2pot(sd, degree, avgDensity, inputFmt, timeDim, lovenumSrc)
 
     switch inputFmt
         case 'lmcosi'
@@ -160,7 +160,7 @@ function pot = sd2pot(sd, degree, avgDensity, inputFmt, timeDim)
 
             end
 
-            lovenum = lovenumber(degree, 'loadinggravitationalpotential');
+            lovenum = lovenumber(degree, 'loadinggravitationalpotential', "Source", lovenumSrc);
             % lovenum = lovenums('Wahr', degree);
             % lovenum = reshape(lovenum(:, 2), size(degree));
 
@@ -183,7 +183,7 @@ function pot = sd2pot(sd, degree, avgDensity, inputFmt, timeDim)
 
         case 'cosi'
         case 'L'
-            lovenum = lovenumber(degree, 'loadinggravitationalpotential');
+            lovenum = lovenumber(degree, 'loadinggravitationalpotential', "Source", lovenumSrc);
             % lovenum = lovenums('Wahr', degree);
             % lovenum = lovenum(:, 2);
             convFactor = 3 / avgDensity .* (1 + lovenum) ./ (2 * degree + 1);
@@ -212,17 +212,19 @@ function varargout = parseinputs(varargin)
         @(x) isnumeric(x) && isscalar(x) && x > 0);
     addParameter(ip, 'EarthDensity', 5517, ...
         @(x) isnumeric(x) && isscalar(x) && x > 0);
+    addParameter(ip, 'LoveNumSource', 'ISSM', @ischar);
     parse(ip, varargin{:});
 
     input = ip.Results.Plm;
-    inputUnit = upper(ip.Results.InputUnit);
-    outputUnit = upper(ip.Results.OutputUnit);
+    inputUnit = char(upper(ip.Results.InputUnit));
+    outputUnit = char(upper(ip.Results.OutputUnit));
     gravityParam = ip.Results.GravityParam;
     equatorRadius = ip.Results.EquatorRadius;
     inputFmt = ip.Results.InputFormat;
     timeDim = ip.Results.TimeDim;
     L = round(ip.Results.L);
     avgDensity = ip.Results.EarthDensity;
+    lovenumSource = ip.Results.LoveNumSource;
 
     if strcmpi(inputFmt, 'L') && isempty(L)
         error(sprintf('%s:InvalidInput:DegreeNotSpecified', mfilename), ...
@@ -231,6 +233,6 @@ function varargout = parseinputs(varargin)
 
     varargout = ...
         {input, inputUnit, outputUnit, gravityParam, equatorRadius, ...
-         inputFmt, timeDim, L, avgDensity};
+         inputFmt, timeDim, L, avgDensity, lovenumSource};
 
 end

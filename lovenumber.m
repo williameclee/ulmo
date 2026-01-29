@@ -15,6 +15,10 @@
 %       'CM': Centre of mass frame.
 %       'CF': Centre of figure frame.
 %       The default frame is the CF frame.
+%   source - Source of the Love numbers
+%       'ISSM': Love numbers from the ISSM repository.
+%       'Wahr': Love numbers used in the slepian_delta package.
+%       The default source is 'ISSM'.
 %
 % Output arguments
 %   ln - Love numbers
@@ -23,6 +27,7 @@
 %   2024/11/20, williameclee@arizona.edu (@williameclee)
 %
 % Last modified by
+%   2026/01/29, williameclee@arizona.edu (@williameclee)
 %   2025/08/03, williameclee@arizona.edu (@williameclee)
 
 function ln = lovenumber(l, varargin)
@@ -37,10 +42,13 @@ function ln = lovenumber(l, varargin)
          'LLN geoid', 'LLN VLM', 'TLN geoid', 'TLN VLM', 'LLN HLM', 'TLN HLM'})));
     addOptional(ip, 'frame', 'CF', ...
         @(x) ischar(validatestring(upper(x), {'CM', 'CF'})));
+    addParameter(ip, "Source", "ISSM", ...
+        @(x) ischar(x) && startsWith(upper(x), "ALMA3") || ischar(validatestring(upper(x), {'ISSM', 'WAHR'})));
     parse(ip, l, varargin{:});
     l = ip.Results.l;
     type = ip.Results.type;
     frame = ip.Results.frame;
+    source = ip.Results.Source;
 
     if max(l) > 10000
         error('Love number must be less than or equal to 10000');
@@ -62,27 +70,102 @@ function ln = lovenumber(l, varargin)
     end
 
     %% Loading Love numbers
-    try
-        ln = load(fullfile(getenv('IFILES'), 'lovenumbers.mat'), type);
-    catch
-        error('Check your love number file at %s', fullfile('IFILES', 'lovenumbers.mat'));
+    switch upper(source)
+        case 'ISSM'
+            ln = lovenumber_issm(l, type);
+        case 'WAHR'
+            % Load default slepian_delta love numbers
+            if ~strcmpi(frame, 'CF')
+                error('Wahr et al. (1998) love numbers are only available in the CF frame, but %s was requested.', ...
+                    frame);
+            elseif ~strcmpi(type, 'loadinggravitationalpotential')
+                error('Wahr et al. (1998) love numbers are only available for loading gravitational potentials, but %s was requested.', ...
+                    type);
+            end
+
+            ln = lovenums('Wahr', l);
+            ln = ln(:, 2);
+        otherwise
+
+            if startsWith(upper(source), "ALMA3")
+                ln = lovenumber_alma3(l, type, source);
+            else
+                error('Unknown love number source: %s', source);
+            end
+
     end
 
-    ln = ln.(type);
-
-    if strcmpi(frame, 'CF')
+    if strcmpi(frame, 'CF') && any(l == 1)
+        l1id = find(l == 1);
         % from Blewitt, 2003, JGR
         if strcmpi(type, 'loadingverticaldisplacement')
-            ln(2) = -0.269;
+            ln(l1id) = -0.269;
         elseif strcmpi(type, 'loadinggravitationalpotential')
-            ln(2) = 0.021;
+            ln(l1id) = 0.021;
         elseif strcmpi(type, 'loadinghorizontaldisplacement')
-            ln(2) = 0.134;
+            ln(l1id) = 0.134;
         end
 
     end
 
-    ln = ln(l + 1); % l starts at 0
-    ln = reshape(ln, size(l)); 
+    ln = reshape(ln, size(l));
 
+end
+
+function ln = lovenumber_issm(l, type)
+
+    if max(l) > 10000
+        error('Love number must be less than or equal to 10000');
+    end
+
+    ln = load(fullfile(getenv('IFILES'), 'LOVENUMS', 'lovenumbers-ISSM.mat'), type);
+
+    ln = ln.(type);
+    ln = ln(l + 1); % l starts at 0
+end
+
+function ln = lovenumber_alma3(l, type, model)
+
+    if startsWith(upper(model), "ALMA3")
+        % Remove the prefix
+        model = extractAfter(upper(model), "ALMA3 ");
+    end
+
+    dataFolder = fullfile(getenv('IFILES'), 'LOVENUMS');
+
+    switch type
+        case 'loadinggravitationalpotential'
+            dataFile = sprintf("k_%sLLN-*.dat", model);
+        case 'loadingverticaldisplacement'
+            dataFile = sprintf("h_%sLLN-*.dat", model);
+        case 'loadinghorizontaldisplacement'
+            dataFile = sprintf("l_%sLLN-*.dat", model);
+        case 'tidalgravitationalpotential'
+            dataFile = sprintf("k_%sTLN-*.dat", model);
+        case 'tidalverticaldisplacement'
+            dataFile = sprintf("h_%sTLN-*.dat", model);
+        case 'tidalhorizontaldisplacement'
+            dataFile = sprintf("l_%sTLN-*.dat", model);
+    end
+
+    files = dir(fullfile(dataFolder, dataFile));
+
+    if isempty(files)
+        error('No ALMA3 Love number file found for model %s and type %s.', model, type);
+    elseif length(files) > 1
+        % Choose the last file when sorted alphabetically
+        [~, idx] = sort({files.name});
+        files = files(idx);
+        warning('Multiple ALMA3 Love number files found for model %s and type %s. Using %s.', ...
+            model, type, files(end).name);
+        files = files(end);
+    end
+
+    dataPath = fullfile(dataFolder, files(1).name);
+
+    ln = readmatrix(dataPath, "NumHeaderLines", 5);
+    ln = interp1(ln(:, 1), ln(:, 2), l, 'linear', 'extrap');
+    % Replace degree 0 & 1 love number with 0
+    ln(l == 0) = 0;
+    ln(l == 1) = 0;
 end
