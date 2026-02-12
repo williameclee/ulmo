@@ -15,12 +15,12 @@
 %       'CM': Centre of mass frame.
 %       'CF': Centre of figure frame.
 %       The default frame is the CF frame.
-%   source - Source of the Love numbers
+%   Source - Source of the Love numbers
 %       'ISSM': Love numbers from the ISSM repository.
 %       'Wahr': Love numbers used in the slepian_delta package.
 %       'ALMA3 <model>': Love numbers from ALMA3 files for the specified Earth model (e.g. 'ALMA3 PREM').
 %           As of right now, the love numbers have to be manually computed using the command line and not automated.
-%       The default source is 'ISSM'.
+%       The default Source is 'ISSM'.
 %
 % Output arguments
 %   ln - Love numbers
