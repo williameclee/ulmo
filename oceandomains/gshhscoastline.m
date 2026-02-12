@@ -14,7 +14,7 @@ function varargout = gshhscoastline(varargin)
          gshhsFileName, gshhsFileExists, ...
          forcenew, saveData, beQuiet, callChain] = parseinputs(varargin);
 
-    %% Reteiving the original data
+    %% Retrieving the original data
     vars = {'GshhsCoasts', 'gshhsCoastXY', 'gshhsCoastPoly'};
 
     if gshhsFileExists && ~forcenew && ...
