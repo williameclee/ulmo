@@ -38,9 +38,10 @@
 %       Data type: CHAR
 %   LoveNumSource - Source of load Love numbers
 %       - 'ISSM': Love numbers from the Ice Sheet System Model (ISSM)
-%       - 'Wahr': Love numbers as used in slepian_delta package
 %       - 'ALMA3 <model>': Love numbers from the ALMA3 models (currently
 %           has to be added manually)
+%       Note: The 'Wahr' Love number set used in the SLEPIAN_DELTA package
+%       is not supported for SOLVESLE and will result in an error if used.
 %       The default source is 'ISSM'.
 %   RotationFeedback - Logical flag to include rotation feedback
 %       The default option is true.
