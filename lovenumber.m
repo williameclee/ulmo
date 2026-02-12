@@ -74,7 +74,7 @@ function ln = lovenumber(l, varargin)
     end
 
     %% Loading Love numbers
-    switch upper(source)
+    switch upper(char(source))
         case 'ISSM'
             ln = lovenumber_issm(l, type);
         case 'WAHR'
