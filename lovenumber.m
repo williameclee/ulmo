@@ -18,6 +18,8 @@
 %   source - Source of the Love numbers
 %       'ISSM': Love numbers from the ISSM repository.
 %       'Wahr': Love numbers used in the slepian_delta package.
+%       'ALMA3 <model>': Love numbers from ALMA3 files for the specified Earth model (e.g. 'ALMA3 PREM').
+%           As of right now, the love numbers have to be manually computed using the command line and not automated.
 %       The default source is 'ISSM'.
 %
 % Output arguments
@@ -27,7 +29,8 @@
 %   2024/11/20, williameclee@arizona.edu (@williameclee)
 %
 % Last modified by
-%   2026/01/29, williameclee@arizona.edu (@williameclee)
+%   2026/02/12, williameclee@arizona.edu (@williameclee)
+%     - Added support for ALMA3 love numbers
 %   2025/08/03, williameclee@arizona.edu (@williameclee)
 
 function ln = lovenumber(l, varargin)
@@ -43,7 +46,8 @@ function ln = lovenumber(l, varargin)
     addOptional(ip, 'frame', 'CF', ...
         @(x) ischar(validatestring(upper(x), {'CM', 'CF'})));
     addParameter(ip, "Source", "ISSM", ...
-        @(x) ischar(x) && startsWith(upper(x), "ALMA3") || ischar(validatestring(upper(x), {'ISSM', 'WAHR'})));
+        @(x) (ischar(x) || isstring(x)) && ...
+        (startsWith(upper(x), "ALMA3") || ischar(validatestring(upper(x), {'ISSM', 'WAHR'}))));
     parse(ip, l, varargin{:});
     l = ip.Results.l;
     type = ip.Results.type;
@@ -128,7 +132,13 @@ function ln = lovenumber_alma3(l, type, model)
 
     if startsWith(upper(model), "ALMA3")
         % Remove the prefix
-        model = extractAfter(upper(model), "ALMA3 ");
+        modelParsed = regexprep(modelUpper, "^ALMA3\s*", "");
+
+        if strlength(modelParsed) == 0
+            error('Model name must be specified after the ALMA3 prefix (e.g., "ALMA3 ICE").');
+        end
+
+        model = modelParsed;
     end
 
     dataFolder = fullfile(getenv('IFILES'), 'LOVENUMS');

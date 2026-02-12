@@ -10,7 +10,8 @@
 %   2025/05/22, williameclee@arizona.edu (@williameclee)
 %
 % Last modified by
-%   2026/01/29, williameclee@arizona.edu (@williameclee)
+%   2026/02/12, williameclee@arizona.edu (@williameclee)
+%     - Added support for ALMA3 love numbers
 
 function output = convertgravity(varargin)
     %% Initialisation
@@ -212,7 +213,7 @@ function varargout = parseinputs(varargin)
         @(x) isnumeric(x) && isscalar(x) && x > 0);
     addParameter(ip, 'EarthDensity', 5517, ...
         @(x) isnumeric(x) && isscalar(x) && x > 0);
-    addParameter(ip, 'LoveNumSource', 'ISSM', @ischar);
+    addParameter(ip, 'LoveNumSource', 'ISSM', @(x) ischar(x) || isstring(x));
     parse(ip, varargin{:});
 
     input = ip.Results.Plm;

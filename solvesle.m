@@ -89,7 +89,8 @@
 %   2024/11/20, williameclee@arizona.edu (@williameclee)
 %
 % Last modified by
-%   2026/01/29, williameclee@arizona.edu (@williameclee)
+%   2026/02/12, williameclee@arizona.edu (@williameclee)
+%     - Added support for ALMA3 love numbers
 
 function varargout = solvesle(varargin)
     %% Initialisation
@@ -379,12 +380,12 @@ function varargout = parseinputs(varargin)
         @(x) isa(x, 'GeoDomain') || (isnumeric(x) && ismatrix(x) && size(x, 2) == 2));
     addOptional(ip, 'frame', 'CF', ...
         @(x) ischar(validatestring(upper(x), {'CM', 'CF'})));
-    addOptional(ip, 'LoveNumSource', 'ISSM', ...
-        @(x) ischar(x) || isstring(x));
     addOptional(ip, 'RotationFeedback', true, ...
         @(x) islogical(x) || isnumeric(x));
     addOptional(ip, 'maxIter', 10, ...
         @(x) isnumeric(x) && isscalar(x) && x > 0);
+    addParameter(ip, 'LoveNumSource', 'ISSM', ...
+        @(x) ischar(x) || isstring(x));
     addParameter(ip, 'OceanKernel', [], @(x) isnumeric(x));
     addParameter(ip, 'OceanFunction', [], @(x) isnumeric(x));
     addParameter(ip, 'KernelOrder', [], @(x) isnumeric(x));
@@ -404,6 +405,10 @@ function varargout = parseinputs(varargin)
     kernelOrder = ip.Results.KernelOrder;
     initialPlm = ip.Results.InitialCondition;
     beQuiet = logical(ip.Results.BeQuiet);
+
+    if strcmpi(loveNumSrc, "Wahr")
+        error("Wahr's (and slepian's) love numbers are only provided for loading gravitational potential, which would not be sufficient for solving the SLE. Consider using ISSM (preferred) or ALMA3 love numbers instead.");
+    end
 
     % Check input sizes
     includesDO = size(forcingPlm, 2) == 4;
