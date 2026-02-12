@@ -110,6 +110,10 @@
 %   back...
 %
 % Last modified by
+%   2026/02/12, williameclee@arizona.edu (@williameclee)
+%     - Added support for the efficient_slepian module and the 'Method'
+%       option. The module is not included in the repo, though. It also
+%       only support single, closed shapes.
 %   2025/11/03, williameclee@arizona.edu (@williameclee)
 %   2017/12/01, fjsimons@alum.mit.edu (@fjsimons)
 %   2016/06/27, charig@princeton.edu (@harig00)
@@ -135,7 +139,7 @@ function varargout = glmalpha_new(varargin)
     end
 
     % Parse inputs
-    [domain, L, sord, blox, upco, resc, truncation, anti, rotb, ...
+    [domain, L, sord, blox, upco, resc, truncation, anti, rotb, method, ...
          forceNew, saveData, beQuiet, callChain] = ...
         parseinputs(varargin);
 
@@ -150,7 +154,7 @@ function varargout = glmalpha_new(varargin)
     vars = {'G', 'V', 'EL', 'EM', 'N'};
     [dataPath, GM2AL, MTAP, IMTAP, xver] = ...
         getoutputfile(domain, L, sord, blox, upco, resc, ...
-        truncation, anti, bp, ldim, [], [], [], []);
+        truncation, anti, bp, ldim, [], [], [], [], method);
 
     if ~forceNew && exist(dataPath, 'file') && ...
             all(ismember(vars, who('-file', dataPath)))
@@ -192,13 +196,18 @@ function varargout = glmalpha_new(varargin)
 
     % For geographical or lonlat regions
     if ismatrix(domain) || isa(domain, 'GeoDomain')
-        upscale = sord;
-        [G, V, N] = glmalpha_geographic( ...
-            maxL, domain, upscale, anti, rotb, ldim, bp, EL, EM, xver, ...
-            beQuiet, forceNew, mesg, callChain);
 
-        G = G(:, 1:truncation);
-        V = V(1:truncation);
+        if strcmpi(method, "efficient")
+            [G, V, N] = glmalpha_eff(L, domain);
+        else
+            upscale = sord;
+            [G, V, N] = glmalpha_geographic( ...
+                maxL, domain, upscale, anti, rotb, ldim, bp, EL, EM, xver, ...
+                beQuiet, forceNew, mesg, callChain);
+
+            G = G(:, 1:truncation);
+            V = V(1:truncation);
+        end
 
         try
             save(dataPath, '-v7.3', 'G', 'V', 'EL', 'EM', 'N')
@@ -257,6 +266,7 @@ function varargout = parseinputs(Inputs)
     dfOpt.J = [];
     dfOpt.anti = false;
     dfOpt.RotateBack = true;
+    dfOpt.Method = "Simons";
 
     ip = inputParser;
     addOptional(ip, 'Domain', dfOpt.domain, ...
@@ -278,6 +288,8 @@ function varargout = parseinputs(Inputs)
     addOptional(ip, 'anti', dfOpt.anti, @(x) islogical(x) || isnumeric(x));
     addOptional(ip, 'RotateBack', dfOpt.RotateBack, ...
         @(x) isnumeric(x) || islogical(x) || isempty(x));
+    addParameter(ip, 'Method', dfOpt.Method, ...
+        @(x) ischar(x) || isstring(x) || any(validatestring(x, ["Simons", "efficient"])));
     addParameter(ip, 'ForceNew', false, @(x) islogical(x) || isnumeric(x));
     addParameter(ip, 'SaveData', true, @(x) islogical(x) || isnumeric(x));
     addParameter(ip, 'BeQuiet', false, @(x) islogical(x) || isnumeric(x));
@@ -293,6 +305,7 @@ function varargout = parseinputs(Inputs)
     J = conddefval(ip.Results.J, dfOpt.J);
     anti = logical(ip.Results.anti);
     rotateBack = logical(conddefval(ip.Results.RotateBack, dfOpt.RotateBack));
+    method = string(ip.Results.Method);
     forceNew = ip.Results.ForceNew;
     saveData = ip.Results.SaveData;
     beQuiet = ip.Results.BeQuiet;
@@ -308,14 +321,19 @@ function varargout = parseinputs(Inputs)
         domain = GeoDomain(domain{1}, "Upscale", sord, domain{2:end});
     end
 
+    if strcmpi(method, "efficient") && ~exist("glmalpha_eff", "file")
+        error('The efficient method (%s) is not available. Please make sure you have the %s module and that it is on the path.', ...
+            upper("glmalpha_eff"), upper("efficient_slepian"))
+    end
+
     varargout = ...
-        {domain, L, sord, blox, upco, resc, J, anti, rotateBack, ...
+        {domain, L, sord, blox, upco, resc, J, anti, rotateBack, method, ...
          forceNew, saveData, beQuiet, callChain};
 end
 
 function [dataPath, GM2AL, MTAP, IMTAP, xver] = ...
         getoutputfile(domain, L, sord, blox, upco, resc, truncation, ...
-        anti, bp, ldim, GM2AL, MTAP, IMTAP, xver)
+        anti, bp, ldim, GM2AL, MTAP, IMTAP, xver, method)
 
     if upco == 0 && resc == 0
         xver = conddefval(xver, 0);
@@ -330,7 +348,12 @@ function [dataPath, GM2AL, MTAP, IMTAP, xver] = ...
             error('Unrecognised domain type.')
         end
 
-        dataFolder = fullfile(getenv('IFILES'), 'GLMALPHA');
+        if strcmpi(method, "efficient")
+            dataFolder = fullfile(getenv('IFILES'), 'GLMALPHA_EFFICIENT');
+        else
+            dataFolder = fullfile(getenv('IFILES'), 'GLMALPHA');
+        end
+
     else
         xver = conddefval(xver, 0);
 
@@ -441,4 +464,6 @@ function plotvweightmap(G, V, domain)
 
     formatlonticks
     formatlatticks
+
+    colorbar
 end
