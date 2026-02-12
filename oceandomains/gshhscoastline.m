@@ -12,51 +12,64 @@ function varargout = gshhscoastline(varargin)
     [dataQuality, latlim, lonlim, minLandArea, ...
          upscale, buf, ~, lonOrigin, ...
          gshhsFileName, gshhsFileExists, ...
-         forcenew, saveData, beQuiet] = parseinputs(varargin);
+         forcenew, saveData, beQuiet, callChain] = parseinputs(varargin);
 
     %% Reteiving the original data
     vars = {'GshhsCoasts', 'gshhsCoastXY', 'gshhsCoastPoly'};
 
-    if gshhsFileExists && ~forcenew && all(ismember(vars, who('-file', gshhsFileName)))
+    if gshhsFileExists && ~forcenew && ...
+            all(ismember(vars, who('-file', gshhsFileName)))
         load(gshhsFileName, vars{:})
 
         if ~beQuiet
-            fprintf('%s loaded %s\n', upper(mfilename), gshhsFileName);
+            fprintf('[ULMO>%s] Loaded <a href="matlab: fprintf(''%s\\n'');open(''%s'')">GSHHS coastline data</a>.\n', ...
+                callchaintext(callChain), gshhsFileName, gshhsFileName);
         end
 
     else
         GshhsCoasts = gshhsstruct('DataQuality', dataQuality, ...
             'Upscale', upscale, 'Buffer', buf, ...
             'Quiet', true, 'ForceNew', forcenew);
-    end
 
-    if ~beQuiet
-        fprintf('%s generating the coasline polygon, this may take a while...\n', ...
-            upper(mfilename))
-    end
+        if ~beQuiet
+            tic;
+            msg = 'this may take a while...';
+            fprintf('[ULMO>%s] Generating the coastline polygon, %s\n', ...
+                callchaintext(callChain), msg)
+        end
 
-    segmentsToInclude = 1:length(GshhsCoasts);
-    segmentsToInclude = ...
-        segmentsToInclude(all(segmentsToInclude ~= [57, 77, 78]'));
-    gshhsCoastPoly = union([GshhsCoasts(segmentsToInclude).Polygon]);
+        segmentsToInclude = 1:length(GshhsCoasts);
+        segmentsToInclude = ...
+            segmentsToInclude(all(segmentsToInclude ~= [57, 77, 78]'));
+        gshhsCoastPoly = union([GshhsCoasts(segmentsToInclude).Polygon]);
 
-    gshhsCoastXY = poly2xy(gshhsCoastPoly); %#ok<NASGU>
+        gshhsCoastXY = poly2xy(gshhsCoastPoly); %#ok<NASGU>
 
-    % Save the data if requested
-    if saveData
+        if ~beQuiet
+            t = toc;
+            fprintf(repmat('\b', 1, length(msg) + 1));
+            fprintf('took %.2f seconds.\n', t)
+        end
 
-        if gshhsFileExists
-            save(gshhsFileName, vars{:}, '-append')
+        % Save the data if requested
+        if saveData
 
-            if ~beQuiet
-                fprintf('%s updated %s\n', upper(mfilename), gshhsFileName)
-            end
+            if gshhsFileExists
+                save(gshhsFileName, vars{:}, '-append')
 
-        else
-            save(gshhsFileName, vars{:})
+                if ~beQuiet
+                    fprintf('[ULMO>%s] Updated <a href="matlab: fprintf(''%s\\n'');open(''%s'')">GSHHS coastline data</a>.\n', ...
+                        callchaintext(callChain), gshhsFileName, gshhsFileName);
+                end
 
-            if ~beQuiet
-                fprintf('%s saved %s\n', upper(mfilename), gshhsFileName)
+            else
+                save(gshhsFileName, vars{:})
+
+                if ~beQuiet
+                    fprintf('[ULMO>%s] Saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">GSHHS coastline data</a>.\n', ...
+                        callchaintext(callChain), gshhsFileName, gshhsFileName);
+                end
+
             end
 
         end
@@ -108,6 +121,7 @@ function varargout = parseinputs(inputArguments)
     addParameter(ip, 'ForceNew', false, @(x) islogical(x) || isnumeric(x));
     addParameter(ip, 'SaveData', true, @(x) islogical(x) || isnumeric(x));
     addParameter(ip, 'BeQuiet', false, @(x) islogical(x) || isnumeric(x));
+    addParameter(ip, 'CallChain', {}, @iscell);
     parse(ip, inputArguments{:});
 
     %% Assigning the inputs
@@ -122,6 +136,7 @@ function varargout = parseinputs(inputArguments)
     forcenew = logical(ip.Results.ForceNew);
     saveData = logical(ip.Results.SaveData);
     beQuiet = logical(ip.Results.BeQuiet);
+    callChain = [ip.Results.CallChain, {mfilename}];
 
     %% Additional parameters
     [gshhsFileName, ~, gshhsFileExists] = gshhsfilename( ...
@@ -134,7 +149,7 @@ function varargout = parseinputs(inputArguments)
         {dataQuality, latlim, lonlim, minLandArea, ...
          upscale, buf, tol, lonOrigin, ...
          gshhsFileName, gshhsFileExists, ...
-         forcenew, saveData, beQuiet};
+         forcenew, saveData, beQuiet, callChain};
 end
 
 function p = croptolims(p, latlim, lonlim, lonOrigin)
