@@ -105,7 +105,8 @@
 %   GRACE2PLMT (GRACE2PLMT_NEW), PLM2SLEP
 %
 % Last modified by
-%   2026/01/29, williameclee@arizona.edu (@williameclee)
+%   2026/02/12, williameclee@arizona.edu (@williameclee)
+%     - Added support for ALMA3 love numbers
 %   2024/08/30, williameclee@arizona.edu (@williameclee)
 %   2022/05/18, charig@princeton.edu (@harig00)
 %   2012/06/26, fjsimons@alum.mit.edu (@fjsimons)
@@ -368,7 +369,9 @@ function outputPath = getoutputfile(domain, L, ...
     productStr = [product{1}, '_', product{2}, '_', num2str(product{3})];
 
     if strcmpi(unit, 'SD')
-        unit = sprintf('%s_%s', unit, loveNumSrc);
+         % Sanitize love number source for use in filenames (remove whitespace)
+        loveNumSrcSanitized = regexprep(loveNumSrc, '\s+', '');
+        unit = sprintf('%s_%s', unit, loveNumSrcSanitized);
     end
 
     switch domainType(domain)
