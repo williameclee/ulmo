@@ -267,6 +267,12 @@
         "type": ["char", "choices={'datetime','datenum'}"],
         "kind": "namevalue",
         "purpose": "Type of the time vector"
+      },
+      {
+        "name": "LoveNumSource",
+        "type": ["char"],
+        "kind": "namevalue",
+        "purpose": "source of load Love numbers"
       }
     ]
   },
@@ -317,6 +323,12 @@
         "type": ["char", "choices={'datetime','datenum'}"],
         "kind": "namevalue",
         "purpose": "Type of the time vector"
+      },
+      {
+        "name": "LoveNumSource",
+        "type": ["char"],
+        "kind": "namevalue",
+        "purpose": "source of load Love numbers"
       }
     ],
     "outputs": [

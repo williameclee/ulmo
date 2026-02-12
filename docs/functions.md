@@ -58,7 +58,7 @@ The ultimate goal is to drop the `_new` suffixes and replace the original functi
 | Function name | Description | Package dependencies | Data dependencies | Notes |
 |:---|:---|:---|:---|:---|
 | `grace2fingerprint` | Solves the SLF from GRACE data on land. | | GRACE | |
-| `lovenumber` | Reads the elastic Love numbers for geoid/VLM/HLM. | | [ISSM](https://github.com/ISSMteam/ISSM.git) | Replacement for `lovenums` in [slepian_delta](https://github.com/csdms-contrib/slepian_delta.git). |
+| `lovenumber` | Reads the elastic Love numbers for geoid/VLM/HLM. | | [ISSM](https://github.com/ISSMteam/ISSM.git), [slepian_delta](https://github.com/csdms-contrib/slepian_delta.git), or [ALMA3](https://github.com/danielemelini/ALMA3.git) | Replacement for `lovenums` in [slepian_delta](https://github.com/csdms-contrib/slepian_delta.git). |
 | `slfa2plmt` | Reads and converts the *RSL* SLF calculated by [Adhikari et al. (2019)](https://doi.org/10.5194/essd-11-629-2019) to spherical harmonic fields. | | [Adhikari et al. (2019)](https://doi.org/10.5194/essd-11-629-2019) | WIP |
 | `slfa2slept` | Projects the *RSL* SLF calculated by [Adhikari et al. (2019)](https://doi.org/10.5194/essd-11-629-2019) to Slepian coefficients. | [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git) | See `slfa2plmt` | WIP |
 | `solvesle` | Solves the elastic/transient SLE for a given mass load and land water mask. | | none | |
@@ -109,4 +109,4 @@ The ultimate goal is to drop the `_new` suffixes and replace the original functi
 
 ---
 
-Last modified: 2025/10/16, [@williameclee](mailto:williameclee@arizona.edu)
+Last modified: 2026/01/29, [@williameclee](mailto:williameclee@arizona.edu)

@@ -42,6 +42,12 @@
 %       The default option is whatever the default is for GRACE2PLMT (as of
 %       right now, SD).
 %       Data type: char | []
+%   LoveNumSource - Source of load Love numbers
+%       - 'ISSM': Love numbers from the Ice Sheet System Model (ISSM)
+%       - 'Wahr': Love numbers as used in slepian_delta package
+%       - 'ALMA3 <model>': Love numbers from the ALMA3 models (currently
+%           has to be added manually)
+%       The default source is 'ISSM'.
 %   Deg1Correction, C20Correction, C30Correction - Logical flag to apply
 %       the degree 1, C20, or C30 corrections using the techinical notes
 %       See GRACE2PLMT (GRACE2PLMT_NEW) for more details.
@@ -99,7 +105,8 @@
 %   GRACE2PLMT (GRACE2PLMT_NEW), PLM2SLEP
 %
 % Last modified by
-%   2025/10/16, williameclee@arizona.edu (@williameclee)
+%   2026/02/12, williameclee@arizona.edu (@williameclee)
+%     - Added support for ALMA3 love numbers
 %   2024/08/30, williameclee@arizona.edu (@williameclee)
 %   2022/05/18, charig@princeton.edu (@harig00)
 %   2012/06/26, fjsimons@alum.mit.edu (@fjsimons)
@@ -107,7 +114,7 @@
 function varargout = grace2slept_new(varargin)
     %% Initialisation
     % Parse inputs
-    [product, domain, L, phi, theta, omega, unit, timelim, ...
+    [product, domain, L, phi, theta, omega, unit, loveNumSrc, timelim, ...
          truncation, ...
          deg1corr, c20corr, c30corr, redoDeg1, ...
          outputFmt, timeFmt, forceNew, saveData, beQuiet, callChain] = ...
@@ -133,7 +140,7 @@ function varargout = grace2slept_new(varargin)
     % Output file
     outputPath = getoutputfile(domain, L, ...
         product, truncation, unit, bp, ...
-        deg1corr, c20corr, c30corr);
+        deg1corr, c20corr, c30corr, loveNumSrc);
 
     %% Loading existing data
     % If this expansion already exists, load it.  Otherwise, or if we force
@@ -166,7 +173,7 @@ function varargout = grace2slept_new(varargin)
     %% Processing GRACE data
     % Use GRACE2PLMT to get the GRACE data
     [plmt, stdPlmt, dates] = ...
-        grace2plmt_new(product, "Unit", unit, ...
+        grace2plmt_new(product, "Unit", unit, "LoveNumSource", loveNumSrc, ...
         "OutputFormat", 'timefirst', "TimeFormat", 'datetime', ...
         "Deg1Correction", deg1corr, "C20Correction", c20corr, "C30Correction", c30corr, "RecomputeDegree1", redoDeg1, ...
         "BeQuiet", beQuiet, "CallChain", callChain);
@@ -221,6 +228,7 @@ function varargout = parseinputs(varargin)
     dfOpt.CapSpecs = 0;
     dfOpt.Truncation = [];
     dfOpt.Unit = [];
+    dfOpt.LoveNumSrc = 'ISSM';
     dfOpt.OutputFormat = 'timefirst';
     dfOpt.TimeFormat = 'datetime';
     dfOpt.ForceNew = false;
@@ -245,12 +253,13 @@ function varargout = parseinputs(varargin)
         @(x) ((isnumeric(x) && isscalar(x) && x > 0) || ...
         strcmp(x, 'N')) || (isempty(x)));
     addOptional(ip, 'Unit', dfOpt.Unit, ...
-        @(x) ischar(x) || isempty(x));
+        @(x) ischar(x) || isstring(x) || isempty(x));
     addOptional(ip, 'TimeRange', [], ...
         @(x) isempty(x) || ((isdatetime(x) || isnumeric(x))));
     addOptional(ip, 'ForceNew', dfOpt.ForceNew, ...
         @(x) ((isnumeric(x) || islogical(x)) && isscalar(x)) || isempty(x));
     addOptional(ip, 'MoreRegionSpecs', {}, @iscell);
+    addParameter(ip, 'LoveNumSource', dfOpt.LoveNumSrc, @(x) ischar(x) || isstring(x));
     addParameter(ip, 'SaveData', [], ...
         @(x) ((isnumeric(x) || islogical(x)) && isscalar(x)) || isempty(x));
     addParameter(ip, 'BeQuiet', false, ...
@@ -284,7 +293,9 @@ function varargout = parseinputs(varargin)
     phi = conddefval(ip.Results.phi, dfOpt.CapSpecs);
     theta = conddefval(ip.Results.theta, dfOpt.CapSpecs);
     omega = conddefval(ip.Results.omega, dfOpt.CapSpecs);
-    unit = conddefval(ip.Results.Unit, dfOpt.Unit);
+    unit = char(conddefval(ip.Results.Unit, dfOpt.Unit));
+    loveNumSource = ...
+        char(conddefval(ip.Results.LoveNumSource, dfOpt.LoveNumSrc));
     domainSpecs = ip.Results.MoreRegionSpecs;
     J = conddefval(ip.Results.Truncation, dfOpt.Truncation);
     timeRange = ip.Results.TimeRange;
@@ -325,7 +336,7 @@ function varargout = parseinputs(varargin)
 
     varargout = ...
         {product, domain, L, ...
-         phi, theta, omega, unit, timeRange, J, ...
+         phi, theta, omega, unit, loveNumSource, timeRange, J, ...
          deg1corr, c20corr, c30corr, redoDeg1, ...
          outputFmt, timeFmt, ...
          forceNew, saveData, beQuiet, callChain};
@@ -333,7 +344,7 @@ end
 
 function outputPath = getoutputfile(domain, L, ...
         product, truncation, unit, bp, ...
-        deg1corr, c20corr, c30corr)
+        deg1corr, c20corr, c30corr, loveNumSrc)
 
     % Folder
     if ~isempty(getenv('GRACE'))
@@ -356,6 +367,12 @@ function outputPath = getoutputfile(domain, L, ...
     end
 
     productStr = [product{1}, '_', product{2}, '_', num2str(product{3})];
+
+    if strcmpi(unit, 'SD')
+         % Sanitize love number source for use in filenames (remove whitespace)
+        loveNumSrcSanitized = regexprep(loveNumSrc, '\s+', '');
+        unit = sprintf('%s_%s', unit, loveNumSrcSanitized);
+    end
 
     switch domainType(domain)
         case 'polar'

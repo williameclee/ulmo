@@ -36,6 +36,13 @@
 %       The default frame is the CF frame, which is the frame used in
 %       SLEPIAN_DELTA and most gravimetry and altimetry studies.
 %       Data type: CHAR
+%   LoveNumSource - Source of load Love numbers
+%       - 'ISSM': Love numbers from the Ice Sheet System Model (ISSM)
+%       - 'ALMA3 <model>': Love numbers from the ALMA3 models (currently
+%           has to be added manually)
+%       Note: The 'Wahr' Love number set used in the SLEPIAN_DELTA package
+%       is not supported for SOLVESLE and will result in an error if used.
+%       The default source is 'ISSM'.
 %   RotationFeedback - Logical flag to include rotation feedback
 %       The default option is true.
 %       Data type: LOGICAL
@@ -83,7 +90,8 @@
 %   2024/11/20, williameclee@arizona.edu (@williameclee)
 %
 % Last modified by
-%   2025/11/02, williameclee@arizona.edu (@williameclee)
+%   2026/02/12, williameclee@arizona.edu (@williameclee)
+%     - Added support for ALMA3 love numbers
 
 function varargout = solvesle(varargin)
     %% Initialisation
@@ -91,7 +99,7 @@ function varargout = solvesle(varargin)
 
     % Parse input arguments
     [forcingLoadPlm, forcingLoadStdPlm, includesDO, computeError, ...
-         L, ocean, frame, doRotationFeedback, maxIter, ...
+         L, ocean, frame, loveNumSrc, doRotationFeedback, maxIter, ...
          oceanKernel, oceanFunPlm, kernelOrder, initialPlm, beQuiet] = ...
         parseinputs(varargin{:});
 
@@ -197,13 +205,13 @@ function varargout = solvesle(varargin)
     [~, degree] = addmon(L);
     degrees = [degree, degree];
     degrees = degrees(kernelOrder);
-    llnGeoids = lovenumber(degrees, 'LLN geoid', frame);
-    llnVlms = lovenumber(degrees, 'LLN VLM', frame);
+    llnGeoids = lovenumber(degrees, 'LLN geoid', frame, "Source", loveNumSrc);
+    llnVlms = lovenumber(degrees, 'LLN VLM', frame, "Source", loveNumSrc);
     llnFactors = 1 + llnGeoids - llnVlms;
-    tlnGeoids = lovenumber(degrees, 'TLN geoid', frame);
-    tlnVlms = lovenumber(degrees, 'TLN VLM', frame);
+    tlnGeoids = lovenumber(degrees, 'TLN geoid', frame, "Source", loveNumSrc);
+    tlnVlms = lovenumber(degrees, 'TLN VLM', frame, "Source", loveNumSrc);
     tlnFactors = 1 + tlnGeoids - tlnVlms;
-    llnGeoid2 = lovenumber(2, 'LLN geoid', frame);
+    llnGeoid2 = lovenumber(2, 'LLN geoid', frame, "Source", loveNumSrc);
 
     % Construct the SLE kernel
     % Gravitational potential
@@ -377,6 +385,8 @@ function varargout = parseinputs(varargin)
         @(x) islogical(x) || isnumeric(x));
     addOptional(ip, 'maxIter', 10, ...
         @(x) isnumeric(x) && isscalar(x) && x > 0);
+    addParameter(ip, 'LoveNumSource', 'ISSM', ...
+        @(x) ischar(x) || isstring(x));
     addParameter(ip, 'OceanKernel', [], @(x) isnumeric(x));
     addParameter(ip, 'OceanFunction', [], @(x) isnumeric(x));
     addParameter(ip, 'KernelOrder', [], @(x) isnumeric(x));
@@ -388,6 +398,7 @@ function varargout = parseinputs(varargin)
     L = ip.Results.L;
     ocean = ip.Results.Ocean;
     frame = upper(ip.Results.frame);
+    loveNumSrc = char(ip.Results.LoveNumSource);
     doRotationFeedback = ip.Results.RotationFeedback;
     maxIter = ip.Results.maxIter;
     oceanKernel = ip.Results.OceanKernel;
@@ -395,6 +406,10 @@ function varargout = parseinputs(varargin)
     kernelOrder = ip.Results.KernelOrder;
     initialPlm = ip.Results.InitialCondition;
     beQuiet = logical(ip.Results.BeQuiet);
+
+    if strcmpi(loveNumSrc, "Wahr")
+        error("Wahr's (and slepian's) love numbers are only provided for loading gravitational potential, which would not be sufficient for solving the SLE. Consider using ISSM (preferred) or ALMA3 love numbers instead.");
+    end
 
     % Check input sizes
     includesDO = size(forcingPlm, 2) == 4;
@@ -452,7 +467,7 @@ function varargout = parseinputs(varargin)
 
     varargout = ...
         {forcingPlm, forcingStdPlm, includesDO, computeError, ...
-         L, ocean, frame, doRotationFeedback, maxIter, ...
+         L, ocean, frame, loveNumSrc, doRotationFeedback, maxIter, ...
          oceanKernel, oceanFunSph, kernelOrder, initialPlm, beQuiet};
 end
 
