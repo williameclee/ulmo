@@ -1,38 +1,47 @@
+%% GSHHSSTRUCT Retrieves the GSHHS coastline data and formats it into a struct
+%
+% Last modified
+%   2026/02/12, williameclee@arizona.edu (@williameclee)
+%     - Added varible check before loading and some other minor refactor
+
 function varargout = gshhsstruct(varargin)
     %% Initialisation
     warning('off', 'MATLAB:polyshape:repairedBySimplify');
     warning('off', 'MATLAB:polyshape:checkAndSimplify');
-    p = inputParser;
-    addOptional(p, 'DataQuality', 'c', ...
+    ip = inputParser;
+    addOptional(ip, 'DataQuality', 'c', ...
         @(x) ischar(x) && ismember(x, 'cfhil'));
-    addOptional(p, 'Upscale', 0, @isnumeric);
-    addOptional(p, 'Buffer', 0, @isnumeric);
-    addOptional(p, 'MinLandArea', 90 ^ 2, @isnumeric);
-    addOptional(p, 'Tolerence', 0, @isnumeric);
-    addParameter(p, 'ForceReload', false, @islogical);
-    addParameter(p, 'SaveData', true, @islogical);
-    addParameter(p, 'Quiet', false, @islogical);
-    parse(p, varargin{:});
+    addOptional(ip, 'Upscale', 0, @isnumeric);
+    addOptional(ip, 'Buffer', 0, @isnumeric);
+    addOptional(ip, 'MinLandArea', 90 ^ 2, @isnumeric);
+    addOptional(ip, 'Tolerence', 0, @isnumeric);
+    addParameter(ip, 'ForceNew', false, @islogical);
+    addParameter(ip, 'SaveData', true, @islogical);
+    addParameter(ip, 'Quiet', false, @islogical);
+    addParameter(ip, 'CallChain', {}, @iscell);
+    parse(ip, varargin{:});
 
-    dataQuality = p.Results.DataQuality;
-    upscale = p.Results.Upscale;
-    buf = p.Results.Buffer;
-    minLandArea = p.Results.MinLandArea;
-    tol = p.Results.Tolerence;
-    forceReload = p.Results.ForceReload;
-    saveData = p.Results.SaveData;
-    beQuiet = p.Results.Quiet;
+    dataQuality = ip.Results.DataQuality;
+    upscale = ip.Results.Upscale;
+    buf = ip.Results.Buffer;
+    minLandArea = ip.Results.MinLandArea;
+    tol = ip.Results.Tolerence;
+    forceNew = ip.Results.ForceNew;
+    saveData = ip.Results.SaveData;
+    beQuiet = ip.Results.Quiet;
+    callChain = [ip.Results.CallChain, {mfilename}];
 
     %% Checking if the data already exists
     [matFileName, ~, matFileExists] = gshhsfilename( ...
         'DataQuality', dataQuality, 'Upscale', upscale, ...
         'MinLandArea', minLandArea, 'Tolerence', tol, 'Buffer', buf);
 
-    if matFileExists && ~forceReload
+    if matFileExists && ~forceNew && ismember('GshhsCoasts', who('-file', matFileName))
         load(matFileName, 'GshhsCoasts')
 
         if ~beQuiet
-            fprintf('%s loading %s\n', upper(mfilename), matFileName);
+            fprintf('[ULMO>%s] Loaded <a href="matlab: fprintf(''%s\\n'');open(''%s'')">GSHHS struct</a>.\n', ...
+                callchaintext(callChain), matFileName, matFileName);
         end
 
         varargout = returndata(nargout, GshhsCoasts);
@@ -137,7 +146,8 @@ function varargout = gshhsstruct(varargin)
     end
 
     if ~beQuiet
-        fprintf('%s saving %s\n', upper(mfilename), matFileName)
+        fprintf('[ULMO>%s] Saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">GSHHS struct</a>.\n', ...
+            callchaintext(callChain), matFileName, matFileName);
     end
 
 end

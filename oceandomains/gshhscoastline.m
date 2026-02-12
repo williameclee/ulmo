@@ -27,7 +27,7 @@ function varargout = gshhscoastline(varargin)
     else
         GshhsCoasts = gshhsstruct('DataQuality', dataQuality, ...
             'Upscale', upscale, 'Buffer', buf, ...
-            'Quiet', true, 'ForceReload', forcenew);
+            'Quiet', true, 'ForceNew', forcenew);
     end
 
     if ~beQuiet
