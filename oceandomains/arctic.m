@@ -110,7 +110,6 @@ function varargout = arctic(varargin)
     if dataExists && ~forceNew && all(ismember({'XY', 'p'}, who('-file', dataFile)))
         load(dataFile, 'XY', 'p')
 
-        % Make sure the requested data exists
         if beQuiet < 2
             fprintf('%s loaded %s\n', upper(mfilename), dataFile)
         end
