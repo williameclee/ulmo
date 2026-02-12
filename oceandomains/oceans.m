@@ -69,7 +69,9 @@
 % See also
 %   OCEANPOLY, GSHHSCOASTLINE, BUFFER4OCEANS
 %
-% Last modified by
+% Last modified
+%   2026/02/12, williameclee@arizona.edu (@williameclee)
+%     - Added varible check before loading
 %   2025/06/02, williameclee@arizona.edu (@williameclee)
 
 function varargout = oceans(varargin)
@@ -98,27 +100,21 @@ function varargout = oceans(varargin)
         'Upscale', upscale, 'Latlim', latlim, ...
         'Buffer', buf, 'MoreBuffers', moreBufs);
 
-    if dataExists && ~forceNew
+    if dataExists && ~forceNew && all(ismember({'XY', 'p'}, who('-file', dataFile)))
         load(dataFile, 'XY', 'p')
 
-        % Make sure the requested data exists
-        if exist('XY', 'var') && exist('p', 'var')
-
-            if beQuiet < 2
-                fprintf('%s loaded %s\n', upper(mfilename), dataFile)
-            end
-
-            if lonOrigin ~= lonOriginD
-                [Y, X] = flatearthpoly(XY(:, 2), XY(:, 1), lonOrigin);
-                p = polyshape(X, Y);
-                XY = poly2xy(p);
-            end
-
-            varargout = returncoastoutputs(nargout, XY, p);
-
-            return
+        if beQuiet < 2
+            fprintf('%s loaded %s\n', upper(mfilename), dataFile)
         end
 
+        if lonOrigin ~= lonOriginD
+            [Y, X] = flatearthpoly(XY(:, 2), XY(:, 1), lonOrigin);
+            p = polyshape(X, Y);
+            XY = poly2xy(p);
+        end
+
+        varargout = returncoastoutputs(nargout, XY, p);
+        return
     end
 
     %% Compute the ocean boundary

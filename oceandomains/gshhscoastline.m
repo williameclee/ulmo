@@ -1,3 +1,9 @@
+%% GSHHSCOASTLINE Retrieves the GSHHS coastline data and formats it
+%
+% Last modified
+%   2026/02/12, williameclee@arizona.edu (@williameclee)
+%     - Added varible check before loading
+
 function varargout = gshhscoastline(varargin)
     %% Initialisation
     % Suppress warnings
@@ -9,9 +15,10 @@ function varargout = gshhscoastline(varargin)
          forcenew, saveData, beQuiet] = parseinputs(varargin);
 
     %% Reteiving the original data
-    if gshhsFileExists && ~forcenew
-        load(gshhsFileName, ...
-            'GshhsCoasts', 'gshhsCoastXY', 'gshhsCoastPoly')
+    vars = {'GshhsCoasts', 'gshhsCoastXY', 'gshhsCoastPoly'};
+
+    if gshhsFileExists && ~forcenew && all(ismember(vars, who('-file', gshhsFileName)))
+        load(gshhsFileName, vars{:})
 
         if ~beQuiet
             fprintf('%s loaded %s\n', upper(mfilename), gshhsFileName);
@@ -23,42 +30,30 @@ function varargout = gshhscoastline(varargin)
             'Quiet', true, 'ForceReload', forcenew);
     end
 
-    % Check if the data is complete
-    needsUpdate = false;
-
-    if ~exist('gshhsCoastPoly', 'var')
-        needsUpdate = true;
-
-        if ~beQuiet
-            fprintf('%s generating the coasline polygon, this may take a while...\n', ...
-                upper(mfilename))
-        end
-
-        segmentsToInclude = 1:length(GshhsCoasts);
-        segmentsToInclude = ...
-            segmentsToInclude(all(segmentsToInclude ~= [57, 77, 78]'));
-        gshhsCoastPoly = union([GshhsCoasts(segmentsToInclude).Polygon]);
+    if ~beQuiet
+        fprintf('%s generating the coasline polygon, this may take a while...\n', ...
+            upper(mfilename))
     end
 
-    if ~exist('gshhsCoastXY', 'var')
-        gshhsCoastXY = poly2xy(gshhsCoastPoly);
-    end
+    segmentsToInclude = 1:length(GshhsCoasts);
+    segmentsToInclude = ...
+        segmentsToInclude(all(segmentsToInclude ~= [57, 77, 78]'));
+    gshhsCoastPoly = union([GshhsCoasts(segmentsToInclude).Polygon]);
+
+    gshhsCoastXY = poly2xy(gshhsCoastPoly); %#ok<NASGU>
 
     % Save the data if requested
-    if saveData && needsUpdate
+    if saveData
 
         if gshhsFileExists
-            save(gshhsFileName, ...
-                'gshhsCoastXY', 'gshhsCoastPoly', 'GshhsCoasts', ...
-            '-append')
+            save(gshhsFileName, vars{:}, '-append')
 
             if ~beQuiet
                 fprintf('%s updated %s\n', upper(mfilename), gshhsFileName)
             end
 
         else
-            save(gshhsFileName, ...
-                'gshhsCoastXY', 'gshhsCoastPoly', 'GshhsCoasts')
+            save(gshhsFileName, vars{:})
 
             if ~beQuiet
                 fprintf('%s saved %s\n', upper(mfilename), gshhsFileName)
@@ -98,35 +93,35 @@ end
 %% Subfunctions
 function varargout = parseinputs(inputArguments)
     %% Defining the input parser
-    p = inputParser;
-    addOptional(p, 'dataQuality', 'c', ...
+    ip = inputParser;
+    addOptional(ip, 'dataQuality', 'c', ...
         @(x) ischar(x) && ismember(x, 'cfhil'));
-    addOptional(p, 'LatLim', [-90, 90], ...
+    addOptional(ip, 'LatLim', [-90, 90], ...
         @(x) isnumeric(x) && length(x) == 2);
-    addOptional(p, 'LonLim', [0, 360], ...
+    addOptional(ip, 'LonLim', [0, 360], ...
         @(x) isnumeric(x) && length(x) == 2);
-    addOptional(p, 'MinLandArea', 30, @isnumeric);
-    addOptional(p, 'Upscale', 0, @isnumeric);
-    addOptional(p, 'Buffer', 0, @isnumeric);
-    addOptional(p, 'Tolerence', 0.2, @isnumeric);
-    addParameter(p, 'LonOrigin', 180, @isnumeric);
-    addParameter(p, 'ForceNew', false, @(x) islogical(x) || isnumeric(x));
-    addParameter(p, 'SaveData', true, @(x) islogical(x) || isnumeric(x));
-    addParameter(p, 'BeQuiet', false, @(x) islogical(x) || isnumeric(x));
-    parse(p, inputArguments{:});
+    addOptional(ip, 'MinLandArea', 30, @isnumeric);
+    addOptional(ip, 'Upscale', 0, @isnumeric);
+    addOptional(ip, 'Buffer', 0, @isnumeric);
+    addOptional(ip, 'Tolerence', 0.2, @isnumeric);
+    addParameter(ip, 'LonOrigin', 180, @isnumeric);
+    addParameter(ip, 'ForceNew', false, @(x) islogical(x) || isnumeric(x));
+    addParameter(ip, 'SaveData', true, @(x) islogical(x) || isnumeric(x));
+    addParameter(ip, 'BeQuiet', false, @(x) islogical(x) || isnumeric(x));
+    parse(ip, inputArguments{:});
 
     %% Assigning the inputs
-    dataQuality = p.Results.dataQuality;
-    latlim = p.Results.LatLim;
-    lonlim = p.Results.LonLim;
-    minLandArea = p.Results.MinLandArea;
-    upscale = p.Results.Upscale;
-    buf = p.Results.Buffer;
-    tol = p.Results.Tolerence;
-    lonOrigin = p.Results.LonOrigin;
-    forcenew = logical(p.Results.ForceNew);
-    saveData = logical(p.Results.SaveData);
-    beQuiet = logical(p.Results.BeQuiet);
+    dataQuality = ip.Results.dataQuality;
+    latlim = ip.Results.LatLim;
+    lonlim = ip.Results.LonLim;
+    minLandArea = ip.Results.MinLandArea;
+    upscale = ip.Results.Upscale;
+    buf = ip.Results.Buffer;
+    tol = ip.Results.Tolerence;
+    lonOrigin = ip.Results.LonOrigin;
+    forcenew = logical(ip.Results.ForceNew);
+    saveData = logical(ip.Results.SaveData);
+    beQuiet = logical(ip.Results.BeQuiet);
 
     %% Additional parameters
     [gshhsFileName, ~, gshhsFileExists] = gshhsfilename( ...
@@ -147,7 +142,7 @@ function p = croptolims(p, latlim, lonlim, lonOrigin)
     XY = poly2xy(p);
     [Y, X] = ...
         flatearthpoly(XY(:, 2), XY(:, 1), lonOrigin);
-    X = X - floor(min(X(:))/360)*360;
+    X = X - floor(min(X(:)) / 360) * 360;
     p = polyshape([X, Y]);
 
     %% Cropping
