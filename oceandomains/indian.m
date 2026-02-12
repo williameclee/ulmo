@@ -110,7 +110,6 @@ function varargout = indian(varargin)
         end
 
         varargout = returncoastoutputs(nargout, XY, p);
-
         return
     end
 
