@@ -2,7 +2,7 @@
 %
 % Last modified
 %   2026/02/12, williameclee@arizona.edu (@williameclee)
-%     - Added varible check before loading and some other minor refactor
+%     - Added variable check before loading and some other minor refactor
 
 function varargout = gshhsstruct(varargin)
     %% Initialisation

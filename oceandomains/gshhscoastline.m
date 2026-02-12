@@ -2,7 +2,7 @@
 %
 % Last modified
 %   2026/02/12, williameclee@arizona.edu (@williameclee)
-%     - Added varible check before loading
+%     - Added variable check before loading
 
 function varargout = gshhscoastline(varargin)
     %% Initialisation

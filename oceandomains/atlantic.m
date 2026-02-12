@@ -70,7 +70,7 @@
 %
 % Last modified
 %   2026/02/12, williameclee@arizona.edu (@williameclee)
-%     - Added varible check before loading
+%     - Added variable check before loading
 %   2024/08/15, williameclee@arizona.edu (@williameclee)
 
 function varargout = atlantic(varargin)
