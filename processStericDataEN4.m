@@ -9,25 +9,29 @@ function processStericDataEN4(inputFolder, outputFolder, options)
     forceNew = options.ForceNew;
     tlim = [datetime(1990, 1, 1), datetime(2010, 12, 31)];
 
-    % zipPattern = 'EN.4.2.2.analyses.c14.*.zip';
-    % zipFiles = dir(fullfile(inputFolder, zipPattern));
-    % zipFiles = {zipFiles.name};
+    zipPattern = 'EN.4.2.2.analyses.c14.*.zip';
+    zipFiles = dir(fullfile(inputFolder, zipPattern));
+    zipFiles = {zipFiles.name};
 
-    % if ~isempty(zipFiles)
-    %     recycle('on');
+    if ~isempty(zipFiles)
+        recycle('on');
 
-    %     for iFile = 1:length(zipFiles)
-    %         zipFile = zipFiles{iFile};
-    %         zipPath = fullfile(inputFolder, zipFile);
-    %         unzip(zipPath, inputFolder);
-    %         delete(zipPath);
-    %     end
+        for iFile = 1:length(zipFiles)
+            zipFile = zipFiles{iFile};
+            zipPath = fullfile(inputFolder, zipFile);
+            unzip(zipPath, inputFolder);
+            delete(zipPath);
+        end
 
-    % end
+    end
 
     inputPattern = 'EN.4.2.2.f.analysis.c14.*.nc';
     inputFiles = dir(fullfile(inputFolder, inputPattern));
     inputFiles = {inputFiles.name};
+
+    if ~exist(outputFolder, 'dir')
+        mkdir(outputFolder);
+    end
 
     parfor iFile = 1:length(inputFiles)
         inputFile = inputFiles{iFile};
@@ -293,34 +297,34 @@ function computesteric(dataPath, climatologyPath, options)
         reshape(layerThickness, 1, 1, []);
     halostericSls = (densityClim ./ haloDensity - 1) .* ...
         reshape(layerThickness, 1, 1, []);
-    thermostericSl = sum(thermostericSls, 3, 'omitmissing');
-    halostericSl = sum(halostericSls, 3, 'omitmissing');
+    thermostericSl = sum(thermostericSls, 3, 'omitnan');
+    halostericSl = sum(halostericSls, 3, 'omitnan');
 
     stericSls = (densityClim ./ density - 1) .* ...
         reshape(layerThickness, 1, 1, []);
-    stericSl = sum(stericSls, 3, 'omitmissing');
+    stericSl = sum(stericSls, 3, 'omitnan');
 
     isShallow = layerTop < 2000;
     shallowStericSls = (densityClim(:, :, isShallow) ./ density(:, :, isShallow) - 1) .* ...
         reshape(layerThickness(isShallow), 1, 1, []);
-    shallowStericSl = sum(shallowStericSls, 3, 'omitmissing');
+    shallowStericSl = sum(shallowStericSls, 3, 'omitnan');
     shallowThermostericSls = (densityClim(:, :, isShallow) ./ thermoDensity(:, :, isShallow) - 1) .* ...
         reshape(layerThickness(isShallow), 1, 1, []);
-    shallowThermostericSl = sum(shallowThermostericSls, 3, 'omitmissing');
+    shallowThermostericSl = sum(shallowThermostericSls, 3, 'omitnan');
     shallowHalostericSls = (densityClim(:, :, isShallow) ./ haloDensity(:, :, isShallow) - 1) .* ...
         reshape(layerThickness(isShallow), 1, 1, []);
-    shallowHalostericSl = sum(shallowHalostericSls, 3, 'omitmissing');
+    shallowHalostericSl = sum(shallowHalostericSls, 3, 'omitnan');
 
     isDeep = layerTop >= 2000;
     deepStericSls = (densityClim(:, :, isDeep) ./ density(:, :, isDeep) - 1) .* ...
         reshape(layerThickness(isDeep), 1, 1, []);
-    deepStericSl = sum(deepStericSls, 3, 'omitmissing');
+    deepStericSl = sum(deepStericSls, 3, 'omitnan');
     deepThermostericSls = (densityClim(:, :, isDeep) ./ thermoDensity(:, :, isDeep) - 1) .* ...
         reshape(layerThickness(isDeep), 1, 1, []);
-    deepThermostericSl = sum(deepThermostericSls, 3, 'omitmissing');
+    deepThermostericSl = sum(deepThermostericSls, 3, 'omitnan');
     deepHalostericSls = (densityClim(:, :, isDeep) ./ haloDensity(:, :, isDeep) - 1) .* ...
         reshape(layerThickness(isDeep), 1, 1, []);
-    deepHalostericSl = sum(deepHalostericSls, 3, 'omitmissing');
+    deepHalostericSl = sum(deepHalostericSls, 3, 'omitnan');
 
     try
         save(dataPath, vars{:}, '-append');
