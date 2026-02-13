@@ -48,12 +48,12 @@
 %
 % Examples
 %   The 'default' domain used for most applications is given by
-%   XY = npacific('Buffer', 1, 'MoreBuffers', {'earthquakes', 10});
+%   XY = gulf('Buffer', 1, 'MoreBuffers', {'earthquakes', 10});
 %
 % Notes
 %   The function is written intentionally so that it is compatible with
 %   other region functions from slepian_alpha, i.e.
-%   XY = npacific(upscale, buf)
+%   XY = gulf(upscale, buf)
 %   works as intended.
 %
 % Data source
@@ -121,8 +121,6 @@ function varargout = gulf(varargin)
     % Crop out more buffers
     [~, coastPoly] = buffer4oceans(coastPoly, ...
         'MoreBuffers', moreBufs, 'LonOrigin', lonOrigin);
-    % Manually remove small holes
-    coastPoly = manualadjustmentsw(coastPoly, buf, moreBufs, lonOrigin);
     % Subtract the land regions from the ocean boundary
     p = subtract(oceanPoly, coastPoly);
 
