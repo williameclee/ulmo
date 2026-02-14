@@ -7,7 +7,7 @@
 %   fun - Function name as a character vector or string scalar
 %
 % Output arguments
-%   txt - Call stack as a string scalar with clickable links to the
+%   txt - Call stack as a character vector with clickable links to the
 %       functions
 %
 % Last modified
@@ -21,7 +21,7 @@ function callChainTxt = callchaintext(funs)
     end
 
     arguments (Output)
-        callChainTxt (1, 1) string
+        callChainTxt (1, :) char {mustBeTextScalar}
     end
 
     if iscell(funs)
@@ -34,10 +34,18 @@ function callChainTxt = callchaintext(funs)
         funs = {funs};
     end
 
+    % Handle empty input: return an empty string scalar for an empty call chain.
+    if isempty(funs)
+        callChainTxt = "";
+        return
+    end
+
     % Remove consecutive identical elements
-    funs = funs([true, ~strcmp(funs(1:end - 1), funs(2:end))]);
+    if length(funs) > 1
+        funs = funs([true, ~strcmp(funs(1:end - 1), funs(2:end))]);
+    end
 
     callChainTxt = cellfun(@(x) sprintf('<a href="matlab: open(''%s'')">%s</a>', which(x), x), funs, "UniformOutput", false);
-    callChainTxt = strjoin(callChainTxt, '>');
+    callChainTxt = char(strjoin(callChainTxt, '>'));
 
 end
