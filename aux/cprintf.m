@@ -1,6 +1,6 @@
 %% CPRINTF - FPRINTF wrapper removing HTML tags when appropriate
-% Should behave exactly like FPRINTF, but if HotLinks is disabled (i.e. in 
-% a terminal environment), it will remove any <a></a> tags from the input 
+% Should behave exactly like FPRINTF, but if HotLinks is disabled (i.e. in
+% a terminal environment), it will remove any <a></a> tags from the input
 % string before printing.
 %
 % Author
@@ -21,7 +21,14 @@ function varargout = cprintf(varargin)
         return
     end
 
-    % Remove <a></a> tags if present
+    %% Removing tags
+    % Function/script files: only leave the name
+    txt = regexprep(txt, '<a[^>]*href="matlab: open\(''(.*?\.m)''\)"[^>]*>(.*?)</a>', '$2');
+    % Data files: show alt name and path
+    txt = regexprep(txt, '<a[^>]*href="matlab: fprintf\(''(.*?)\\n''\);open\(''(.*?)''\)"[^>]*>(.*?)</a>', '$3 ($2)');
+    % External links: show alt name and URL
+    txt = regexprep(txt, '<a[^>]*href="(https?://[^"]*)"[^>]*>(.*?)</a>', '$2 ($1)');
+    % Remaining tags
     txt = regexprep(txt, '<a[^>]*>', '');
     txt = strrep(txt, '</a>', '');
 
