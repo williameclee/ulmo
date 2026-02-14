@@ -35,6 +35,7 @@ function callChainTxt = callchaintext(funs)
     end
 
     funs = cellfun(@char, funs, "UniformOutput", false);
+    funs = funs(:)'; % Ensure funs is a row cell vector
 
     % Handle empty input: return an empty string scalar for an empty call chain.
     if all(cellfun(@isempty, funs))
