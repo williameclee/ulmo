@@ -83,7 +83,7 @@ function computedensity(inputPath, outputFolder, options)
 
         if ~options.BeQuiet
             fprintf('[ULMO>%s] Checked %s of %s, data already exist.\n', ...
-                callchaintext([options.CallChain, {mfilename}]), filehref(outputPath, 'steric data'), datetime(date, "Format", 'yyyy/MM'));
+                callchaintext([options.CallChain, {mfilename}]), filehref(outputPath, 'density data'), datetime(date, "Format", 'yyyy/MM'));
         end
 
         return
