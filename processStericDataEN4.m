@@ -4,7 +4,10 @@ function processStericDataEN4(inputFolder, outputFolder, options)
         inputFolder (1, :) char
         outputFolder (1, :) char
         options.ForceNew (1, 1) logical = false
+        options.CallChain (1, :) cell = {}
     end
+
+    callChain = [options.CallChain, {mfilename}];
 
     forceNew = options.ForceNew;
     tlim = [datetime(1990, 1, 1), datetime(2010, 12, 31)];
@@ -36,7 +39,7 @@ function processStericDataEN4(inputFolder, outputFolder, options)
     parfor iFile = 1:length(inputFiles)
         inputFile = inputFiles{iFile};
         inputPath = fullfile(inputFolder, inputFile);
-        computedensity(inputPath, outputFolder, ForceNew = forceNew);
+        computedensity(inputPath, outputFolder, ForceNew = forceNew, CallChain = callChain);
     end
 
     outputPattern = 'EN4c14-M*.mat';
@@ -46,18 +49,18 @@ function processStericDataEN4(inputFolder, outputFolder, options)
     climPath = fullfile(outputFolder, sprintf('EN4c14-C%s_%s.mat', datetime(tlim, "Format", 'yyyyMM')));
 
     computeclimatology(tlim, outputFolder, outputFiles, climPath, ...
-        ForceNew = forceNew);
+        ForceNew = forceNew, CallChain = callChain);
 
     parfor iFile = 1:length(outputFiles)
         outputFile = outputFiles{iFile};
         outputPath = fullfile(outputFolder, outputFile);
-        computesteric(outputPath, climPath, ForceNew = true);
+        computesteric(outputPath, climPath, ForceNew = forceNew, CallChain = callChain);
     end
 
     aggregatedPath = fullfile(outputFolder, 'EN4c14-steric.nc');
 
     aggregatesteric(outputFolder, outputFiles, aggregatedPath, ...
-        ForceNew = true);
+        ForceNew = forceNew, CallChain = callChain);
 end
 
 %% Subfunctions
@@ -71,6 +74,8 @@ function computedensity(inputPath, outputFolder, options)
         options.CallChain (1, :) cell = {}
     end
 
+    callChain = [options.CallChain, {mfilename}];
+
     date = datetime(1800, 1, 1) + days(ncread(inputPath, 'time'));
 
     outputFile = sprintf('EN4c14-M%s.mat', datetime(date, "Format", 'yyyyMM'));
@@ -82,8 +87,8 @@ function computedensity(inputPath, outputFolder, options)
             all(ismember(vars, who('-file', outputPath)))
 
         if ~options.BeQuiet
-            fprintf('[ULMO>%s] Checked %s of %s, data already exist.\n', ...
-                callchaintext([options.CallChain, {mfilename}]), filehref(outputPath, 'density data'), datetime(date, "Format", 'yyyy/MM'));
+            cprintf('[ULMO>%s] Skipped computing %s %s, data already exist.\n', ...
+                callchaintext(callChain), datetime(date, "Format", 'yyyy/MM'), filehref(outputPath, 'density data'));
         end
 
         return
@@ -125,7 +130,8 @@ function computedensity(inputPath, outputFolder, options)
     end
 
     if ~options.BeQuiet
-        fprintf('[ULMO>%s] Computed %s of %s.\n', callchaintext([options.CallChain, {mfilename}]), filehref(outputPath, 'density data'), datetime(date, "Format", 'yyyy/MM'));
+        cprintf('[ULMO>%s] Computed %s %s.\n', callchaintext(callChain), ...
+            datetime(date, "Format", 'yyyy/MM'), filehref(outputPath, 'density data'));
     end
 
 end
@@ -139,7 +145,10 @@ function computeclimatology(tlim, inputFolder, inputFiles, outputPath, options)
         outputPath (1, :) char
         options.ForceNew (1, 1) logical = false
         options.BeQuiet (1, 1) logical = false
+        options.CallChain (1, :) cell = {}
     end
+
+    callChain = [options.CallChain, {mfilename}];
 
     vars = {'consTempClim', 'salinityClim', 'densityClim'};
 
@@ -147,7 +156,8 @@ function computeclimatology(tlim, inputFolder, inputFiles, outputPath, options)
             all(ismember(vars, who('-file', outputPath)))
 
         if ~options.BeQuiet
-            fprintf('Skipped climatology %s\n', outputPath);
+            cprintf('[ULMO>%s] Skipped computing %s, data already exists.\n', ...
+                callchaintext(callChain), filehref(outputPath, 'climatology data'));
         end
 
         return
@@ -172,7 +182,8 @@ function computeclimatology(tlim, inputFolder, inputFiles, outputPath, options)
         if date < tlim(1) || date > tlim(2)
 
             if ~options.BeQuiet
-                fprintf('Skipped %s for climatology (out of time range)\n', inputFile);
+                cprintf('[ULMO>%s] Skipped %s for climatology (out of time range).\n', ...
+                    callchaintext(callChain), filehref(inputPath, 'data'));
             end
 
             continue
@@ -225,7 +236,8 @@ function computeclimatology(tlim, inputFolder, inputFiles, outputPath, options)
     save(outputPath, vars{:}, '-v7.3');
 
     if ~options.BeQuiet
-        fprintf('Computed climatology %s\n', outputPath);
+        cprintf('[ULMO>%s] Computed %s from %d files.\n', ...
+            callchaintext(callChain), filehref(outputPath, 'climatology data'), numClimFiles);
     end
 
 end
@@ -237,7 +249,10 @@ function computesteric(dataPath, climatologyPath, options)
         climatologyPath (1, :) char
         options.ForceNew (1, 1) logical = false
         options.BeQuiet (1, 1) logical = false
+        options.CallChain (1, :) cell = {}
     end
+
+    callChain = [options.CallChain, {mfilename}];
 
     if ~exist(dataPath, 'file')
         error('Data file %s does not exist.', dataPath);
@@ -265,7 +280,8 @@ function computesteric(dataPath, climatologyPath, options)
             (dir(dataPath).datenum > dir(climatologyPath).datenum)
 
         if ~options.BeQuiet
-            fprintf('Skipped %s, already computed\n', dataPath);
+            cprintf('[ULMO>%s] Skipped computing %s, data already exists and is newer than climatology.\n', ...
+                callchaintext(callChain), filehref(dataPath, 'steric sea level data'));
         end
 
         return
@@ -351,7 +367,8 @@ function computesteric(dataPath, climatologyPath, options)
     end
 
     if ~options.BeQuiet
-        fprintf('Computed steric sea level for %s\n', dataPath);
+        cprintf('[ULMO>%s] Computed %s.\n', ...
+            callchaintext(callChain), filehref(dataPath, 'steric sea level data'));
     end
 
 end
@@ -364,7 +381,10 @@ function aggregatesteric(inputFolder, inputFiles, outputPath, options)
         outputPath (1, :) char
         options.ForceNew (1, 1) logical = false
         options.BeQuiet (1, 1) logical = false
+        options.CallChain (1, :) cell = {}
     end
+
+    callChain = [options.CallChain, {mfilename}];
 
     [~, ~, outputExt] = fileparts(outputPath);
 
@@ -382,7 +402,8 @@ function aggregatesteric(inputFolder, inputFiles, outputPath, options)
                     all(ismember(vars, who('-file', outputPath)))
 
                 if ~options.BeQuiet
-                    fprintf('Steric sea level already exists in %s\n', outputPath);
+                    cprintf('[ULMO>%s] Skipped computing %s, data already exists.\n', ...
+                        callchaintext(callChain), filehref(outputPath, 'steric sea level data'));
                 end
 
                 return
@@ -401,7 +422,8 @@ function aggregatesteric(inputFolder, inputFiles, outputPath, options)
                         varNamesInFile))
 
                     if ~options.BeQuiet
-                        fprintf('Steric sea level already exists in %s\n', outputPath);
+                        cprintf('[ULMO>%s] Skipped computing %s, data already exists.\n', ...
+                            callchaintext(callChain), filehref(outputPath, 'steric sea level data'));
                     end
 
                     return
@@ -525,7 +547,8 @@ function aggregatesteric(inputFolder, inputFiles, outputPath, options)
     end
 
     if ~options.BeQuiet
-        fprintf('Aggregated steric sea level to %s\n', outputPath);
+        cprintf('[ULMO>%s] Aggregated %s.\n', ...
+            callchaintext(callChain), filehref(outputPath, 'steric sea level data'));
     end
 
 end
