@@ -18,7 +18,7 @@ function write2nc(outputPath, varname, var, options)
     end
 
     if ~isempty(options.Dimensions) && length(options.Dimensions) ~= ndims(var)
-        error ('Name of dimensions provided does not match variable dimensions (length = %d vs %d).', ...
+        error('Name of dimensions provided does not match variable dimensions (length = %d vs %d).', ...
             length(options.Dimensions), ndims(var));
     elseif ~isempty(options.Dimensions)
         % Pre-allocate dimensions cell array: name and size for each dimension
