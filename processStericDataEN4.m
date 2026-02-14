@@ -153,6 +153,8 @@ function computeclimatology(tlim, inputFolder, inputFiles, outputPath, options)
         return
     end
 
+    numClimFiles = 0;
+
     for iFile = 1:length(inputFiles)
         inputFile = inputFiles{iFile};
         inputPath = fullfile(inputFolder, inputFile);
@@ -205,7 +207,11 @@ function computeclimatology(tlim, inputFolder, inputFiles, outputPath, options)
         densityClim(isValidDensity) = ...
             densityClim(isValidDensity) + density(isValidDensity);
         densityCnt(isValidDensity) = densityCnt(isValidDensity) + 1;
+
+        numClimFiles = numClimFiles + 1;
     end
+
+    assert(numClimFiles > 0, 'No files found for climatology in the specified time range.');
 
     salinityClim = salinityClim ./ single(salinityCnt);
     salinityClim(salinityCnt == 0) = nan; %#ok<NASGU> - actually saved through VARS variable
