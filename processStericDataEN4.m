@@ -575,7 +575,7 @@ function write2nc(outputPath, varname, var, options)
     if iscell(options.Attributes)
 
         if mod(length(options.Attributes), 2) ~= 0
-            error('Attributes must be provided as name-value pairs (got length = %s).', ...
+            error('Attributes must be provided as name-value pairs (got length = %d).', ...
                 length(options.Attributes));
         end
 
