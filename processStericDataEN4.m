@@ -274,14 +274,26 @@ function computesteric(dataPath, climatologyPath, options)
     else
         pres = gsw_p_from_z(repmat(-depth(:)', [length(lat), 1]), lat);
 
-        thermoDensity = nan(size(density), 'single');
         haloDensity = nan(size(density), 'single');
+
+        for iDepth = 1:length(depth)
+            haloDensity(:, :, iDepth) = gsw_rho( ...
+                squeeze(salinity(:, :, iDepth)), squeeze(consTempClim(:, :, iDepth)), pres(iDepth));
+        end
+
+    end
+
+    % Compute thermosteric density
+    if ismember('thermoDensity', who('-file', dataPath))
+        load(dataPath, 'thermoDensity');
+    else
+        pres = gsw_p_from_z(repmat(-depth(:)', [length(lat), 1]), lat);
+
+        thermoDensity = nan(size(density), 'single');
 
         for iDepth = 1:length(depth)
             thermoDensity(:, :, iDepth) = gsw_rho( ...
                 squeeze(salinityClim(:, :, iDepth)), squeeze(consTemp(:, :, iDepth)), pres(iDepth));
-            haloDensity(:, :, iDepth) = gsw_rho( ...
-                squeeze(salinity(:, :, iDepth)), squeeze(consTempClim(:, :, iDepth)), pres(iDepth));
         end
 
     end
