@@ -29,6 +29,7 @@ The ultimate goal is to drop the `_new` suffixes and replace the original functi
 | `arctic` | Returns the boundary of the Arctic Ocean. | MATLAB Mapping Toolbox | [GSHHG](https://www.ngdc.noaa.gov/mgg/shorelines/data/gshhg/latest/), [Limits of oceans and seas](https://doi.pangaea.de/10.1594/PANGAEA.777975) |
 | `pacific` | Returns the boundary of the Pacific Ocean. | MATLAB Mapping Toolbox | [GSHHG](https://www.ngdc.noaa.gov/mgg/shorelines/data/gshhg/latest/), [Limits of oceans and seas](https://doi.pangaea.de/10.1594/PANGAEA.777975) |
 | `atlantic` | Returns the boundary of the Atlantic Ocean. | MATLAB Mapping Toolbox | [GSHHG](https://www.ngdc.noaa.gov/mgg/shorelines/data/gshhg/latest/), [Limits of oceans and seas](https://doi.pangaea.de/10.1594/PANGAEA.777975) |
+| `gulf` | Returns the boundary of the Gulf of Mexico. | MATLAB Mapping Toolbox | [GSHHG](https://www.ngdc.noaa.gov/mgg/shorelines/data/gshhg/latest/), [Limits of oceans and seas](https://doi.pangaea.de/10.1594/PANGAEA.777975) |
 
 ### Spherical Harmonic/Slepian Function Processing
 
@@ -109,4 +110,4 @@ The ultimate goal is to drop the `_new` suffixes and replace the original functi
 
 ---
 
-Last modified: 2026/01/29, [@williameclee](mailto:williameclee@arizona.edu)
+Last modified: 2026/02/13, [@williameclee](mailto:williameclee@arizona.edu)
