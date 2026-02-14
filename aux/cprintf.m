@@ -10,7 +10,7 @@ function varargout = cprintf(varargin)
     txt = sprintf(varargin{:});
 
     if feature('HotLinks')
-        cnt = fprintf(txt);
+        cnt = fprintf('%s', txt);
 
         if nargout > 0
             varargout = {cnt};
@@ -25,7 +25,7 @@ function varargout = cprintf(varargin)
     txt = regexprep(txt, '<a[^>]*>', '');
     txt = strrep(txt, '</a>', '');
 
-    cnt = fprintf(txt);
+    cnt = fprintf('%s', txt);
 
     if nargout > 0
         varargout = {cnt};
