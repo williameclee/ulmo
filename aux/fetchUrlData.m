@@ -21,7 +21,7 @@ function fetchUrlData(urlFilePath, outputDir)
     fclose(fileID);
 
     % Convert cell array to a string array
-    urls = urls{1};
+    urls = string(urls{1});
 
     % Loop through each URL, download the file, and unzip it
     if license('test', 'Distrib_Computing_Toolbox')
