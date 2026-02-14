@@ -191,10 +191,10 @@ function computeclimatology(tlim, inputFolder, inputFiles, outputPath, options)
             densityCnt = zeros(size(density), 'uint16');
         end
 
-        isValidSalnity = ~isnan(salinity);
-        salinityClim(isValidSalnity) = ...
-            salinityClim(isValidSalnity) + salinity(isValidSalnity);
-        salinityCnt(isValidSalnity) = salinityCnt(isValidSalnity) + 1;
+        isValidSalinity = ~isnan(salinity);
+        salinityClim(isValidSalinity) = ...
+            salinityClim(isValidSalinity) + salinity(isValidSalinity);
+        salinityCnt(isValidSalinity) = salinityCnt(isValidSalinity) + 1;
 
         isValidConsTemp = ~isnan(consTemp);
         consTempClim(isValidConsTemp) = ...
