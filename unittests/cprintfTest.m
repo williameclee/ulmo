@@ -6,20 +6,25 @@ classdef cprintfTest < matlab.unittest.TestCase
     end
 
     methods (TestMethodSetup)
+
         function saveHotLinksState(testCase)
             % Save the original HotLinks state before each test
             testCase.OriginalHotLinksState = feature('HotLinks');
         end
+
     end
 
     methods (TestMethodTeardown)
+
         function restoreHotLinksState(testCase)
             % Restore the original HotLinks state after each test
             feature('HotLinks', testCase.OriginalHotLinksState);
         end
+
     end
 
     methods (Test)
+
         function testHotLinksEnabled(testCase)
             % Test when HotLinks are enabled
             txt = 'txt <a href="matlab: open(''/path/to/file.m'')">file</a>'; %#ok<NASGU>
@@ -32,6 +37,20 @@ classdef cprintfTest < matlab.unittest.TestCase
             feature('HotLinks', false);
             txt = 'txt <a href="matlab: open(''/path/to/file.m'')">file</a>'; %#ok<NASGU>
             expectedOutput = 'txt file';
+            testCase.verifyEqual(evalc('feature("HotLinks", false); cprintf(''%s'', txt)'), expectedOutput);
+
+            txt = 'txt <a href="matlab: open(""/path/to/file.m"")">file</a>'; %#ok<NASGU>
+            testCase.verifyEqual(evalc('feature("HotLinks", false); cprintf(''%s'', txt)'), expectedOutput);
+        end
+
+        function testHotLinksDisabledTwoScriptFile(testCase)
+            % Test when HotLinks are disabled for .m files
+            feature('HotLinks', false);
+            txt = 'txt <a href="matlab: open(''/path/to/file1.m'')">file1</a>><a href="matlab: open(''/path/to/file2.m'')">file2</a>'; %#ok<NASGU>
+            expectedOutput = 'txt file1>file2';
+            testCase.verifyEqual(evalc('feature("HotLinks", false); cprintf(''%s'', txt)'), expectedOutput);
+
+            txt = 'txt <a href="matlab: open(""/path/to/file1.m"")">file1</a>><a href="matlab: open(""/path/to/file2.m"")">file2</a>'; %#ok<NASGU>
             testCase.verifyEqual(evalc('feature("HotLinks", false); cprintf(''%s'', txt)'), expectedOutput);
         end
 
@@ -55,5 +74,7 @@ classdef cprintfTest < matlab.unittest.TestCase
             expectedOutput = 'txt link';
             testCase.verifyEqual(evalc('feature("HotLinks", false); cprintf(''%s'', txt)'), expectedOutput);
         end
+
     end
+
 end
