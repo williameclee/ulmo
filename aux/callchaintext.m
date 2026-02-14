@@ -21,7 +21,7 @@ function callChainTxt = callchaintext(funs)
     end
 
     arguments (Output)
-        callChainTxt (1, :) char {mustBeTextScalar}
+        callChainTxt char {mustBeTextScalar}
     end
 
     if iscell(funs)
@@ -34,9 +34,11 @@ function callChainTxt = callchaintext(funs)
         funs = {funs};
     end
 
+    funs = cellfun(@char, funs, "UniformOutput", false);
+
     % Handle empty input: return an empty string scalar for an empty call chain.
-    if isempty(funs)
-        callChainTxt = "";
+    if all(cellfun(@isempty, funs))
+        callChainTxt = '';
         return
     end
 
@@ -45,7 +47,9 @@ function callChainTxt = callchaintext(funs)
         funs = funs([true, ~strcmp(funs(1:end - 1), funs(2:end))]);
     end
 
-    callChainTxt = cellfun(@(x) sprintf('<a href="matlab: open(''%s'')">%s</a>', which(x), x), funs, "UniformOutput", false);
+    callChainTxt = cellfun(@(x) ...
+        sprintf('<a href="matlab: open(''%s'')">%s</a>', which(x), x), funs, ...
+        "UniformOutput", false);
     callChainTxt = char(strjoin(callChainTxt, '>'));
 
 end
