@@ -125,7 +125,7 @@ function computedensity(inputPath, outputFolder, options)
     end
 
     if ~options.BeQuiet
-        fprintf('[ULMO>%s] Computed %s of %s.\n', callchaintext([options.CallChain, {mfilename}]), filehref(outputPath, 'steric data'), datetime(date, "Format", 'yyyy/MM'));
+        fprintf('[ULMO>%s] Computed %s of %s.\n', callchaintext([options.CallChain, {mfilename}]), filehref(outputPath, 'density data'), datetime(date, "Format", 'yyyy/MM'));
     end
 
 end
@@ -288,7 +288,7 @@ function computesteric(dataPath, climatologyPath, options)
 
     % Integrate steric sea level
     layerTop = [0; (depth(1:end - 1) + depth(2:end)) / 2];
-    layerBottom = [layerTop(2:end); 6e3];
+    layerBottom = [layerTop(2:end); 5500]; % TODO: Use actual depths from https://www.metoffice.gov.uk/hadobs/en4/depths.txt
     layerThickness = abs(layerTop - layerBottom);
     layerThickness(end) = layerThickness(end - 1) ...
         + (layerThickness(end - 1) - layerThickness(end - 2)); % Extrapolate bottom layer thickness
@@ -297,34 +297,34 @@ function computesteric(dataPath, climatologyPath, options)
         reshape(layerThickness, 1, 1, []);
     halostericSls = (densityClim ./ haloDensity - 1) .* ...
         reshape(layerThickness, 1, 1, []);
-    thermostericSl = sum(thermostericSls, 3, 'omitnan');
-    halostericSl = sum(halostericSls, 3, 'omitnan');
+    thermostericSl = sum(thermostericSls, 3, 'omitnan'); %#ok<NASGU> - actually saved through VARS variable
+    halostericSl = sum(halostericSls, 3, 'omitnan'); %#ok<NASGU> - actually saved through VARS variable
 
     stericSls = (densityClim ./ density - 1) .* ...
         reshape(layerThickness, 1, 1, []);
-    stericSl = sum(stericSls, 3, 'omitnan');
+    stericSl = sum(stericSls, 3, 'omitnan'); %#ok<NASGU> - actually saved through VARS variable
 
     isShallow = layerTop < 2000;
     shallowStericSls = (densityClim(:, :, isShallow) ./ density(:, :, isShallow) - 1) .* ...
         reshape(layerThickness(isShallow), 1, 1, []);
-    shallowStericSl = sum(shallowStericSls, 3, 'omitnan');
+    shallowStericSl = sum(shallowStericSls, 3, 'omitnan'); %#ok<NASGU> - actually saved through VARS variable
     shallowThermostericSls = (densityClim(:, :, isShallow) ./ thermoDensity(:, :, isShallow) - 1) .* ...
         reshape(layerThickness(isShallow), 1, 1, []);
-    shallowThermostericSl = sum(shallowThermostericSls, 3, 'omitnan');
+    shallowThermostericSl = sum(shallowThermostericSls, 3, 'omitnan'); %#ok<NASGU> - actually saved through VARS variable
     shallowHalostericSls = (densityClim(:, :, isShallow) ./ haloDensity(:, :, isShallow) - 1) .* ...
         reshape(layerThickness(isShallow), 1, 1, []);
-    shallowHalostericSl = sum(shallowHalostericSls, 3, 'omitnan');
+    shallowHalostericSl = sum(shallowHalostericSls, 3, 'omitnan'); %#ok<NASGU> - actually saved through VARS variable
 
     isDeep = layerTop >= 2000;
     deepStericSls = (densityClim(:, :, isDeep) ./ density(:, :, isDeep) - 1) .* ...
         reshape(layerThickness(isDeep), 1, 1, []);
-    deepStericSl = sum(deepStericSls, 3, 'omitnan');
+    deepStericSl = sum(deepStericSls, 3, 'omitnan'); %#ok<NASGU> - actually saved through VARS variable
     deepThermostericSls = (densityClim(:, :, isDeep) ./ thermoDensity(:, :, isDeep) - 1) .* ...
         reshape(layerThickness(isDeep), 1, 1, []);
-    deepThermostericSl = sum(deepThermostericSls, 3, 'omitnan');
+    deepThermostericSl = sum(deepThermostericSls, 3, 'omitnan'); %#ok<NASGU> - actually saved through VARS variable
     deepHalostericSls = (densityClim(:, :, isDeep) ./ haloDensity(:, :, isDeep) - 1) .* ...
         reshape(layerThickness(isDeep), 1, 1, []);
-    deepHalostericSl = sum(deepHalostericSls, 3, 'omitnan');
+    deepHalostericSl = sum(deepHalostericSls, 3, 'omitnan'); %#ok<NASGU> - actually saved through VARS variable
 
     try
         save(dataPath, vars{:}, '-append');
@@ -415,15 +415,15 @@ function aggregatesteric(inputFolder, inputFiles, outputPath, options)
         end
 
         if ~exist('stericSls', 'var')
-            stericSls = nan([size(stericSl), length(inputFiles)], 'single');
-            shallowStericSls = nan([size(shallowStericSl), length(inputFiles)], 'single');
-            deepStericSls = nan([size(deepStericSl), length(inputFiles)], 'single');
-            thermostericSls = nan([size(thermostericSl), length(inputFiles)], 'single');
-            shallowThermostericSls = nan([size(shallowThermostericSl), length(inputFiles)], 'single');
-            deepThermostericSls = nan([size(deepThermostericSl), length(inputFiles)], 'single');
-            halostericSls = nan([size(halostericSl), length(inputFiles)], 'single');
-            shallowHalostericSls = nan([size(shallowHalostericSl), length(inputFiles)], 'single');
-            deepHalostericSls = nan([size(deepHalostericSl), length(inputFiles)], 'single');
+            stericSls = nan([size(stericSl), length(inputFiles)], 'single'); %#ok<NODEF>
+            shallowStericSls = nan([size(shallowStericSl), length(inputFiles)], 'single'); %#ok<NODEF>
+            deepStericSls = nan([size(deepStericSl), length(inputFiles)], 'single'); %#ok<NODEF>
+            thermostericSls = nan([size(thermostericSl), length(inputFiles)], 'single'); %#ok<NODEF>
+            shallowThermostericSls = nan([size(shallowThermostericSl), length(inputFiles)], 'single'); %#ok<NODEF>
+            deepThermostericSls = nan([size(deepThermostericSl), length(inputFiles)], 'single'); %#ok<NODEF>
+            halostericSls = nan([size(halostericSl), length(inputFiles)], 'single'); %#ok<NODEF>
+            shallowHalostericSls = nan([size(shallowHalostericSl), length(inputFiles)], 'single'); %#ok<NODEF>
+            deepHalostericSls = nan([size(deepHalostericSl), length(inputFiles)], 'single'); %#ok<NODEF>
             dates = NaT([1, length(inputFiles)]);
         end
 
@@ -439,15 +439,15 @@ function aggregatesteric(inputFolder, inputFiles, outputPath, options)
         dates(iFile) = date;
     end
 
-    stericSl = stericSls; %#ok<NASGU>
-    shallowStericSl = shallowStericSls; %#ok<NASGU>
-    deepStericSl = deepStericSls; %#ok<NASGU>
-    thermostericSl = thermostericSls; %#ok<NASGU>
-    shallowThermostericSl = shallowThermostericSls; %#ok<NASGU>
-    deepThermostericSl = deepThermostericSls; %#ok<NASGU>
-    halostericSl = halostericSls; %#ok<NASGU>
-    shallowHalostericSl = shallowHalostericSls; %#ok<NASGU>
-    deepHalostericSl = deepHalostericSls; %#ok<NASGU>
+    stericSl = stericSls;
+    shallowStericSl = shallowStericSls;
+    deepStericSl = deepStericSls;
+    thermostericSl = thermostericSls;
+    shallowThermostericSl = shallowThermostericSls;
+    deepThermostericSl = deepThermostericSls;
+    halostericSl = halostericSls;
+    shallowHalostericSl = shallowHalostericSls;
+    deepHalostericSl = deepHalostericSls;
 
     switch outputExt
         case '.mat'
@@ -462,30 +462,30 @@ function aggregatesteric(inputFolder, inputFiles, outputPath, options)
             write2nc(outputPath, 'steric', permute(stericSl, [2, 1, 3]), ...
                 Dimensions = {'lon', 'lat', 'time'}, ...
                 Attributes = {'Units', 'meters', 'LongName', 'Total steric sea level'});
-            % write2nc(outputPath, 'steric_shallow', shallowStericSl, ...
-            %     Dimensions = {'lat', 'lon', 'time'}, ...
-            %     Attributes = {'Units', 'meters'});
-            % write2nc(outputPath, 'steric_deep', deepStericSl, ...
-            %     Dimensions = {'lat', 'lon', 'time'}, ...
-            %     Attributes = {'Units', 'meters'});
+            write2nc(outputPath, 'steric_shallow', shallowStericSl, ...
+                Dimensions = {'lat', 'lon', 'time'}, ...
+                Attributes = {'Units', 'meters', 'LongName', 'Shallow total steric sea level above 2000 m'});
+            write2nc(outputPath, 'steric_deep', deepStericSl, ...
+                Dimensions = {'lat', 'lon', 'time'}, ...
+                Attributes = {'Units', 'meters', 'LongName', 'Deep total steric sea level below 2000 m'});
             write2nc(outputPath, 'thermosteric', permute(thermostericSl, [2, 1, 3]), ...
                 Dimensions = {'lon', 'lat', 'time'}, ...
                 Attributes = {'Units', 'meters', 'LongName', 'Thermosteric sea level'});
-            % write2nc(outputPath, 'thermosteric_shallow', shallowThermostericSl, ...
-            %     Dimensions = {'lat', 'lon', 'time'}, ...
-            %     Attributes = {'Units', 'meters'});
-            % write2nc(outputPath, 'thermosteric_deep', deepThermostericSl, ...
-            %     Dimensions = {'lat', 'lon', 'time'}, ...
-            %     Attributes = {'Units', 'meters'});
+            write2nc(outputPath, 'thermosteric_shallow', shallowThermostericSl, ...
+                Dimensions = {'lat', 'lon', 'time'}, ...
+                Attributes = {'Units', 'meters', 'LongName', 'Shallow thermosteric sea level above 2000 m'});
+            write2nc(outputPath, 'thermosteric_deep', deepThermostericSl, ...
+                Dimensions = {'lat', 'lon', 'time'}, ...
+                Attributes = {'Units', 'meters', 'LongName', 'Deep thermosteric sea level below 2000 m'});
             write2nc(outputPath, 'halosteric', permute(halostericSl, [2, 1, 3]), ...
                 Dimensions = {'lon', 'lat', 'time'}, ...
                 Attributes = {'Units', 'meters', 'LongName', 'Halosteric sea level'});
-            % write2nc(outputPath, 'halosteric_shallow', shallowHalostericSl, ...
-            %     Dimensions = {'lat', 'lon', 'time'}, ...
-            %     Attributes = {'Units', 'meters'});
-            % write2nc(outputPath, 'halosteric_deep', deepHalostericSl, ...
-            %     Dimensions = {'lat', 'lon', 'time'}, ...
-            %     Attributes = {'Units', 'meters'});
+            write2nc(outputPath, 'halosteric_shallow', shallowHalostericSl, ...
+                Dimensions = {'lat', 'lon', 'time'}, ...
+                Attributes = {'Units', 'meters', 'LongName', 'Shallow halosteric sea level above 2000 m'});
+            write2nc(outputPath, 'halosteric_deep', deepHalostericSl, ...
+                Dimensions = {'lat', 'lon', 'time'}, ...
+                Attributes = {'Units', 'meters', 'LongName', 'Deep halosteric sea level below 2000 m'});
             nccreate(outputPath, 'lat', ...
                 Dimensions = {'lat', length(lat)}, ...
                 Datatype = 'single', Format = 'netcdf4');
