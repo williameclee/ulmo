@@ -156,7 +156,7 @@ function computeclimatology(tlim, inputFolder, inputFiles, outputPath, options)
             all(ismember(vars, who('-file', outputPath)))
 
         if ~options.BeQuiet
-            cprintf('[ULMO>%s] Skipped computing %s, already exists.\n', ...
+            cprintf('[ULMO>%s] Skipped computing %s, already exist.\n', ...
                 callchaintext(callChain), filehref(outputPath, 'climatology data'));
         end
 
@@ -280,7 +280,7 @@ function computesteric(dataPath, climatologyPath, options)
             (dir(dataPath).datenum > dir(climatologyPath).datenum)
 
         if ~options.BeQuiet
-            cprintf('[ULMO>%s] Skipped computing %s, already exists and is newer than climatology.\n', ...
+            cprintf('[ULMO>%s] Skipped computing %s, already exist and is newer than climatology.\n', ...
                 callchaintext(callChain), filehref(dataPath, 'steric sea level data'));
         end
 
@@ -402,7 +402,7 @@ function aggregatesteric(inputFolder, inputFiles, outputPath, options)
                     all(ismember(vars, who('-file', outputPath)))
 
                 if ~options.BeQuiet
-                    cprintf('[ULMO>%s] Skipped computing %s, already exists.\n', ...
+                    cprintf('[ULMO>%s] Skipped computing %s, already exist.\n', ...
                         callchaintext(callChain), filehref(outputPath, 'steric sea level data'));
                 end
 
@@ -424,7 +424,7 @@ function aggregatesteric(inputFolder, inputFiles, outputPath, options)
                             varNamesInFile))
 
                         if ~options.BeQuiet
-                            cprintf('[ULMO>%s] Skipped computing %s, already exists.\n', ...
+                            cprintf('[ULMO>%s] Skipped computing %s, already exist.\n', ...
                                 callchaintext(callChain), filehref(outputPath, 'steric sea level data'));
                         end
 
