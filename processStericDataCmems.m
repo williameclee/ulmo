@@ -58,6 +58,7 @@ function outputFiles = breakAggregatedInput(inputFolder, outputFolder, options)
         outputFiles (1, :) cell
     end
 
+    forceNew = options.ForceNew;
     callChain = [options.CallChain, {mfilename}];
 
     % Define input file paths for CMEMS data
@@ -67,6 +68,10 @@ function outputFiles = breakAggregatedInput(inputFolder, outputFolder, options)
     tempFile = dir(fullfile(inputFolder, tempFilePattern));
     salinityFile = salinityFile.name;
     tempFile = tempFile.name;
+
+    assert(~isempty(salinityFile), 'No salinity file found matching pattern: %s', salinityFilePattern);
+    assert(~isempty(tempFile), 'No temperature file found matching pattern: %s', tempFilePattern);
+
     salinityPath = fullfile(inputFolder, salinityFile);
     tempPath = fullfile(inputFolder, tempFile);
 
@@ -89,6 +94,8 @@ function outputFiles = breakAggregatedInput(inputFolder, outputFolder, options)
     depth = ncread(salinityPath, 'depth');
 
     outputFiles = cell(length(dates), 1);
+
+    cprintf('[ULMO>%s] Found %d time steps in CMEMS data.\n', callchaintext(callChain), length(dates));
 
     % Process each time step and save to individual .mat files
     for iDate = 1:length(dates)
