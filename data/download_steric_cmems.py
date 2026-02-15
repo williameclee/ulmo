@@ -1,4 +1,4 @@
-import os
+import glob
 import copernicusmarine
 
 vars = ["so", "thetao"]
@@ -6,7 +6,8 @@ vars = ["so", "thetao"]
 for var in vars:
     # Skip if file already exists
     file_pattern = f"cmems_mod_glo_phy_my_0.083deg_P1M-m_{var}_*.nc"
-    if any(fname.startswith(file_pattern) for fname in os.listdir(".")):
+    # Pattern matching
+    if glob.glob(file_pattern):
         print(f"File for variable '{var}' already exists. Skipping download.")
         continue
 
