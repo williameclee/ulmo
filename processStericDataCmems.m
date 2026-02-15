@@ -101,13 +101,6 @@ function outputFiles = breakAggregatedInput(inputFolder, outputFolder, options)
     for iDate = 1:length(dates)
         date = dates(iDate);
 
-        % Read salinity and temperature for the current time step
-        salinityPsu = single(ncread(salinityPath, 'so', [1, 1, 1, iDate], [Inf, Inf, Inf, 1]));
-        potTemp = single(ncread(tempPath, 'thetao', [1, 1, 1, iDate], [Inf, Inf, Inf, 1]));
-
-        salinityPsu = permute(salinityPsu, [2, 1, 3]); % (lat, lon, z)
-        potTemp = permute(potTemp, [2, 1, 3]); % (lat, lon, z)
-
         % Save the data to a .mat file
         outputFile = sprintf('CMEMS-M%s.mat', datetime(date, "Format", 'yyyyMM'));
         outputPath = fullfile(outputFolder, outputFile);
@@ -120,6 +113,14 @@ function outputFiles = breakAggregatedInput(inputFolder, outputFolder, options)
                 callchaintext(callChain), datetime(date, "Format", 'yyyyMM'), filehref(outputPath, 'T-S data'));
             continue;
         end
+		
+        % Read salinity and temperature for the current time step
+        salinityPsu = single(ncread(salinityPath, 'so', [1, 1, 1, iDate], [Inf, Inf, Inf, 1]));
+        potTemp = single(ncread(tempPath, 'thetao', [1, 1, 1, iDate], [Inf, Inf, Inf, 1]));
+
+        salinityPsu = permute(salinityPsu, [2, 1, 3]); % (lat, lon, z)
+        potTemp = permute(potTemp, [2, 1, 3]); % (lat, lon, z)
+
 
         save(outputPath, 'salinityPsu', 'potTemp', 'lat', 'lon', 'depth', 'date', '-v7.3');
         cprintf('[ULMO>%s] Saved %s %s (%d/%d).\n', ...
