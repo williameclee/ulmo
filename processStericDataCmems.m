@@ -28,7 +28,7 @@ function processStericDataCmems(inputFolder, outputFolder, aggregatePath, climat
     parfor iFile = 1:length(outputFiles)
         outputFile = outputFiles{iFile};
         outputPath = fullfile(outputFolder, outputFile);
-        computedensity(outputPath, outputFolder, ForceNew = forceNew, CallChain = callChain);
+        computedensity(outputPath, ForceNew = forceNew, CallChain = callChain);
     end
 
     % % Step 3: Compute climatology
@@ -134,12 +134,11 @@ function outputFiles = breakAggregatedInput(inputFolder, outputFolder, options)
 
 end
 
-function computedensity(inputPath, outputFolder, options)
+function computedensity(dataPath, options)
     % Compute density from CMEMS .mat files
 
     arguments
-        inputPath (1, :) char
-        outputFolder (1, :) char
+        dataPath (1, :) char {mustBeFile}
         options.ForceNew (1, 1) logical = false
         options.CallChain (1, :) cell = {}
     end
@@ -149,19 +148,17 @@ function computedensity(inputPath, outputFolder, options)
     % Load data from .mat file
     inputVars = {'salinityPsu', 'potTemp', 'lat', 'lon', 'depth', 'date'};
 
-    if ~exist(inputPath, 'file')
-        error('Input file does not exist: %s', inputPath);
-    elseif any(ismember(inputVars, who('-file', inputPath)))
-        missinginputVars = setdiff(inputVars, who('-file', inputPath));
+    if any(~ismember(inputVars, who('-file', dataPath)))
+        missinginputVars = setdiff(inputVars, who('-file', dataPath));
         error('Input file %s is missing required variables: %s', ...
-            inputPath, strjoin(missinginputVars, ', '));
-    elseif ismember('density', who('-file', inputPath)) && ~options.ForceNew
+            dataPath, strjoin(missinginputVars, ', '));
+    elseif ismember('density', who('-file', dataPath)) && ~options.ForceNew
         cprintf('[ULMO>%s] Skipped computing density for %s, already exists.\n', ...
-            callchaintext(callChain), filehref(inputPath, 'density'));
+            callchaintext(callChain), filehref(dataPath, 'density'));
         return
     end
 
-    load(inputPath, inputVars{:});
+    load(dataPath, inputVars{:});
 
     % Convert salinity and temperature to absolute salinity and in-situ density
     pres = gsw_p_from_z(repmat(-depth(:)', [length(lat), 1]), lat); %#ok<USENS> - actually loaded through the inputVars list
@@ -182,7 +179,7 @@ function computedensity(inputPath, outputFolder, options)
     end
 
     % Save density data back to the same .mat file
-    save(inputPath, 'density', '-v7.3', '-append');
+    save(dataPath, 'density', '-v7.3', '-append');
 
     if ~options.BeQuiet
         cprintf('[ULMO>%s] Computed %s %s.\n', callchaintext(callChain), ...
