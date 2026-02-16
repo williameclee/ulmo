@@ -159,7 +159,7 @@ function computeDensity(dataPath, options)
     callChain = [options.CallChain, {mfilename}];
 
     % Load data from .mat file
-    inputVars = {'salinityPsu', 'potTemp', 'lat', 'lon', 'depth', 'date'};
+    inputVars = {'salinityPsu', 'potTemp', 'lat', 'depth', 'date'};
 
     if any(~ismember(inputVars, who('-file', dataPath)))
         missinginputVars = setdiff(inputVars, who('-file', dataPath));
@@ -169,7 +169,7 @@ function computeDensity(dataPath, options)
 
         if ~options.BeQuiet
             cprintf('[ULMO>%s] Skipped computing %s %s, already exists.\n', ...
-                callchaintext(callChain), datetime(date, "Format", 'yyyy/MM'), filehref(dataPath, 'density data'));
+                callchaintext(callChain), datetime(data.date, "Format", 'yyyy/MM'), filehref(dataPath, 'density data'));
         end
 
         return
@@ -178,19 +178,19 @@ function computeDensity(dataPath, options)
     load(dataPath, inputVars{:});
 
     % Convert salinity and temperature to absolute salinity and in-situ density
-    pres = gsw_p_from_z(repmat(-depth(:)', [length(lat), 1]), lat); %#ok<USENS> - actually loaded through the inputVars list
-    salinity = nan(size(salinityPsu), 'single'); %#ok<USENS> - actually loaded through the inputVars list
+    pres = gsw_p_from_z(repmat(-data.depth(:)', [length(data.lat), 1]), data.lat);
+    salinity = nan(size(data.salinityPsu), 'single');
 
-    for iDepth = 1:length(depth)
-        layerSalinityPsu = salinityPsu(:, :, iDepth);
-        salinity(:, :, iDepth) = gsw_SA_from_SP(layerSalinityPsu, pres(iDepth), mod(lon, 360), lat);
+    for iDepth = 1:length(data.depth)
+        layerSalinityPsu = data.salinityPsu(:, :, iDepth);
+        salinity(:, :, iDepth) = gsw_SA_from_SP(layerSalinityPsu, pres(iDepth), mod(lon, 360), data.lat);
     end
 
-    consTemp = gsw_CT_from_pt(salinity, potTemp);
+    consTemp = gsw_CT_from_pt(salinity, data.potTemp);
 
-    density = nan(size(potTemp), 'single');
+    density = nan(size(data.potTemp), 'single');
 
-    for iDepth = 1:length(depth)
+    for iDepth = 1:length(data.depth)
         density(:, :, iDepth) = gsw_rho( ...
             squeeze(salinity(:, :, iDepth)), squeeze(consTemp(:, :, iDepth)), pres(iDepth));
     end
@@ -200,7 +200,7 @@ function computeDensity(dataPath, options)
 
     if ~options.BeQuiet
         cprintf('[ULMO>%s] Computed %s %s.\n', callchaintext(callChain), ...
-            datetime(date, "Format", 'yyyy/MM'), filehref(dataPath, 'density data'));
+            datetime(data.date, "Format", 'yyyy/MM'), filehref(dataPath, 'density data'));
     end
 
 end
