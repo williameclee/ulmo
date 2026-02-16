@@ -168,8 +168,8 @@ function computeDensity(dataPath, options)
     elseif ismember('density', who('-file', dataPath)) && ~options.ForceNew
 
         if ~options.BeQuiet
-            cprintf('[ULMO>%s] Skipped computing density for %s, already exists.\n', ...
-                callchaintext(callChain), filehref(dataPath, 'density'));
+            cprintf('[ULMO>%s] Skipped computing %s %s, already exists.\n', ...
+                callchaintext(callChain), datetime(date, "Format", 'yyyy/MM'), filehref(dataPath, 'density data'));
         end
 
         return
