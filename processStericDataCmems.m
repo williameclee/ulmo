@@ -160,6 +160,7 @@ function computeDensity(dataPath, options)
 
     % Load data from .mat file
     inputVars = {'salinityPsu', 'potTemp', 'lat', 'depth', 'date'};
+    ddata = load(dataPath, 'date');
 
     if any(~ismember(inputVars, who('-file', dataPath)))
         missinginputVars = setdiff(inputVars, who('-file', dataPath));
@@ -169,7 +170,7 @@ function computeDensity(dataPath, options)
 
         if ~options.BeQuiet
             cprintf('[ULMO>%s] Skipped computing %s %s, already exists.\n', ...
-                callchaintext(callChain), datetime(data.date, "Format", 'yyyy/MM'), filehref(dataPath, 'density data'));
+                callchaintext(callChain), datetime(ddata.date, "Format", 'yyyy/MM'), filehref(dataPath, 'density data'));
         end
 
         return
