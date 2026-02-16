@@ -166,8 +166,12 @@ function computeDensity(dataPath, options)
         error('Input file %s is missing required variables: %s', ...
             dataPath, strjoin(missinginputVars, ', '));
     elseif ismember('density', who('-file', dataPath)) && ~options.ForceNew
-        cprintf('[ULMO>%s] Skipped computing density for %s, already exists.\n', ...
-            callchaintext(callChain), filehref(dataPath, 'density'));
+
+        if ~options.BeQuiet
+            cprintf('[ULMO>%s] Skipped computing density for %s, already exists.\n', ...
+                callchaintext(callChain), filehref(dataPath, 'density'));
+        end
+
         return
     end
 
@@ -192,11 +196,11 @@ function computeDensity(dataPath, options)
     end
 
     % Save density data back to the same .mat file
-    save(dataPath, 'density', '-v7.3', '-append');
+    save(dataPath, 'density', '-append');
 
     if ~options.BeQuiet
         cprintf('[ULMO>%s] Computed %s %s.\n', callchaintext(callChain), ...
-            datetime(date, "Format", 'yyyy/MM'), filehref(outputPath, 'density data'));
+            datetime(date, "Format", 'yyyy/MM'), filehref(dataPath, 'density data'));
     end
 
 end
