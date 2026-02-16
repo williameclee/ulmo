@@ -175,7 +175,7 @@ function computeDensity(dataPath, options)
         return
     end
 
-    load(dataPath, inputVars{:});
+    data = load(dataPath, inputVars{:});
 
     % Convert salinity and temperature to absolute salinity and in-situ density
     pres = gsw_p_from_z(repmat(-data.depth(:)', [length(data.lat), 1]), data.lat);
