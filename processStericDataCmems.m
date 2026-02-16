@@ -159,7 +159,7 @@ function computeDensity(dataPath, options)
     callChain = [options.CallChain, {mfilename}];
 
     % Load data from .mat file
-    inputVars = {'salinityPsu', 'potTemp', 'lat', 'depth', 'date'};
+    inputVars = {'salinityPsu', 'potTemp', 'lat', 'lon', 'depth', 'date'};
     ddata = load(dataPath, 'date');
 
     if any(~ismember(inputVars, who('-file', dataPath)))
@@ -184,7 +184,7 @@ function computeDensity(dataPath, options)
 
     for iDepth = 1:length(data.depth)
         layerSalinityPsu = data.salinityPsu(:, :, iDepth);
-        salinity(:, :, iDepth) = gsw_SA_from_SP(layerSalinityPsu, pres(iDepth), mod(lon, 360), data.lat);
+        salinity(:, :, iDepth) = gsw_SA_from_SP(layerSalinityPsu, pres(iDepth), mod(data.lon, 360), data.lat);
     end
 
     consTemp = gsw_CT_from_pt(salinity, data.potTemp);
