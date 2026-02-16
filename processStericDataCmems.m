@@ -20,11 +20,16 @@ function processStericDataCmems(inputFolder, outputFolder, aggregatePath, climat
     forceNew = options.ForceNew;
     callChain = [options.CallChain, {mfilename}];
 
-    % Step 1: Break aggregated input into individual files
+    % Break aggregated input into individual files
     outputFiles = breakAggregatedInput(inputFolder, outputFolder, ...
         ForceNew = forceNew, CallChain = callChain);
 
-    % % Step 2: Compute density for each file
+    % Compute density for each file
+    parfor iFile = 1:length(outputFiles)
+        outputFile = outputFiles{iFile};
+        outputPath = fullfile(outputFolder, outputFile);
+        computedensity(outputPath, outputFolder, ForceNew = forceNew, CallChain = callChain);
+    end
 
     % % Step 3: Compute climatology
     % climPath = fullfile(outputFolder, sprintf('CMEMS-C%s_%s.mat', datetime(tlim, "Format", 'yyyyMM')));
@@ -113,14 +118,13 @@ function outputFiles = breakAggregatedInput(inputFolder, outputFolder, options)
                 callchaintext(callChain), datetime(date, "Format", 'yyyyMM'), filehref(outputPath, 'T-S data'));
             continue;
         end
-		
+
         % Read salinity and temperature for the current time step
         salinityPsu = single(ncread(salinityPath, 'so', [1, 1, 1, iDate], [Inf, Inf, Inf, 1]));
         potTemp = single(ncread(tempPath, 'thetao', [1, 1, 1, iDate], [Inf, Inf, Inf, 1]));
 
         salinityPsu = permute(salinityPsu, [2, 1, 3]); % (lat, lon, z)
         potTemp = permute(potTemp, [2, 1, 3]); % (lat, lon, z)
-
 
         save(outputPath, 'salinityPsu', 'potTemp', 'lat', 'lon', 'depth', 'date', '-v7.3');
         cprintf('[ULMO>%s] Saved %s %s (%d/%d).\n', ...
@@ -131,7 +135,7 @@ function outputFiles = breakAggregatedInput(inputFolder, outputFolder, options)
 end
 
 function computedensity(inputPath, outputFolder, options)
-    % Compute density from CMEMS data
+    % Compute density from CMEMS .mat files
 
     arguments
         inputPath (1, :) char
@@ -142,37 +146,47 @@ function computedensity(inputPath, outputFolder, options)
 
     callChain = [options.CallChain, {mfilename}];
 
-    % Read data from netCDF file
-    date = datetime(1950, 1, 1) + seconds(ncread(inputPath, 'time'));
-    lat = ncread(inputPath, 'latitude');
-    lon = ncread(inputPath, 'longitude');
-    depth = ncread(inputPath, 'depth');
-    salinityPsu = ncread(inputPath, 'so'); % Practical Salinity Units
-    potTemp = ncread(inputPath, 'thetao'); % Potential Temperature
+    % Load data from .mat file
+    inputVars = {'salinityPsu', 'potTemp', 'lat', 'lon', 'depth', 'date'};
 
-    % Convert salinity and temperature to absolute salinity and in-situ density
-    pres = gsw_p_from_z(repmat(-depth(:)', [length(lat), 1]), lat);
-    salinity = nan(size(salinityPsu));
-    density = nan(size(potTemp));
-
-    for iDepth = 1:length(depth)
-        salinity(:, :, iDepth) = ...
-            gsw_SA_from_SP(squeeze(salinityPsu(:, :, iDepth)), pres(:, iDepth), mod(lon, 360), lat);
-
-        density(:, :, iDepth) = gsw_rho( ...
-            squeeze(salinity(:, :, iDepth)), squeeze(potTemp(:, :, iDepth)), pres(:, iDepth));
+    if ~exist(inputPath, 'file')
+        error('Input file does not exist: %s', inputPath);
+    elseif any(ismember(inputVars, who('-file', inputPath)))
+        missinginputVars = setdiff(inputVars, who('-file', inputPath));
+        error('Input file %s is missing required variables: %s', ...
+            inputPath, strjoin(missinginputVars, ', '));
+    elseif ismember('density', who('-file', inputPath)) && ~options.ForceNew
+        cprintf('[ULMO>%s] Skipped computing density for %s, already exists.\n', ...
+            callchaintext(callChain), filehref(inputPath, 'density'));
+        return
     end
 
-    % Save density data
-    outputFile = sprintf('CMEMS-M%s.mat', datetime(date, "Format", 'yyyyMM'));
-    outputPath = fullfile(outputFolder, outputFile);
+    load(inputPath, inputVars{:});
 
-    if exist(outputPath, 'file')
-        save(outputPath, 'density', '-v7.3', '-append');
-    else
-        save(outputPath, 'depth', 'date', 'lat', 'lon', 'density', '-v7.3');
+    % Convert salinity and temperature to absolute salinity and in-situ density
+    pres = gsw_p_from_z(repmat(-depth(:)', [length(lat), 1]), lat); %#ok<USENS> - actually loaded through the inputVars list
+    salinity = nan(size(salinityPsu), 'single'); %#ok<USENS> - actually loaded through the inputVars list
+
+    for iDepth = 1:length(depth)
+        layerSalinityPsu = salinityPsu(:, :, iDepth);
+        salinity(:, :, iDepth) = gsw_SA_from_SP(layerSalinityPsu, pres(iDepth), mod(lon, 360), lat);
+    end
+
+    consTemp = gsw_CT_from_pt(salinity, potTemp);
+
+    density = nan(size(potTemp), 'single');
+
+    for iDepth = 1:length(depth)
+        density(:, :, iDepth) = gsw_rho( ...
+            squeeze(salinity(:, :, iDepth)), squeeze(consTemp(:, :, iDepth)), pres(iDepth));
+    end
+
+    % Save density data back to the same .mat file
+    save(inputPath, 'density', '-v7.3', '-append');
+
+    if ~options.BeQuiet
+        cprintf('[ULMO>%s] Computed %s %s.\n', callchaintext(callChain), ...
+            datetime(date, "Format", 'yyyy/MM'), filehref(outputPath, 'density data'));
     end
 
 end
-
-% The computeclimatology, computesteric, and aggregatesteric functions can be reused as-is from processStericDataEN4.m
