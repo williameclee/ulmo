@@ -1,6 +1,12 @@
+%% COMPUTESTERICCLIMATOLOGY - Computes climatology of temperature, salinity, and density
+%
+% Last modified
+%   2026/02/16, williameclee@arizona.edu (@williameclee)
+%     - Extracted from PROCESSSTERICDATAEN4 for reusability
+
 function computeStericClimatology(tlim, inputFolder, inputFiles, outputPath, options)
 
-    arguments
+    arguments (Input)
         tlim (1, 2) datetime
         inputFolder (1, :) char
         inputFiles (1, :) cell

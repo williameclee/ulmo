@@ -1,7 +1,13 @@
+%% COMPUTESTERICDENSITY - Computes density from temperature and salinity
+%
+% Last modified
+%   2026/02/15, williameclee@arizona.edu (@williameclee)
+%     - Extracted from PROCESSSTERICDATAEN4 for reusability
+
 function computeStericDensity(dataPath, options)
 
     arguments (Input)
-        dataPath (1, :) char {mustBeFile}
+        dataPath {mustBeTextScalar, mustBeFile}
         options.ForceNew (1, 1) logical = false
         options.BeQuiet (1, 1) logical = false
         options.CallChain (1, :) cell = {}

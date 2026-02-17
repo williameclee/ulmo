@@ -36,32 +36,35 @@ function processStericDataCmems(inputFolder, outputFolder, aggregatePath, climat
     parfor iFile = 1:length(outputFiles)
         outputFile = outputFiles{iFile};
         outputPath = fullfile(outputFolder, outputFile);
-        convertTSvars(outputPath, ForceNew = forceNew, BeQuiet = beQuiet, CallChain = callChain);
+        convertTSvars(outputPath, ...
+            ForceNew = forceNew, BeQuiet = beQuiet, CallChain = callChain);
     end
 
     % Compute density for each file
     parfor iFile = 1:length(outputFiles)
         outputFile = outputFiles{iFile};
         outputPath = fullfile(outputFolder, outputFile);
-        computeStericDensity(outputPath, ForceNew = forceNew, BeQuiet = beQuiet, CallChain = callChain);
+        computeStericDensity(outputPath, ...
+            ForceNew = forceNew, BeQuiet = beQuiet, CallChain = callChain);
     end
 
     % Compute climatology
     climPath = fullfile(outputFolder, sprintf('CMEMS-C%s_%s.mat', datetime(tlim, "Format", 'yyyyMM')));
 
     computeStericClimatology(tlim, outputFolder, outputFiles, climPath, ...
-        ForceNew = forceNew, CallChain = callChain);
+        ForceNew = forceNew, BeQuiet = beQuiet, CallChain = callChain);
 
-    % % Step 4: Compute steric sea level anomalies
-    % parfor iFile = 1:length(outputFiles)
-    %     outputFile = outputFiles{iFile};
-    %     outputPath = fullfile(outputFolder, outputFile);
-    %     computesteric(outputPath, climPath, ForceNew = forceNew, CallChain = callChain);
-    % end
+    % Compute steric sea level anomalies
+    parfor iFile = 1:length(outputFiles)
+        outputFile = outputFiles{iFile};
+        outputPath = fullfile(outputFolder, outputFile);
+        computeStericSeaLevel(outputPath, climPath, ...
+            ForceNew = forceNew, BeQuiet = beQuiet, CallChain = callChain);
+    end
 
-    % % Step 5: Aggregate steric data
-    % aggregatesteric(outputFolder, outputFiles, aggregatePath, ...
-    %     ForceNew = forceNew, CallChain = callChain);
+    % Aggregate steric data
+    aggregateStericSeaLevel(outputFolder, outputFiles, aggregatePath, ...
+        ForceNew = forceNew, BeQuiet = beQuiet, CallChain = callChain);
 end
 
 %% Subfunctions
