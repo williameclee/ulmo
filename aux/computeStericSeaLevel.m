@@ -64,7 +64,7 @@ function computeStericSeaLevel(dataPath, climatologyPath, options)
 
         for iDepth = 1:length(depth)
             haloDensity(:, :, iDepth) = gsw_rho( ...
-                squeeze(salinity(:, :, iDepth)), squeeze(consTempClim(:, :, iDepth)), pres(iDepth, iDepth));
+                squeeze(salinity(:, :, iDepth)), squeeze(consTempClim(:, :, iDepth)), pres(1, iDepth));
         end
 
     end
@@ -79,7 +79,7 @@ function computeStericSeaLevel(dataPath, climatologyPath, options)
 
         for iDepth = 1:length(depth)
             thermoDensity(:, :, iDepth) = gsw_rho( ...
-                squeeze(salinityClim(:, :, iDepth)), squeeze(consTemp(:, :, iDepth)), pres(iDepth, iDepth));
+                squeeze(salinityClim(:, :, iDepth)), squeeze(consTemp(:, :, iDepth)), pres(1, iDepth));
         end
 
     end
