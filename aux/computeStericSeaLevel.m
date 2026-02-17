@@ -25,9 +25,13 @@ function computeStericSeaLevel(dataPath, climatologyPath, options)
     elseif ~exist(climatologyPath, 'file')
         error('Climatology file %s does not exist.', climatologyPath);
     elseif any(~ismember({'density', 'depth'}, who('-file', dataPath)))
-        error('Data file %s is missing some variables.', dataPath);
-    elseif ~ismember({'densityClim'}, who('-file', climatologyPath))
-        error('Climatology file %s is missing some variables.', climatologyPath);
+        missingDataVars = setdiff({'density', 'depth'}, who('-file', dataPath));
+        error('Data file %s is missing required variables: %s', ...
+            dataPath, strjoin(missingDataVars, ', '));
+    elseif any(~ismember({'densityClim', 'consTempClim', 'salinityClim'}, who('-file', climatologyPath)))
+        missingClimVars = setdiff({'densityClim', 'consTempClim', 'salinityClim'}, who('-file', climatologyPath));
+        error('Climatology file %s is missing required variables: %s', ...
+            climatologyPath, strjoin(missingClimVars, ', '));
     end
 
     vars = ...
