@@ -90,12 +90,13 @@ function outputFiles = breakAggregatedInput(inputFolder, outputFolder, options)
     tempFilePattern = "cmems_mod_glo_phy_my_0.083deg_P1M-m_thetao*.nc";
     salinityFile = dir(fullfile(inputFolder, salinityFilePattern));
     tempFile = dir(fullfile(inputFolder, tempFilePattern));
-    salinityFile = salinityFile.name;
-    tempFile = tempFile.name;
 
     assert(~isempty(salinityFile), 'No salinity file found matching pattern: %s', salinityFilePattern);
     assert(~isempty(tempFile), 'No temperature file found matching pattern: %s', tempFilePattern);
 
+    % Use the first matching file from each pattern
+    salinityFile = salinityFile(1).name;
+    tempFile = tempFile(1).name;
     salinityPath = fullfile(inputFolder, salinityFile);
     tempPath = fullfile(inputFolder, tempFile);
 
