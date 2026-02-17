@@ -8,12 +8,12 @@ function processStericDataCmems(inputFolder, outputFolder, aggregatePath, climat
     arguments (Input)
         inputFolder (1, :) char
         outputFolder (1, :) char
-        aggregatePath (1, :) char = fullfile(outputFolder, 'CMEMS-steric.nc');
-        climatologyTimeRange (1, 2) datetime = [datetime(1990, 1, 1), datetime(2010, 12, 31)];
+        aggregatePath (1, :) char = fullfile(outputFolder, 'CMEMS-steric.nc')
+        climatologyTimeRange (1, 2) datetime = [datetime(1990, 1, 1), datetime(2010, 12, 31)]
         options.DeAggregate (1, 1) logical = true
-        options.ForceNew (1, 1) logical = false;
-        options.BeQuiet (1, 1) logical = false;
-        options.CallChain (1, :) cell = {};
+        options.ForceNew (1, 1) logical = false
+        options.BeQuiet (1, 1) logical = false
+        options.CallChain (1, :) cell = {}
     end
 
     tlim = climatologyTimeRange;
@@ -180,9 +180,9 @@ function convertTSvars(dataPath, options)
     ddata = load(dataPath, 'date');
 
     if any(~ismember(inputVars, who('-file', dataPath)))
-        missinginputVars = setdiff(inputVars, who('-file', dataPath));
+        missingInputVars = setdiff(inputVars, who('-file', dataPath));
         error('Input file %s is missing required variables: %s', ...
-            dataPath, strjoin(missinginputVars, ', '));
+            dataPath, strjoin(missingInputVars, ', '));
     elseif ~options.ForceNew && all(ismember(outputVars, who('-file', dataPath)))
 
         if ~options.BeQuiet

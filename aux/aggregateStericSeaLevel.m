@@ -9,7 +9,7 @@ function aggregateStericSeaLevel(inputFolder, inputFiles, outputPath, options)
     arguments (Input)
         inputFolder {mustBeTextScalar, mustBeFolder}
         inputFiles (1, :) cell
-        outputPath {mustBeTextScalar, mustBeFolder}
+        outputPath {mustBeTextScalar}
         options.ForceNew (1, 1) logical = false
         options.BeQuiet (1, 1) logical = false
         options.CallChain (1, :) cell = {}

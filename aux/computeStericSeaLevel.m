@@ -86,7 +86,7 @@ function computeStericSeaLevel(dataPath, climatologyPath, options)
 
     % Integrate steric sea level
     layerTop = [0; (depth(1:end - 1) + depth(2:end)) / 2];
-    layerBottom = [layerTop(2:end); bottom]; % TODO: Use actual depths from https://www.metoffice.gov.uk/hadobs/en4/depths.txt
+    layerBottom = [layerTop(2:end); bottom];
     layerThickness = abs(layerTop - layerBottom);
     layerThickness(end) = layerThickness(end - 1) ...
         + (layerThickness(end - 1) - layerThickness(end - 2)); % Extrapolate bottom layer thickness

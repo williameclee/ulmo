@@ -20,9 +20,9 @@ function computeStericDensity(dataPath, options)
     ddata = load(dataPath, 'date');
 
     if any(~ismember(inputVars, who('-file', dataPath)))
-        missinginputVars = setdiff(inputVars, who('-file', dataPath));
+        missingInputVars = setdiff(inputVars, who('-file', dataPath));
         error('Input file %s is missing required variables: %s', ...
-            dataPath, strjoin(missinginputVars, ', '));
+            dataPath, strjoin(missingInputVars, ', '));
     elseif ismember('density', who('-file', dataPath)) && ~options.ForceNew
 
         if ~options.BeQuiet
