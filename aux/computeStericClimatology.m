@@ -33,6 +33,15 @@ function computeStericClimatology(tlim, inputFolder, inputFiles, outputPath, opt
 
     numClimFiles = 0;
 
+    if ~options.BeQuiet
+        msg = 'this may take a while...';
+        cprintf('[ULMO>%s] Computing %s from %d files, %s\n', ...
+            callchaintext(callChain), filehref(outputPath, 'climatology data'), length(inputFiles), msg);
+        tic;
+    end
+
+    cnt = 0;
+
     for iFile = 1:length(inputFiles)
         inputFile = inputFiles{iFile};
         inputPath = fullfile(inputFolder, inputFile);
@@ -50,8 +59,9 @@ function computeStericClimatology(tlim, inputFolder, inputFiles, outputPath, opt
         if date < tlim(1) || date > tlim(2)
 
             if ~options.BeQuiet
-                cprintf('[ULMO>%s] Skipped %s for climatology (out of time range).\n', ...
-                    callchaintext(callChain), filehref(inputPath, 'data'));
+                fprintf(repmat('\b', 1, cnt));
+                cnt = cprintf('[ULMO>%s] Skipped %s for climatology, out of time range (%d/%d).\n', ...
+                    callchaintext(callChain), filehref(inputPath, 'data'), iFile, length(inputFiles));
             end
 
             continue
@@ -88,7 +98,16 @@ function computeStericClimatology(tlim, inputFolder, inputFiles, outputPath, opt
         densityCnt(isValidDensity) = densityCnt(isValidDensity) + 1;
 
         numClimFiles = numClimFiles + 1;
+
+        if ~options.BeQuiet
+            fprintf(repmat('\b', 1, cnt));
+            cnt = cprintf('[ULMO>%s] Included %s in climatology (%d/%d).\n', ...
+                callchaintext(callChain), filehref(inputPath, 'data'), iFile, length(inputFiles));
+        end
+
     end
+
+    fprintf(repmat('\b', 1, cnt));
 
     assert(numClimFiles > 0, 'No files found for climatology in the specified time range.');
 
@@ -101,11 +120,16 @@ function computeStericClimatology(tlim, inputFolder, inputFiles, outputPath, opt
     densityClim = densityClim ./ single(densityCnt);
     densityClim(densityCnt == 0) = nan; %#ok<NASGU> - actually saved through VARS variable
 
+    if ~options.BeQuiet
+        fprintf(repmat('\b', 1, length(msg) + 1));
+        cprintf('took %.1f seconds.\n', toc);
+    end
+
     save(outputPath, vars{:}, '-v7.3');
 
     if ~options.BeQuiet
-        cprintf('[ULMO>%s] Computed %s from %d files.\n', ...
-            callchaintext(callChain), filehref(outputPath, 'climatology data'), numClimFiles);
+        cprintf('[ULMO>%s] Saved %s.\n', ...
+            callchaintext(callChain), filehref(outputPath, 'climatology data'));
     end
 
 end
