@@ -54,18 +54,20 @@ function computeStericClimatology(tlim, inputFolder, inputFiles, outputPath, opt
             error('Input file %s is missing some variables.', inputFile);
         end
 
-        load(inputPath, 'salinity', 'consTemp', 'density', 'date');
+        ddate = load(inputPath, 'date');
 
-        if date < tlim(1) || date > tlim(2)
+        if ddate.date < tlim(1) || ddate.date > tlim(2)
 
             if ~options.BeQuiet
                 fprintf(repmat('\b', 1, cnt));
-                cnt = cprintf('[ULMO>%s] Skipped %s for climatology, out of time range (%d/%d).\n', ...
-                    callchaintext(callChain), filehref(inputPath, 'data'), iFile, length(inputFiles));
+                cnt = cprintf('[ULMO>%s] Skipped %s %s for climatology, out of time range (%d/%d).\n', ...
+                    callchaintext(callChain), datetime(ddate.date, "Format", 'yyyy/MM'), filehref(inputPath, 'data'), iFile, length(inputFiles));
             end
 
             continue
         end
+
+        load(inputPath, 'salinity', 'consTemp', 'density');
 
         if ~exist('salinityClim', 'var')
             salinityClim = zeros(size(salinity), 'single');
@@ -101,8 +103,8 @@ function computeStericClimatology(tlim, inputFolder, inputFiles, outputPath, opt
 
         if ~options.BeQuiet
             fprintf(repmat('\b', 1, cnt));
-            cnt = cprintf('[ULMO>%s] Processed %s for climatology (%d/%d).\n', ...
-                callchaintext(callChain), filehref(inputPath, 'data'), iFile, length(inputFiles));
+            cnt = cprintf('[ULMO>%s] Processed %s %s for climatology (%d/%d).\n', ...
+                callchaintext(callChain), datetime(ddata.date, "Format", 'yyyy/MM'), filehref(inputPath, 'data'), iFile, length(inputFiles));
         end
 
     end
