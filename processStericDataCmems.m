@@ -139,7 +139,7 @@ function outputFiles = breakAggregatedInput(inputFolder, outputFolder, options)
 
             if ~options.BeQuiet
                 cprintf('[ULMO>%s] Skipped saving %s %s, already exists.\n', ...
-                    callchaintext(callChain), datetime(date, "Format", 'yyyyMM'), filehref(outputPath, 'T-S data'));
+                    callchaintext(callChain), datetime(date, "Format", 'yyyy/MM'), filehref(outputPath, 'T-S data'));
             end
 
             continue;
