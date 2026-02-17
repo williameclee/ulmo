@@ -201,7 +201,7 @@ function convertTSvars(dataPath, options)
 
     for iDepth = 1:length(data.depth)
         layerSalinityPsu = data.salinityPsu(:, :, iDepth);
-        salinity(:, :, iDepth) = gsw_SA_from_SP(layerSalinityPsu, pres(iDepth), mod(data.lon, 360), data.lat);
+        salinity(:, :, iDepth) = gsw_SA_from_SP(layerSalinityPsu, pres(1, iDepth), mod(data.lon, 360), data.lat);
     end
 
     consTemp = gsw_CT_from_pt(salinity, data.potTemp); %#ok<NASGU> - Saved through outputVars
