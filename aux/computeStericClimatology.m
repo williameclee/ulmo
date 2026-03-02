@@ -104,7 +104,7 @@ function computeStericClimatology(tlim, inputFolder, inputFiles, outputPath, opt
         if ~options.BeQuiet
             fprintf(repmat('\b', 1, cnt));
             cnt = cprintf('[ULMO>%s] Processed %s %s for climatology (%d/%d).\n', ...
-                callchaintext(callChain), datetime(ddata.date, "Format", 'yyyy/MM'), filehref(inputPath, 'data'), iFile, length(inputFiles));
+                callchaintext(callChain), datetime(ddate.date, "Format", 'yyyy/MM'), filehref(inputPath, 'data'), iFile, length(inputFiles));
         end
 
     end
