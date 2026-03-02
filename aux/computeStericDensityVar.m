@@ -50,7 +50,7 @@ function computeStericDensityVar(dataPath, climatologyPath, options)
     if ~ismember('haloDensity', who('-file', dataPath))
         haloDensity = nan(size(data.salinity), 'single');
 
-        for iPres = 1:length(data.pres)
+        for iPres = 1:size(data.pres, 2)
             haloDensity(:, :, iPres) = gsw_rho( ...
                 squeeze(data.salinity(:, :, iPres)), squeeze(cdata.consTempClim(:, :, iPres)), data.pres(1, iPres));
         end
@@ -61,7 +61,7 @@ function computeStericDensityVar(dataPath, climatologyPath, options)
     if ~ismember('thermoDensity', who('-file', dataPath))
         thermoDensity = nan(size(data.salinity), 'single');
 
-        for iPres = 1:length(data.pres)
+        for iPres = 1:size(data.pres, 2)
             thermoDensity(:, :, iPres) = gsw_rho( ...
                 squeeze(cdata.salinityClim(:, :, iPres)), squeeze(data.consTemp(:, :, iPres)), data.pres(1, iPres));
         end
