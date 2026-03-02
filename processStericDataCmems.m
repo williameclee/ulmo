@@ -54,6 +54,14 @@ function processStericDataCmems(inputFolder, outputFolder, aggregatePath, climat
     computeStericClimatology(tlim, outputFolder, outputFiles, climPath, ...
         ForceNew = forceNew, BeQuiet = beQuiet, CallChain = callChain);
 
+    % Compute halosteric and thermosteric densities
+    parfor iFile = 1:length(outputFiles)
+        outputFile = outputFiles{iFile};
+        outputPath = fullfile(outputFolder, outputFile);
+        computeStericDensityVar(outputPath, climPath, ...
+            ForceNew = forceNew, BeQuiet = beQuiet, CallChain = callChain);
+    end
+
     % Compute steric sea level anomalies
     parfor iFile = 1:length(outputFiles)
         outputFile = outputFiles{iFile};

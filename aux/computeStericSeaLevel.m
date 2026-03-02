@@ -40,6 +40,15 @@ function computeStericSeaLevel(dataPath, climatologyPath, options)
         {'shallowStericSl', 'deepStericSl', ...
          'shallowThermostericSl', 'deepThermostericSl', ...
          'shallowHalostericSl', 'deepHalostericSl'};
+    inputVars = {'density', 'haloDensity', 'thermoDensity', 'depth'};
+    inputClimVars = {'densityClim'};
+
+    ddata = load(dataPath, 'date');
+
+    % Check if date variable exists and is in datetime format
+    if ~isfield(ddata, 'date') || ~isa(ddata.date, 'datetime')
+        error('Input file %s is missing required variable "date" in datetime format.', dataPath);
+    end
 
     % Check if stericSl already exists and the file is younger than the climatology
     if ~options.ForceNew && ...
@@ -48,84 +57,62 @@ function computeStericSeaLevel(dataPath, climatologyPath, options)
             (dir(dataPath).datenum > dir(climatologyPath).datenum)
 
         if ~options.BeQuiet
-            cprintf('[ULMO>%s] Skipped computing %s, already exist and is newer than climatology.\n', ...
-                callchaintext(callChain), filehref(dataPath, 'steric sea level data'));
+            cprintf('[ULMO>%s] Skipped computing %s %s, already exist and is newer than climatology.\n', ...
+                callchaintext(callChain), datetime(ddata.date, "Format", 'yyyy/MM'), filehref(dataPath, 'steric sea level data'));
         end
 
         return
+    elseif any(~ismember(inputVars, who('-file', dataPath)))
+        missingDataVars = setdiff(inputVars, who('-file', dataPath));
+        error('Data file %s is missing required variables: %s', ...
+            dataPath, strjoin(missingDataVars, ', '));
+    elseif any(~ismember(inputClimVars, who('-file', climatologyPath)))
+        missingClimVars = setdiff(inputClimVars, who('-file', climatologyPath));
+        error('Climatology file %s is missing required variables: %s', ...
+            climatologyPath, strjoin(missingClimVars, ', '));
     end
 
-    load(dataPath, 'date', 'density', 'salinity', 'consTemp', 'lat', 'depth');
-    load(climatologyPath, 'densityClim', 'consTempClim', 'salinityClim');
-
-    % Compute halosteric density
-    if ismember('haloDensity', who('-file', dataPath))
-        load(dataPath, 'haloDensity');
-    else
-        pres = gsw_p_from_z(repmat(-depth(:)', [length(lat), 1]), lat);
-
-        haloDensity = nan(size(density), 'single');
-
-        for iDepth = 1:length(depth)
-            haloDensity(:, :, iDepth) = gsw_rho( ...
-                squeeze(salinity(:, :, iDepth)), squeeze(consTempClim(:, :, iDepth)), pres(1, iDepth));
-        end
-
-    end
-
-    % Compute thermosteric density
-    if ismember('thermoDensity', who('-file', dataPath))
-        load(dataPath, 'thermoDensity');
-    else
-        pres = gsw_p_from_z(repmat(-depth(:)', [length(lat), 1]), lat);
-
-        thermoDensity = nan(size(density), 'single');
-
-        for iDepth = 1:length(depth)
-            thermoDensity(:, :, iDepth) = gsw_rho( ...
-                squeeze(salinityClim(:, :, iDepth)), squeeze(consTemp(:, :, iDepth)), pres(1, iDepth));
-        end
-
-    end
+    data = load(dataPath, inputVars{:});
+    cdata = load(climatologyPath, inputClimVars{:});
 
     % Integrate steric sea level
-    layerTop = [0; (depth(1:end - 1) + depth(2:end)) / 2];
+    layerTop = [0; (data.depth(1:end - 1) + data.depth(2:end)) / 2];
     layerBottom = [layerTop(2:end); bottom];
     layerThickness = abs(layerTop - layerBottom);
     layerThickness(end) = layerThickness(end - 1) ...
         + (layerThickness(end - 1) - layerThickness(end - 2)); % Extrapolate bottom layer thickness
 
-    thermostericSls = (densityClim ./ thermoDensity - 1) .* ...
+    thermostericSls = (cdata.densityClim ./ data.thermoDensity - 1) .* ...
         reshape(layerThickness, 1, 1, []);
-    halostericSls = (densityClim ./ haloDensity - 1) .* ...
+    halostericSls = (cdata.densityClim ./ data.haloDensity - 1) .* ...
         reshape(layerThickness, 1, 1, []);
     thermostericSl = sum(thermostericSls, 3, 'omitnan'); %#ok<NASGU> - actually saved through VARS variable
     halostericSl = sum(halostericSls, 3, 'omitnan'); %#ok<NASGU> - actually saved through VARS variable
 
-    stericSls = (densityClim ./ density - 1) .* ...
+    stericSls = (cdata.densityClim ./ data.density - 1) .* ...
         reshape(layerThickness, 1, 1, []);
     stericSl = sum(stericSls, 3, 'omitnan'); %#ok<NASGU> - actually saved through VARS variable
 
     if hasDeepLayer
         isShallow = layerTop < 2000;
-        shallowStericSls = (densityClim(:, :, isShallow) ./ density(:, :, isShallow) - 1) .* ...
+        shallowStericSls = (cdata.densityClim(:, :, isShallow) ./ data.density(:, :, isShallow) - 1) .* ...
             reshape(layerThickness(isShallow), 1, 1, []);
         shallowStericSl = sum(shallowStericSls, 3, 'omitnan'); %#ok<NASGU> - actually saved through VARS variable
-        shallowThermostericSls = (densityClim(:, :, isShallow) ./ thermoDensity(:, :, isShallow) - 1) .* ...
+        shallowThermostericSls = (cdata.densityClim(:, :, isShallow) ./ data.thermoDensity(:, :, isShallow) - 1) .* ...
             reshape(layerThickness(isShallow), 1, 1, []);
         shallowThermostericSl = sum(shallowThermostericSls, 3, 'omitnan'); %#ok<NASGU> - actually saved through VARS variable
-        shallowHalostericSls = (densityClim(:, :, isShallow) ./ haloDensity(:, :, isShallow) - 1) .* ...
+        shallowHalostericSls = (cdata.densityClim(:, :, isShallow) ./ data.haloDensity(:, :, isShallow) - 1) .* ...
             reshape(layerThickness(isShallow), 1, 1, []);
         shallowHalostericSl = sum(shallowHalostericSls, 3, 'omitnan'); %#ok<NASGU> - actually saved through VARS variable
 
         isDeep = layerTop >= 2000;
-        deepStericSls = (densityClim(:, :, isDeep) ./ density(:, :, isDeep) - 1) .* ...
+        deepStericSls = (cdata.densityClim(:, :, isDeep) ./ data.density(:, :, isDeep) - 1) .* ...
             reshape(layerThickness(isDeep), 1, 1, []);
         deepStericSl = sum(deepStericSls, 3, 'omitnan'); %#ok<NASGU> - actually saved through VARS variable
-        deepThermostericSls = (densityClim(:, :, isDeep) ./ thermoDensity(:, :, isDeep) - 1) .* ...
+        deepThermostericSls = (cdata.densityClim(:, :, isDeep) ./ data.thermoDensity(:, :, isDeep) - 1) .* ...
             reshape(layerThickness(isDeep), 1, 1, []);
         deepThermostericSl = sum(deepThermostericSls, 3, 'omitnan'); %#ok<NASGU> - actually saved through VARS variable
-        deepHalostericSls = (densityClim(:, :, isDeep) ./ haloDensity(:, :, isDeep) - 1) .* ...
+        deepHalostericSls = (cdata.densityClim(:, :, isDeep) ./ data.haloDensity(:, :, isDeep) - 1) .* ...
             reshape(layerThickness(isDeep), 1, 1, []);
         deepHalostericSl = sum(deepHalostericSls, 3, 'omitnan'); %#ok<NASGU> - actually saved through VARS variable
     end
@@ -148,7 +135,7 @@ function computeStericSeaLevel(dataPath, climatologyPath, options)
 
     if ~options.BeQuiet
         cprintf('[ULMO>%s] Computed %s %s.\n', ...
-            callchaintext(callChain), datetime(date, "Format", 'yyyyMM'), filehref(dataPath, 'steric sea level data'));
+            callchaintext(callChain), datetime(ddata.date, "Format", 'yyyy/MM'), filehref(dataPath, 'steric sea level data'));
     end
 
 end
