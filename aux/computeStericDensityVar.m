@@ -47,25 +47,19 @@ function computeStericDensityVar(dataPath, climatologyPath, options)
     cdata = load(climatologyPath, inputClimVars{:});
 
     % Compute halosteric density
-    if ~ismember('haloDensity', who('-file', dataPath))
-        haloDensity = nan(size(data.salinity), 'single');
+    haloDensity = nan(size(data.salinity), 'single');
 
-        for iPres = 1:size(data.pres, 2)
-            haloDensity(:, :, iPres) = gsw_rho( ...
-                squeeze(data.salinity(:, :, iPres)), squeeze(cdata.consTempClim(:, :, iPres)), data.pres(1, iPres));
-        end
-
+    for iPres = 1:size(data.pres, 2)
+        haloDensity(:, :, iPres) = gsw_rho( ...
+            squeeze(data.salinity(:, :, iPres)), squeeze(cdata.consTempClim(:, :, iPres)), data.pres(1, iPres));
     end
 
     % Compute thermosteric density
-    if ~ismember('thermoDensity', who('-file', dataPath))
-        thermoDensity = nan(size(data.salinity), 'single');
+    thermoDensity = nan(size(data.salinity), 'single');
 
-        for iPres = 1:size(data.pres, 2)
-            thermoDensity(:, :, iPres) = gsw_rho( ...
-                squeeze(cdata.salinityClim(:, :, iPres)), squeeze(data.consTemp(:, :, iPres)), data.pres(1, iPres));
-        end
-
+    for iPres = 1:size(data.pres, 2)
+        thermoDensity(:, :, iPres) = gsw_rho( ...
+            squeeze(cdata.salinityClim(:, :, iPres)), squeeze(data.consTemp(:, :, iPres)), data.pres(1, iPres));
     end
 
     % Save density data back to the same .mat file
