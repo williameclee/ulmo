@@ -1,6 +1,8 @@
 %% COMPUTESTERICSEALEVEL - Computes sea level anomalies from density and climatology
 %
 % Last modified
+%   2026/03/02, williameclee@arizona.edu (@williameclee)
+%     - Corrected ocean bottom thickness calculation
 %   2026/02/17, williameclee@arizona.edu (@williameclee)
 %     - Extracted from PROCESSSTERICDATAEN4 for reusability
 
@@ -79,8 +81,8 @@ function computeStericSeaLevel(dataPath, climatologyPath, options)
     layerTop = [0; (data.depth(1:end - 1) + data.depth(2:end)) / 2];
     layerBottom = [layerTop(2:end); bottom];
     layerThickness = abs(layerTop - layerBottom);
-    layerThickness(end) = layerThickness(end - 1) ...
-        + (layerThickness(end - 1) - layerThickness(end - 2)); % Extrapolate bottom layer thickness
+    % layerThickness(end) = layerThickness(end - 1) ...
+    %     + (layerThickness(end - 1) - layerThickness(end - 2)); % Extrapolate bottom layer thickness
 
     thermostericSls = (cdata.densityClim ./ data.thermoDensity - 1) .* ...
         reshape(layerThickness, 1, 1, []);
