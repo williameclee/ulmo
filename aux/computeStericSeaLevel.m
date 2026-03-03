@@ -7,7 +7,7 @@
 %     - Extracted from PROCESSSTERICDATAEN4 for reusability
 
 function computeStericSeaLevel(dataPath, climatologyPath, options)
-
+    %% Validation and checks
     arguments (Input)
         dataPath {mustBeTextScalar, mustBeFile}
         climatologyPath {mustBeTextScalar, mustBeFile}
@@ -22,42 +22,28 @@ function computeStericSeaLevel(dataPath, climatologyPath, options)
     hasDeepLayer = options.HasDeepLayer;
     callChain = [options.CallChain, {mfilename}];
 
-    if ~exist(dataPath, 'file')
-        error('Data file %s does not exist.', dataPath);
-    elseif ~exist(climatologyPath, 'file')
-        error('Climatology file %s does not exist.', climatologyPath);
-    elseif any(~ismember({'density', 'depth'}, who('-file', dataPath)))
-        missingDataVars = setdiff({'density', 'depth'}, who('-file', dataPath));
-        error('Data file %s is missing required variables: %s', ...
-            dataPath, strjoin(missingDataVars, ', '));
-    elseif any(~ismember({'densityClim', 'consTempClim', 'salinityClim'}, who('-file', climatologyPath)))
-        missingClimVars = setdiff({'densityClim', 'consTempClim', 'salinityClim'}, who('-file', climatologyPath));
-        error('Climatology file %s is missing required variables: %s', ...
-            climatologyPath, strjoin(missingClimVars, ', '));
-    end
-
-    vars = ...
-        {'stericSl', 'thermostericSl', 'halostericSl'};
-    depthVars = ...
-        {'shallowStericSl', 'deepStericSl', ...
-         'shallowThermostericSl', 'deepThermostericSl', ...
-         'shallowHalostericSl', 'deepHalostericSl'};
-    inputVars = {'density', 'haloDensity', 'thermoDensity', 'depth'};
-    inputClimVars = {'densityClim'};
-
     ddata = load(dataPath, 'date');
-
     % Check if date variable exists and is in datetime format
     if ~isfield(ddata, 'date') || ~isa(ddata.date, 'datetime')
         error('Input file %s is missing required variable "date" in datetime format.', dataPath);
     end
 
-    % Check if stericSl already exists and the file is younger than the climatology
-    if ~options.ForceNew && ...
-            all(ismember(vars, who('-file', dataPath))) && ...
-            (~hasDeepLayer || all(ismember(depthVars, who('-file', dataPath)))) && ...
-            (dir(dataPath).datenum > dir(climatologyPath).datenum)
+    % The needed variables
+    inputVars = {'density', 'haloDensity', 'thermoDensity', 'depth'};
+    inputClimVars = {'densityClim'};
+    outputVars = ...
+        {'stericSl', 'thermostericSl', 'halostericSl'};
+    outputDepthVars = ...
+        {'shallowStericSl', 'deepStericSl', ...
+         'shallowThermostericSl', 'deepThermostericSl', ...
+         'shallowHalostericSl', 'deepHalostericSl'};
 
+    if ~options.ForceNew && ...
+            all(ismember(outputVars, who('-file', dataPath))) && ...
+            (~hasDeepLayer || all(ismember(outputDepthVars, who('-file', dataPath)))) && ...
+            (dir(dataPath).datenum > dir(climatologyPath).datenum)
+        % Check if steric sea level variables already exist and the file is younger than the climatology
+        % If so, no need to recompute
         if ~options.BeQuiet
             cprintf('[ULMO>%s] Skipped computing %s %s, already exist and is newer than climatology.\n', ...
                 callchaintext(callChain), datetime(ddata.date, "Format", 'yyyy/MM'), filehref(dataPath, 'steric sea level data'));
@@ -65,18 +51,21 @@ function computeStericSeaLevel(dataPath, climatologyPath, options)
 
         return
     elseif any(~ismember(inputVars, who('-file', dataPath)))
+        % Make sure all required time-dependent input variables exist in the data file
         missingDataVars = setdiff(inputVars, who('-file', dataPath));
         error('Data file %s is missing required variables: %s', ...
             dataPath, strjoin(missingDataVars, ', '));
-    elseif any(~ismember(inputClimVars, who('-file', climatologyPath)))
-        missingClimVars = setdiff(inputClimVars, who('-file', climatologyPath));
-        error('Climatology file %s is missing required variables: %s', ...
-            climatologyPath, strjoin(missingClimVars, ', '));
+    elseif ~ismember('densityClim', who('-file', climatologyPath))
+        % Make sure all required climatology variables exist in the climatology file
+        error('Climatology file %s is missing density data', ...
+            climatologyPath);
     end
 
+    % Load variables from .mat files
     data = load(dataPath, inputVars{:});
     cdata = load(climatologyPath, inputClimVars{:});
 
+    %% Main computation
     % Integrate steric sea level
     layerTop = [0; (data.depth(1:end - 1) + data.depth(2:end)) / 2];
     layerBottom = [layerTop(2:end); bottom];
@@ -120,24 +109,25 @@ function computeStericSeaLevel(dataPath, climatologyPath, options)
     end
 
     try
-        save(dataPath, vars{:}, '-append');
+        save(dataPath, outputVars{:}, '-append');
     catch
-        save(dataPath, vars{:}, '-v7.3', '-append');
+        save(dataPath, outputVars{:}, '-v7.3', '-append');
     end
 
     if hasDeepLayer
 
         try
-            save(dataPath, depthVars{:}, '-append');
+            save(dataPath, outputDepthVars{:}, '-append');
         catch
-            save(dataPath, depthVars{:}, '-v7.3', '-append');
+            save(dataPath, outputDepthVars{:}, '-v7.3', '-append');
         end
 
     end
 
     if ~options.BeQuiet
         cprintf('[ULMO>%s] Computed %s %s.\n', ...
-            callchaintext(callChain), datetime(ddata.date, "Format", 'yyyy/MM'), filehref(dataPath, 'steric sea level data'));
+            callchaintext(callChain), datetime(ddata.date, "Format", 'yyyy/MM'), ...
+            filehref(dataPath, 'steric sea level data'));
     end
 
 end
