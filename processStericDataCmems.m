@@ -2,6 +2,9 @@
 %
 % Author
 %	2026/02/15, williameclee@arizona.edu (@williameclee)
+% Last modified
+%	2026/03/03, williameclee@arizona.edu (@williameclee)
+%     - Added toggle for parallel processing
 
 function processStericDataCmems(inputFolder, outputFolder, aggregatePath, climatologyTimeRange, options)
 
@@ -11,6 +14,7 @@ function processStericDataCmems(inputFolder, outputFolder, aggregatePath, climat
         aggregatePath (1, :) char = fullfile(outputFolder, 'CMEMS-steric.nc')
         climatologyTimeRange (1, 2) datetime = [datetime(1990, 1, 1), datetime(2010, 12, 31)]
         options.DeAggregate (1, 1) logical = true
+        options.UseParallel (1, 1) logical = true
         options.ForceNew (1, 1) logical = false
         options.BeQuiet (1, 1) logical = false
         options.CallChain (1, :) cell = {}
@@ -22,57 +26,99 @@ function processStericDataCmems(inputFolder, outputFolder, aggregatePath, climat
     beQuiet = options.BeQuiet;
     callChain = [options.CallChain, {mfilename}];
 
+    commonArgs = {"ForceNew", forceNew, "BeQuiet", beQuiet, "CallChain", callChain};
+
     %% Main processing steps
     % Break aggregated input into individual files
     if options.DeAggregate
         outputFiles = breakAggregatedInput(inputFolder, outputFolder, ...
-            ForceNew = forceNew, BeQuiet = beQuiet, CallChain = callChain);
+            commonArgs{:});
     else
         outputFiles = dir(fullfile(outputFolder, 'CMEMS-M*.mat'));
         outputFiles = {outputFiles.name};
     end
 
     % Convert temperature and salinity to conservative temperature and absolute salinity
-    parfor iFile = 1:length(outputFiles)
-        outputFile = outputFiles{iFile};
-        outputPath = fullfile(outputFolder, outputFile);
-        convertTSvars(outputPath, ...
-            ForceNew = forceNew, BeQuiet = beQuiet, CallChain = callChain);
+    if options.UseParallel
+
+        parfor iFile = 1:length(outputFiles)
+            convertTSvars(fullfile(outputFolder, outputFiles{iFile}), ...
+                commonArgs{:});
+        end
+
+    else
+
+        for iFile = 1:length(outputFiles)
+            convertTSvars(fullfile(outputFolder, outputFiles{iFile}), ...
+                commonArgs{:});
+        end
+
     end
 
     % Compute density for each file
-    parfor iFile = 1:length(outputFiles)
-        outputFile = outputFiles{iFile};
-        outputPath = fullfile(outputFolder, outputFile);
-        computeStericDensity(outputPath, ...
-            ForceNew = forceNew, BeQuiet = beQuiet, CallChain = callChain);
+    if options.UseParallel
+
+        parfor iFile = 1:length(outputFiles)
+            computeStericDensity(fullfile(outputFolder, outputFiles{iFile}), ...
+                commonArgs{:});
+        end
+
+    else
+
+        for iFile = 1:length(outputFiles)
+            computeStericDensity(fullfile(outputFolder, outputFiles{iFile}), ...
+                commonArgs{:});
+        end
+
     end
 
     % Compute climatology
     climPath = fullfile(outputFolder, sprintf('CMEMS-C%s_%s.mat', datetime(tlim, "Format", 'yyyyMM')));
 
     computeStericClimatology(tlim, outputFolder, outputFiles, climPath, ...
-        ForceNew = forceNew, BeQuiet = beQuiet, CallChain = callChain);
+        commonArgs{:});
 
     % Compute halosteric and thermosteric densities
-    parfor iFile = 1:length(outputFiles)
-        outputFile = outputFiles{iFile};
-        outputPath = fullfile(outputFolder, outputFile);
-        computeStericDensityVar(outputPath, climPath, ...
-            ForceNew = forceNew, BeQuiet = beQuiet, CallChain = callChain);
+    if options.UseParallel
+
+        parfor iFile = 1:length(outputFiles)
+            computeStericDensityVar(fullfile(outputFolder, outputFiles{iFile}), ...
+                climPath, ...
+                commonArgs{:});
+        end
+
+    else
+
+        for iFile = 1:length(outputFiles)
+            computeStericDensityVar(fullfile(outputFolder, outputFiles{iFile}), ...
+                climPath, ...
+                commonArgs{:});
+        end
+
     end
 
     % Compute steric sea level anomalies
-    parfor iFile = 1:length(outputFiles)
-        outputFile = outputFiles{iFile};
-        outputPath = fullfile(outputFolder, outputFile);
-        computeStericSeaLevel(outputPath, climPath, ...
-            ForceNew = forceNew, BeQuiet = beQuiet, CallChain = callChain);
+    if options.UseParallel
+
+        parfor iFile = 1:length(outputFiles)
+            computeStericSeaLevel(fullfile(outputFolder, outputFiles{iFile}), ...
+                climPath, ...
+                commonArgs{:});
+        end
+
+    else
+
+        for iFile = 1:length(outputFiles)
+            computeStericSeaLevel(fullfile(outputFolder, outputFiles{iFile}), ...
+                climPath, ...
+                commonArgs{:});
+        end
+
     end
 
     % Aggregate steric data
     aggregateStericSeaLevel(outputFolder, outputFiles, aggregatePath, ...
-        ForceNew = forceNew, BeQuiet = beQuiet, CallChain = callChain);
+        commonArgs{:});
 end
 
 %% Subfunctions
