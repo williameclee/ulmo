@@ -1,6 +1,8 @@
 %% COMPUTESTERICCLIMATOLOGY - Computes climatology of temperature, salinity, and density
 %
 % Last modified
+%   2026/03/03, williameclee@arizona.edu (@williameclee)
+%     - Added fail safe for unreadable climatology file
 %   2026/02/16, williameclee@arizona.edu (@williameclee)
 %     - Extracted from PROCESSSTERICDATAEN4 for reusability
 
@@ -20,15 +22,22 @@ function computeStericClimatology(tlim, inputFolder, inputFiles, outputPath, opt
 
     vars = {'consTempClim', 'salinityClim', 'densityClim'};
 
-    if ~options.ForceNew && exist(outputPath, 'file') && ...
-            all(ismember(vars, who('-file', outputPath)))
+    try
 
-        if ~options.BeQuiet
-            cprintf('[ULMO>%s] Skipped computing %s, already exist.\n', ...
-                callchaintext(callChain), filehref(outputPath, 'climatology data'));
+        if ~options.ForceNew && exist(outputPath, 'file') && ...
+                all(ismember(vars, who('-file', outputPath)))
+
+            if ~options.BeQuiet
+                cprintf('[ULMO>%s] Skipped computing %s, already exist.\n', ...
+                    callchaintext(callChain), filehref(outputPath, 'climatology data'));
+            end
+
+            return
         end
 
-        return
+    catch
+        % For some reason the file exists but is not readable, so we will recompute it
+        warning('File %s exists but is not readable or procuces error for some other reasons. Recomputing climatology.', outputPath);
     end
 
     numClimFiles = 0;
