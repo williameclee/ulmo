@@ -26,23 +26,22 @@ function convertSelenModel(modelFolder)
     [~, modelFolderSelf] = fileparts(modelFolder);
     modelName = regexp(modelFolderSelf, "RUN_([A-Za-z0-9-_]+)", "tokens", "once");
     modelInfo = regexp(modelFolderSelf, "RUN_([A-Za-z0-9]+)-R(\d+)-L(\d+)-I(\d+)", "tokens", "once");
-    L = str2double(modelInfo{3});
 
-    %% Geoid and surface density
-    geoidPath = fullfile(dataFolder, "gdot.pix");
-    geoidXyz = readmatrix(geoidPath, "FileType", "text");
-    geoidXyz(:, 3) = geoidXyz(:, 3) / 1e3; % mm -> m
-    % Interpolate onto a regular grid
+    % Prepare grid for interpolation
+    L = str2double(modelInfo{3});
     h = 360 / (2 * L);
     lon = 0:h:360;
     lat = -90:h:90;
     [lonn, latt] = meshgrid(lon, lat);
+    %% Geoid and surface density
+    geoidPath = fullfile(dataFolder, "gdot.pix");
+    geoidXyz = readmatrix(geoidPath, "FileType", "text");
+    geoidXyz(:, 3) = geoidXyz(:, 3) / 1e3; % mm -> m
     F = scatteredInterpolant(geoidXyz(:, 1), geoidXyz(:, 2), geoidXyz(:, 3), "nearest", "nearest");
     geoidMesh = F(mod(lonn, 360), latt);
     geoidPlm = xyz2plm_new(flip(geoidMesh), L);
 
     sdPlm = convertgravity(geoidPlm, "POT", "SD");
-    sdPlm(:, 3:4) = sdPlm(:, 3:4);
 
     % Save the converted model
     lmcosiM = sdPlm;
