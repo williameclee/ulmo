@@ -96,11 +96,13 @@
 % See also
 %   SOLVESLE, GRACE2PLMT
 %
-% Authored by
-%   2025/03/18, williameclee@arizona.edu (@williameclee)
+% Author
+%   2025/03/18, En-Chi Lee (williameclee@arizona.edu)
 %
 % Last modified by
-%   2025/10/01, williameclee@arizona.edu (@williameclee)
+%   2026/04/01, En-Chi Lee (williameclee@arizona.edu)
+%     - Made sure the waitbar is properly deleted
+%   2025/10/01, En-Chi Lee (williameclee@arizona.edu)
 
 function varargout = solvedegree1(varargin)
     %% Initialisation
@@ -163,6 +165,7 @@ function [coeffs, coeffStds, dates] = ...
     %% Loading data
     wbar = waitbar(0, 'Loading GRACE data', ...
         "Name", upper(mfilename), "CreateCancelBtn", 'setappdata(gcbf,''canceling'',1)');
+    cleanup = onCleanup(@() delete(wbar));
 
     [gracePlmt, graceStdPlmt, dates] = grace2plmt_new(pcenter, rlevel, Ldata, ...
         "Unit", 'SD', "OutputFormat", 'timefirst', "TimeFormat", 'datetime', ...
