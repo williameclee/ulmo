@@ -1,13 +1,13 @@
 %% PARSELONLATINPUTS - Parses inputs for any longitude and latitude inputs
 %
 % Syntax
-%   [lon, lat, __, type] = dataPath(lon, lat, __)
-%   [lon, lat, __, type] = dataPath(lonlat, __)
-%   [lon, lat, __, type] = dataPath(p, __)
-%   [lon, lat, __, type] = dataPath(geodomain, __)
+%   [lon, lat, __, type] = parselonlatinputs(lon, lat, __)
+%   [lon, lat, __, type] = parselonlatinputs(lonlat, __)
+%   [lon, lat, __, type] = parselonlatinputs(p, __)
+%   [lon, lat, __, type] = parselonlatinputs(geodomain, __)
 %
 % Input arguments
-%   lon, lat - numeric array of longitudes and latitudes
+%   lon, lat - Numeric array of longitudes and latitudes
 %       The two arrays must have the same size.
 %   lonlat - N-by-2 (or 2-by-N) numeric array of longitude and latitude
 %       coordinates
@@ -23,10 +23,12 @@
 %       2 - GeoDomain
 %
 % Author
-%   2024-08-12, En-Chi Lee (williameclee@gmail.com)
+%   2024/08/12, En-Chi Lee (williameclee@gmail.com)
 %
 % Last modified by
-%   2024-10-18, En-Chi Lee (williameclee@gmail.com)
+%   2026/04/01, En-Chi Lee (williameclee@arizona.edu)
+%     - Updated to documentation
+%   2024/10/18, En-Chi Lee (williameclee@gmail.com)
 
 function varargout = parselonlatinputs(varargin)
     % Find longitude and latitude
