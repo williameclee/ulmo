@@ -10,7 +10,15 @@
 %   modelFolder - folder containing the SELEN model outputs
 %
 % References
-%   https://github.com/geodynamics/selen
+%   Spada, Giorgio & Melini, Daniele. (2019). SELEN4 (SELEN version 4.0): a
+%       Fortran program for solving the gravitationally and topographically
+%       self-consistent sea-level equation in glacial isostatic adjustment
+%       modeling. Geosci. Model Dev. 
+%       https://doi.org/10.5194/gmd-12-5055-2019
+%       https://github.com/geodynamics/selen
+%   Tamisiea, Mark E. (2011). Ongoing glacial isostatic contributions to
+%       observations of sea level change. Geophys. J. Int.
+%       https://doi.org/10.1111/j.1365-246X.2011.05116.x
 %
 % Author
 %	2026/04/01, En-Chi Lee (williameclee@arizona.edu)
@@ -40,6 +48,8 @@ function convertSelenModel(modelFolder)
     F = scatteredInterpolant(geoidXyz(:, 1), geoidXyz(:, 2), geoidXyz(:, 3), "nearest", "nearest");
     geoidMesh = F(mod(lonn, 360), latt);
     geoidPlm = xyz2plm_new(flip(geoidMesh), L);
+
+    geoidPlm(5, 3:4) = geoidPlm(5, 3:4) / 2.06; % See Appendix of Tamisiea (2011)
 
     sdPlm = convertgravity(geoidPlm, "POT", "SD");
 
