@@ -4,6 +4,9 @@
 %	2026/02/14, williameclee@arizona.edu (@williameclee)
 %
 % Last modified
+%   2026/04/07, williameclee@arizona.edu (@williameclee)
+%     - Added pressure as an additional output variable in `computeDensity`
+%       for later use
 %   2026/02/17, williameclee@arizona.edu (@williameclee)
 %     - Extracted auxiliary functions to their own files for reusability
 
@@ -106,7 +109,7 @@ function computeDensity(inputPath, outputFolder, options)
     outputFile = sprintf('EN4c14-M%s.mat', datetime(date, "Format", 'yyyyMM'));
     outputPath = fullfile(outputFolder, outputFile);
 
-    vars = {'salinity', 'consTemp', 'density', 'lon', 'lat', 'depth', 'date'};
+    vars = {'salinity', 'consTemp', 'density', 'lon', 'lat', 'depth', 'pres', 'date'};
 
     if ~options.ForceNew && exist(outputPath, 'file') && ...
             all(ismember(vars, who('-file', outputPath)))
