@@ -14,11 +14,11 @@
 %
 % Input arguments
 %   model - Name of the GIA model
-%       - Name of a model computed by H. Steffen. It can be specified as,
+%         - Name of a model computed by H. Steffen. It can be specified as,
 %           e.g. 'Steffen_ice6g_vm5a' or {'Steffen', 'ice6g', 'vm5a'}.
-%       - LM17.3 is also supported.
+%         - LM17.3 is also supported.
 %       Other models are specified in the same way.
-%       - The input can also be the path to the model file.
+%         - The input can also be the path to the model file.
 %		The default model is 'Steffen_ice6g_vm5a'.
 %       Format: string or 1 x 3 cell array.
 %   years - Number of years to calculate the GIA change for
@@ -54,7 +54,9 @@
 %       PANGAEA, doi: 10.1594/PANGAEA.932462
 %
 % Last modified by
-%   2025/08/03, williameclee@arizona.edu (@williameclee)
+%   2026/04/01, En-Chi Lee (williameclee@arizona.edu)
+%     - Added support for models from the SELEN software
+%   2025/08/03, En-Chi Lee (williameclee@arizona.edu)
 
 function varargout = giaz2plmt(varargin)
     %% Initialisation
@@ -86,8 +88,21 @@ function varargout = giaz2plmt(varargin)
         wPlmt = wSph;
         wUPlmt = [];
         wLPlmt = [];
+    elseif strncmpi(model, 'selen-', 6) || strncmpi(model, 'selen_', 6)
+        model = regexprep(model, 'selen[-_]', '', 'ignorecase');
+        inputFolder = fullfile(getenv('IFILES'), 'GIA', 'Selen', sprintf("RUN_%s", model));
+        inputPath = fullfile(inputFolder, sprintf('%s_VLM.mat', model));
+
+        if ~exist(inputPath, 'file')
+            convertSelenModel(inputFolder);
+        end
+
+        load(inputPath, 'lmcosiM');
+        wPlmt = lmcosiM;
+        wUPlmt = [];
+        wLPlmt = [];
     else
-        error('ULMO:LoadData:FileNotFound', 'Unrecognised model name %s', upper(model));
+        error('Slepian:LoadData:FileNotFound', 'Unrecognised model name %s', upper(model));
     end
 
     if (size(wPlmt, 1) < addmup(L) || ...
@@ -238,7 +253,7 @@ function plm = findsteffendata(model)
 
         % Make sure the file exists
         if exist(inputPath, 'file') ~= 2
-            error('ULMO:LoadData:FileNotFound', ...
+            error('Slepian:LoadData:FileNotFound', ...
                 'Model %s not found at %s', upper(model), inputPath);
         end
 
