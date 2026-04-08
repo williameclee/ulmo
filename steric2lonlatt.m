@@ -560,7 +560,14 @@ function outputPath = ...
     timelimStr = '';
 
     if truncBeforeIntp && ~isempty(timelim)
-        timelimStr = sprintf('-%s_%s', datetime(timelim(1), 'yyyymmdd'), datetime(timelim(2), 'yyyymmdd'));
+
+        if isnumeric(timelim)
+            timelim = datetime(timelim, 'ConvertFrom', 'datenum', 'Format', 'yyyyMMdd');
+        else
+            timelim = datetime(timelim, 'Format', 'yyyyMMdd');
+        end
+
+        timelimStr = sprintf('-%s_%s', timelim);
     end
 
     outputFile = sprintf('%s-StericSeaLevel%s%s%s%s.mat', ...
