@@ -1,9 +1,12 @@
 %% PROCESSSTERICDATACMEMS - Process steric sea level from CMEMS data
 %
 % Author
-%	2026/02/15, williameclee@arizona.edu (@williameclee)
+%	2026/02/15, En-Chi Lee (williameclee@arizona.edu)
+%
 % Last modified
-%	2026/03/03, williameclee@arizona.edu (@williameclee)
+%	2026/04/08, En-Chi Lee (williameclee@arizona.edu)
+%     - Fixed comment descriptions for better clarity
+%	2026/03/03, En-Chi Lee (williameclee@arizona.edu)
 %     - Added toggle for parallel processing
 
 function processStericDataCmems(inputFolder, outputFolder, aggregatePath, climatologyTimeRange, options)
@@ -250,7 +253,7 @@ function convertTSvars(dataPath, options)
 
     data = load(dataPath, inputVars{:});
 
-    % Convert salinity and temperature to absolute salinity and in-situ density
+    % Convert salinity and temperature to absolute salinity and conservative temperature
     pres = gsw_p_from_z(repmat(-data.depth(:)', [length(data.lat), 1]), data.lat);
     salinity = nan(size(data.salinityPsu), 'single');
 
@@ -261,7 +264,7 @@ function convertTSvars(dataPath, options)
 
     consTemp = gsw_CT_from_pt(salinity, data.potTemp); %#ok<NASGU> - Saved through outputVars
 
-    % Save density data back to the same .mat file
+    % Save absolute T/S data back to the same .mat file
     save(dataPath, outputVars{:}, '-append');
 
     if ~options.BeQuiet
