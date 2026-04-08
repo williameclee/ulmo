@@ -23,6 +23,8 @@
 %
 % Last modified by
 %   2026/04/08, En-Chi Lee (williameclee@arizona.edu)
+%     - Added fallback to "nearest" interpolation when "mean" method is not
+%       compatible with INTERP1
 %     - Added option to specify a time range for interpolation
 
 function [meshIntp, datesIntp] = ...
@@ -58,8 +60,9 @@ function [meshIntp, datesIntp] = ...
     else
 
         if mean(diff(dates)) > timeStep
-            warning(sprintf('%s:InterpolationStepTooSmall', upper(mfilename)), ...
-                'The interpolation time step (%s) is smaller than the mean data resolution (%s)', timeStep, mean(diff(dates)));
+            warning('Slepian:interpTemporal:InterpolationStepTooSmall', ...
+                'The interpolation time step (%s) is smaller than the mean data resolution (%s)', ...
+                timeStep, mean(diff(dates)));
         end
 
         datesIntp = dates(1):timeStep:dates(end);
@@ -83,6 +86,13 @@ function [meshIntp, datesIntp] = ...
         end
 
     else
+
+        if strcmpi(intpMthd, "mean")
+            warning('Slepian:interpTemporal:InterpolationMethodMean', ...
+            'Interpolation method "mean" is not compatible with INTERP1. Using "nearest" instead.');
+            intpMthd = "nearest";
+        end
+
         meshIntp = interp1(dates, meshFlat, datesIntp, intpMthd)';
     end
 
