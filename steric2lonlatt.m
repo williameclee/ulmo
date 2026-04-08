@@ -373,8 +373,13 @@ function [steric, stericSigma, dates, lon, lat] = steric2lonlatt(product, timest
         return
     end
 
-    plotsealeveltseries(dates, steric, lon, lat, ...
-        product, unit, 'Global mean steric sea level');
+    try
+        plotsealeveltseries(dates, steric, lon, lat, ...
+            product, unit, 'Global mean steric sea level');
+    catch ME
+        warning('Slepian:Plotting:PlotFailed', ...
+            'Plotting steric sea level change failed with error:\n%s\nSkipping plotting.', ME.message);
+    end
 
 end
 
