@@ -104,7 +104,7 @@ function [steric, stericSigma, dates, lon, lat] = steric2lonlatt(product, timest
         options.Depth ...
             {mustBeTextScalar, mustBeMember(options.Depth, {'full', 'shallow', 'deep'})} = 'full'
         options.Type ...
-            {mustBeTextScalar, mustBeMember(options.Type, {'total', 'thermosteric', 'halosteric', 'non-thermosteric', 'non-halosteric', 'no halosteric drift'})} = 'total'
+            {mustBeTextScalar, mustBeMember(options.Type, {'total', 'thermosteric', 'halosteric', 'non-thermosteric', 'non-halosteric', 'no halosteric drift'})} = 'default'
         options.TruncationBeforeInterpolation (1, 1) {mustBeNumericOrLogical} = false
         options.ForceNew (1, 1) {mustBeNumericOrLogical} = false
         options.BeQuiet (1, 1) {mustBeNumericOrLogical} = 0.5
@@ -157,7 +157,17 @@ function [steric, stericSigma, dates, lon, lat] = steric2lonlatt(product, timest
 
     stericVar = "sl";
 
-    switch options.Type
+    if strcmpi(options.Type, "default")
+
+        if strcmpi(product, "SIO")
+            options.Type = "total";
+        else
+            options.Type = "no halosteric drift";
+        end
+
+    end
+
+    switch lower(options.Type)
         case {'thermosteric', 'non-thermosteric'}
             stericVar = ["thermosteric", stericVar];
         case {'halosteric', 'non-halosteric', 'no halosteric drift'}
@@ -330,7 +340,7 @@ function [steric, stericSigma, dates, lon, lat] = steric2lonlatt(product, timest
                 additionalArgs = {};
             end
 
-            save(outputPath, '-struct', 'coord', 'lon', 'lat', 'dates', additionalArgs{:});
+            save(outputPath, '-struct', 'coord', 'lon', 'lat', 'dates', '-v7.3', additionalArgs{:});
             save(outputPath, '-struct', 'data', allStericVars{:}, '-append');
         catch ME
             warning('ULMO:SaveData:SaveFailed', ...
