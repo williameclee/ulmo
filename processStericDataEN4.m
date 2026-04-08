@@ -58,7 +58,7 @@ function processStericDataEN4(inputFolder, outputFolder, aggregatePath, climatol
     parfor iFile = 1:length(inputFiles)
         inputFile = inputFiles{iFile};
         inputPath = fullfile(inputFolder, inputFile);
-        computeDensity(inputPath, outputFolder, ForceNew = forceNew, CallChain = callChain);
+        computeDensity(inputPath, outputFolder, ForceNew = forceNew, BeQuiet = beQuiet, CallChain = callChain);
     end
 
     outputPattern = 'EN4c14-M*.mat';
@@ -84,11 +84,11 @@ function processStericDataEN4(inputFolder, outputFolder, aggregatePath, climatol
         outputFile = outputFiles{iFile};
         outputPath = fullfile(outputFolder, outputFile);
         computeStericSeaLevel(outputPath, climPath, Bottom = 5500, ...
-            ForceNew = forceNew, CallChain = callChain);
+            ForceNew = forceNew, BeQuiet = beQuiet, CallChain = callChain);
     end
 
     aggregateStericSeaLevel(outputFolder, outputFiles, aggregatePath, ...
-        ForceNew = forceNew, CallChain = callChain);
+        ForceNew = forceNew, BeQuiet = beQuiet, CallChain = callChain);
 end
 
 %% Subfunctions
