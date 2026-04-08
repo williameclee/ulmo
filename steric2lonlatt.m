@@ -81,10 +81,12 @@
 %       OutputFormat option.
 %
 % Authored by
-%	2025/07/22, williameclee@arizona.edu (@williameclee)
+%	2025/07/22, En-Chi Lee (williameclee@arizona.edu)
 %
 % Last modified by
-%	2025/11/03, williameclee@arizona.edu (@williameclee)
+%	2026/04/08, En-Chi Lee (williameclee@arizona.edu)
+%     - Added option to truncate data before interpolation to save time
+%	2025/11/03, En-Chi Lee (williameclee@arizona.edu)
 
 function [steric, stericSigma, dates, lon, lat] = steric2lonlatt(product, timestep, meshsize, timelim, options)
     %% Initialisation
@@ -94,15 +96,16 @@ function [steric, stericSigma, dates, lon, lat] = steric2lonlatt(product, timest
         meshsize = []
         timelim {mustBeTimeRange} = []
         options.LonOrigin {mustBeFinite, mustBeReal} = []
-        options.Interpolation (1, :) char ...
-            {mustBeMember(options.Interpolation, {'linear', 'nearest', 'next', 'previous', 'spline', 'pchip'})} = 'linear'
+        options.Interpolation ...
+            {mustBeTextScalar, mustBeMember(options.Interpolation, {'linear', 'nearest', 'next', 'previous', 'spline', 'pchip'})} = 'linear'
         options.TimeFormat (1, :) DateFormat = 'datetime'
         options.OutputFormat (1, :) MeshFormat = 'meshgrid'
-        options.Unit (1, :) char {mustBeMember(options.Unit, {'mm', 'm'})} = 'm'
-        options.Depth (1, :) char ...
-            {mustBeMember(options.Depth, {'full', 'shallow', 'deep'})} = 'full'
-        options.Type (1, :) char ...
-            {mustBeMember(options.Type, {'total', 'thermosteric', 'halosteric', 'non-thermosteric', 'non-halosteric', 'no halosteric drift'})} = 'totalÏ'
+        options.Unit {mustBeTextScalar, mustBeMember(options.Unit, {'mm', 'm'})} = 'm'
+        options.Depth ...
+            {mustBeTextScalar, mustBeMember(options.Depth, {'full', 'shallow', 'deep'})} = 'full'
+        options.Type ...
+            {mustBeTextScalar, mustBeMember(options.Type, {'default', 'total', 'thermosteric', 'halosteric', 'non-thermosteric', 'non-halosteric', 'no halosteric drift'})} = 'default'
+        options.TruncationBeforeInterpolation (1, 1) {mustBeNumericOrLogical} = false
         options.ForceNew (1, 1) {mustBeNumericOrLogical} = false
         options.BeQuiet (1, 1) {mustBeNumericOrLogical} = 0.5
         options.SaveData (1, 1) {mustBeNumericOrLogical} = true
@@ -154,7 +157,17 @@ function [steric, stericSigma, dates, lon, lat] = steric2lonlatt(product, timest
 
     stericVar = "sl";
 
-    switch options.Type
+    if strcmpi(options.Type, "default")
+
+        if strcmpi(product, "SIO")
+            options.Type = "total";
+        else
+            options.Type = "no halosteric drift";
+        end
+
+    end
+
+    switch lower(options.Type)
         case {'thermosteric', 'non-thermosteric'}
             stericVar = ["thermosteric", stericVar];
         case {'halosteric', 'non-halosteric', 'no halosteric drift'}
@@ -178,7 +191,7 @@ function [steric, stericSigma, dates, lon, lat] = steric2lonlatt(product, timest
 
     %% Check for existing file
     outputPath = ...
-        outputpath(product, timestep, meshsize, lonOrigin, intpMthd);
+        outputpath(product, timestep, meshsize, lonOrigin, intpMthd, options.TruncationBeforeInterpolation, timelim);
 
     vars = {'lon', 'lat', 'dates', 'stericSl', stericVar};
 
@@ -199,7 +212,6 @@ function [steric, stericSigma, dates, lon, lat] = steric2lonlatt(product, timest
             fprintf('took %.1f seconds.\n', toc(t));
         end
 
-        
         if strcmpi(options.Type, "non-thermosteric")
             baseStericVar = replace(replace(stericVar, "Thermosteric", "Steric"), "thermosteric", "steric");
             steric = data.(baseStericVar) - data.(stericVar);
@@ -271,9 +283,15 @@ function [steric, stericSigma, dates, lon, lat] = steric2lonlatt(product, timest
                 callchaintext(callChain), numel(fields(data)), templine);
         end
 
+        if options.TruncationBeforeInterpolation
+            additionalArgs = {"TimeRange", timelim};
+        else
+            additionalArgs = {};
+        end
+
         [data, dates] = structfun(@(x) interptemporal( ...
-            coord.dates, x, timestep, intpMthd, ...
-            BeQuiet = true, CallChain = callChain), data, "UniformOutput", false);
+            coord.dates, x, timestep, intpMthd, additionalArgs{:}, ...
+            "BeQuiet", true, "CallChain", callChain), data, "UniformOutput", false);
         coord.dates = dates.(allStericVars{1});
 
         if options.BeQuiet == 0
@@ -315,7 +333,14 @@ function [steric, stericSigma, dates, lon, lat] = steric2lonlatt(product, timest
         end
 
         try
-            save(outputPath, '-struct', 'coord', 'lon', 'lat', 'dates', '-append');
+
+            if exist(outputPath, "file")
+                additionalArgs = {'-append'};
+            else
+                additionalArgs = {};
+            end
+
+            save(outputPath, '-struct', 'coord', 'lon', 'lat', 'dates', '-v7.3', additionalArgs{:});
             save(outputPath, '-struct', 'data', allStericVars{:}, '-append');
         catch ME
             warning('ULMO:SaveData:SaveFailed', ...
@@ -358,51 +383,17 @@ function [steric, stericSigma, dates, lon, lat] = steric2lonlatt(product, timest
         return
     end
 
-    plotsealeveltseries(dates, steric, lon, lat, ...
-        product, unit, 'Global mean steric sea level');
+    try
+        plotsealeveltseries(dates, steric, lon, lat, ...
+            product, unit, 'Global mean steric sea level');
+    catch ME
+        warning('Slepian:Plotting:PlotFailed', ...
+            'Plotting steric sea level change failed with error:\n%s\nSkipping plotting.', ME.message);
+    end
 
 end
 
 %% Subfunctions
-% Interpolation
-% function [meshIntp, datesIntp] = ...
-%         interptemporal(dates, mesh, timeStep, intpMthd, beQuiet, callChain)
-
-%     if ischar(timeStep) && strcmpi(timeStep, 'midmonth')
-%         datesIntp = midmonth([dates(1), dates(end)]);
-%     else
-
-%         if mean(diff(dates)) > timeStep
-%             warning(sprintf('ULMO:%s:InterpolationStepTooSmall', upper(mfilename)), ...
-%                 'The interpolation time step (%s) is smaller than the mean data resolution (%s).', timeStep, mean(diff(dates)));
-%         end
-
-%         datesIntp = dates(1):timeStep:dates(end);
-%     end
-
-%     if isequal(datesIntp, dates)
-%         meshIntp = mesh;
-%         return
-%     end
-
-%     if beQuiet == 0
-%         t = tic;
-%         templine = 'this may take a while...';
-%         fprintf('[ULMO>%s] Interpolating temporally, %s\n', ...
-%             callchaintext(callChain), templine);
-%     end
-
-%     meshFlat = reshape(mesh, [], size(mesh, 3))';
-%     meshIntp = interp1(dates, meshFlat, datesIntp, intpMthd)';
-%     meshIntp = reshape(meshIntp, [size(mesh, 1:2), length(datesIntp)]);
-
-%     if beQuiet == 0
-%         fprintf(repmat('\b', 1, length(templine) + 1));
-%         fprintf('took %.1f seconds.\n', toc(t));
-%     end
-
-% end
-
 function [meshIntp, lonIntp, latIntp] = ...
         interpspatial(lon, lat, mesh, meshSize, lonOrigin, intpMthd, options)
 
@@ -541,14 +532,16 @@ end
 
 % Find output path
 function outputPath = ...
-        outputpath(product, timeStep, meshSize, lonOrigin, intpMthd)
+        outputpath(product, timeStep, meshSize, lonOrigin, intpMthd, truncBeforeIntp, timelim)
 
     arguments (Input)
         product StericProduct {mustBeScalarOrEmpty}
         timeStep {mustBeTimeStep} = []
         meshSize {mustBePositive} = []
         lonOrigin {mustBeFinite, mustBeReal} = []
-        intpMthd (1, :) char = []
+        intpMthd {mustBeTextScalar} = ""
+        truncBeforeIntp (1, 1) {mustBeNumericOrLogical} = false
+        timelim {mustBeTimeRange} = []
     end
 
     outputFolder = fullfile(getenv("IFILES"), 'STERIC', char(product));
@@ -557,7 +550,7 @@ function outputPath = ...
 
     if ~isempty(timeStep)
 
-        if ischar(timeStep) && strcmpi(timeStep, 'midmonth')
+        if (ischar(timeStep) || isstring(timeStep)) && strcmpi(timeStep, 'midmonth')
             timeStepStr = '-Tmidmonth';
         elseif isduration(timeStep)
             timeStepStr = sprintf('-T%s', erase(sprintf('%s', timeStep), ' '));
@@ -583,11 +576,24 @@ function outputPath = ...
     intpMethodStr = '';
 
     if ~(isempty(timeStepStr) && isempty(spaceIntpStr))
-        intpMethodStr = ['-', lower(intpMthd)];
+        intpMethodStr = sprintf('-%s', lower(intpMthd));
     end
 
-    outputFile = sprintf('%s-StericSeaLevel%s%s%s.mat', ...
-        product, timeStepStr, spaceIntpStr, intpMethodStr);
+    timelimStr = '';
+
+    if truncBeforeIntp && ~isempty(timelim)
+
+        if isnumeric(timelim)
+            timelim = datetime(timelim, 'ConvertFrom', 'datenum', 'Format', 'yyyyMMdd');
+        else
+            timelim = datetime(timelim, 'Format', 'yyyyMMdd');
+        end
+
+        timelimStr = sprintf('-%s_%s', timelim);
+    end
+
+    outputFile = sprintf('%s-StericSeaLevel%s%s%s%s.mat', ...
+        product, timeStepStr, spaceIntpStr, intpMethodStr, timelimStr);
 
     outputPath = fullfile(outputFolder, outputFile);
 end
