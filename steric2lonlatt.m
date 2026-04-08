@@ -566,7 +566,7 @@ function outputPath = ...
     intpMethodStr = '';
 
     if ~(isempty(timeStepStr) && isempty(spaceIntpStr))
-        intpMethodStr = ['-', lower(intpMthd)];
+        intpMethodStr = sprintf('-%s', lower(intpMthd));
     end
 
     timelimStr = '';
