@@ -323,7 +323,14 @@ function [steric, stericSigma, dates, lon, lat] = steric2lonlatt(product, timest
         end
 
         try
-            save(outputPath, '-struct', 'coord', 'lon', 'lat', 'dates', '-append');
+
+            if exist(outputPath, "file")
+                additionalArgs = {'-append'};
+            else
+                additionalArgs = {};
+            end
+
+            save(outputPath, '-struct', 'coord', 'lon', 'lat', 'dates', additionalArgs{:});
             save(outputPath, '-struct', 'data', allStericVars{:}, '-append');
         catch ME
             warning('ULMO:SaveData:SaveFailed', ...

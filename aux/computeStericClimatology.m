@@ -1,9 +1,11 @@
 %% COMPUTESTERICCLIMATOLOGY - Computes climatology of temperature, salinity, and density
 %
 % Last modified
-%   2026/03/03, williameclee@arizona.edu (@williameclee)
+%   2026/04/08, En-Chi Lee (williameclee@arizona.edu)
+%     - Fixed typo and improved error message when input file is not readable
+%   2026/03/03, En-Chi Lee (williameclee@arizona.edu)
 %     - Added fail safe for unreadable climatology file
-%   2026/02/16, williameclee@arizona.edu (@williameclee)
+%   2026/02/16, En-Chi Lee (williameclee@arizona.edu)
 %     - Extracted from PROCESSSTERICDATAEN4 for reusability
 
 function computeStericClimatology(tlim, inputFolder, inputFiles, outputPath, options)
@@ -35,9 +37,11 @@ function computeStericClimatology(tlim, inputFolder, inputFiles, outputPath, opt
             return
         end
 
-    catch
+    catch ME
         % For some reason the file exists but is not readable, so we will recompute it
-        warning('File %s exists but is not readable or procuces error for some other reasons. Recomputing climatology.', outputPath);
+        warning(['File %s exists but is not readable or produces error for some other reasons. ', ...
+                 '\n%s\nRecomputing climatology.'], ...
+            outputPath, ME.message);
     end
 
     numClimFiles = 0;
