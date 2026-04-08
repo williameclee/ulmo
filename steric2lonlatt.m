@@ -104,7 +104,7 @@ function [steric, stericSigma, dates, lon, lat] = steric2lonlatt(product, timest
         options.Depth ...
             {mustBeTextScalar, mustBeMember(options.Depth, {'full', 'shallow', 'deep'})} = 'full'
         options.Type ...
-            {mustBeTextScalar, mustBeMember(options.Type, {'total', 'thermosteric', 'halosteric', 'non-thermosteric', 'non-halosteric', 'no halosteric drift'})} = 'default'
+            {mustBeTextScalar, mustBeMember(options.Type, {'default', 'total', 'thermosteric', 'halosteric', 'non-thermosteric', 'non-halosteric', 'no halosteric drift'})} = 'default'
         options.TruncationBeforeInterpolation (1, 1) {mustBeNumericOrLogical} = false
         options.ForceNew (1, 1) {mustBeNumericOrLogical} = false
         options.BeQuiet (1, 1) {mustBeNumericOrLogical} = 0.5
