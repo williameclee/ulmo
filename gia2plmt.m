@@ -17,25 +17,26 @@
 %
 % Input arguments
 %   model - Name of the GIA model
-%       - 'Steffen_ice6g_vm5a': A model computed by H. Steffen using the
+%         - 'Steffen_ice6g_vm5a': A model computed by H. Steffen using the
 %           ice6g ice model and vm5a viscosity profile. Other models from
 %           this dataset are also available and use the original naming
 %           scheme. For example, 'Steffen_anu-ice_i72'.
 %           This family of models can also be specified as a cell array,
 %           e.g. {'Steffen', 'ice6g', 'vm5a'}.
-%       - 'LM17.3': A model based on the data from the LM17.3 dataset.
-%       - 'Paulson07': A model based on the ICE-5G ice load model of
+%         - 'LM17.3': A model based on the data from the LM17.3 dataset.
+%         - 'SELEN-modelname': A model from the SELEN software.
+%         - 'Paulson07': A model based on the ICE-5G ice load model of
 %           Peltier (2004). Suitable for both Antarctica and Greenland. As
 %           corrected by Geruo A and J. Wahr.
 %           Please avoid using this model for oceans.
-%       - 'Wangetal08': A model based on the older ICE-4G ice model, and
+%         - 'Wangetal08': A model based on the older ICE-4G ice model, and
 %           viscosity which varies laterally. Suitable for Greenland.
-%       - 'IJ05_R2': A model based on the Ivins et al. (2013) ice model.
+%         - 'IJ05_R2': A model based on the Ivins et al. (2013) ice model.
 %           Suitable for Antarctica.
-%       - 'IJ05': A model based on the Ivins and James (2005) ice model.
+%         - 'IJ05': A model based on the Ivins and James (2005) ice model.
 %           Suitable for Antarctica.
-%       - 'W12a_v1': A 'best' model from Whitehouse et al. (2012). Suitable
-%           only for Antarctica.
+%         - 'W12a_v1': A 'best' model from Whitehouse et al. (2012).
+%           Suitable only for Antarctica.
 %       The input can also be the path to the model file.
 %		The default model is 'Steffen_ice6g_vm5a'.
 %   days - Number of days to calculate the GIA change for
@@ -55,8 +56,8 @@
 %		The default option is false.
 %
 % Output arguments
-%   Plmt - GIA change in spherical harmonic format
-%   PlmtU, PlmtL - Upper and lower bounds of the GIA change, if available
+%   plmt - GIA change in spherical harmonic format
+%   plmtU, plmtL - Upper and lower bounds of the GIA change, if available
 %
 % See also
 %   CORRECT4GIA
@@ -95,7 +96,9 @@
 %       PANGAEA, doi: 10.1594/PANGAEA.932462
 %
 % Last modified by
-%   2025/11/16, williameclee@arizona.edu (@williameclee)
+%   2026/04/01, En-Chi Lee (williameclee@arizona.edu)
+%     - Added support for models from the SELEN software
+%   2025/11/16, En-Chi Lee (williameclee@arizona.edu)
 
 function varargout = gia2plmt(varargin)
     %% Initialisation
@@ -117,7 +120,7 @@ function varargout = gia2plmt(varargin)
         data = load(inputPath, 'lmcosiM', 'lmcosiU', 'lmcosiL');
 
         if ~beQuiet
-            fprintf('[ULMO>%s] Loaded <a href="matlab: fprintf(''%s\\n'');open(''%s'')">%s GIA model</a>\n', ...
+            fprintf('[Slepian>%s] Loaded <a href="matlab: fprintf(''%s\\n'');open(''%s'')">%s GIA model</a>\n', ...
                 callchaintext(callChain), inputPath, inputPath, upper(model));
         end
 
@@ -134,13 +137,14 @@ function varargout = gia2plmt(varargin)
 
         if ~exist(altInputPath, 'file')
             error('ULMO:LoadData:FileNotFound', ...
-                'GIA model %s not found at expected location:\n%s or %s', upper(model), inputPath, altInputPath);
+                'GIA model %s not found at expected location:\n%s or %s', ...
+                upper(model), inputPath, altInputPath);
         end
 
         data = load(altInputPath, 'lmcosiM', 'lmcosiU', 'lmcosiL');
 
         if ~beQuiet
-            fprintf('[ULMO>%s] Loaded <a href="matlab: fprintf(''%s\\n'');open(''%s'')">%s GIA model</a>\n', ...
+            fprintf('[Slepian>%s] Loaded <a href="matlab: fprintf(''%s\\n'');open(''%s'')">%s GIA model</a>\n', ...
                 callchaintext(callChain), inputPath, inputPath, upper(model));
         end
 
@@ -217,7 +221,7 @@ function varargout = gia2plmt(varargin)
         end
 
         if ~beQuiet
-            fprintf('[ULMO>%s] Saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">%s GIA model</a>\n', ...
+            fprintf('[Slepian>%s] Saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">%s GIA model</a>\n', ...
                 callchaintext(callChain), inputPath, inputPath, upper(model));
         end
 
@@ -298,7 +302,7 @@ function varargout = gia2plmt(varargin)
         GIAtL = [];
 
         if nargout > 1 && ~beQuiet
-            warning(sprintf('ULMO:%s:NoBoundsToReturn', upper(mfilename)), ...
+            warning('ULMO:gia2plmt:NoBoundsToReturn', ...
                 'Upper and lower bounds are not available for model %s', upper(model));
         end
 
@@ -385,8 +389,7 @@ function varargout = parseinputs(varargin)
     end
 
     if L ~= round(L)
-        warning( ...
-            sprintf('ULMO:%s:InvalidInput:NonIntegerDegree', upper(mfilename)), ...
+        warning('ULMO:gia2plmt:InvalidInput:NonIntegerDegree', ...
             'The degree L must be an integer. Rounding to %d', round(L));
         L = round(L);
     end
@@ -417,10 +420,16 @@ function inputPath = finddatafile(model, unit)
         error('GIA folder not found')
     end
 
+    modelSource = "NaN";
+
     if strncmp(model, 'Morrow', 6)
         inputFolder = fullfile(inputFolder, model(1:6));
     elseif strncmpi(model, 'Steffen', 7)
         inputFolder = fullfile(inputFolder, 'Steffen21');
+    elseif strncmpi(model, 'selen-', 6) || strncmpi(model, 'selen_', 6)
+        modelSource = "selen";
+        model = regexprep(model, 'selen[-_]', '', 'ignorecase');
+        inputFolder = fullfile(inputFolder, 'Selen', sprintf("RUN_%s", model));
     elseif strcmp(model, 'LM17.3')
         inputFolder = fullfile(inputFolder, 'LM17.3');
 
@@ -434,6 +443,11 @@ function inputPath = finddatafile(model, unit)
 
     % And the appropriate name
     inputPath = fullfile(inputFolder, sprintf('%s_%s.mat', model, unit));
+
+    if ~exist(inputPath, 'file') && strcmpi(modelSource, "selen")
+        convertSelenModel(inputFolder);
+    end
+
 end
 
 function plmt = plm2plmt(plm, deltaYear)
