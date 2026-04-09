@@ -1,4 +1,4 @@
-%% ICESHEETPOLY - Gets approximate
+%% ICESHEETPOLY - Gets an approximate ice sheet polygon  
 %
 % Syntax
 %   [icePoly, iceLonlat] = ICESHEETPOLY(icesheet)
