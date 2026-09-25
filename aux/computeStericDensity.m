@@ -1,8 +1,7 @@
 %% COMPUTESTERICDENSITY - Computes density from temperature and salinity
 %
 % Last modified
-%   2026/02/15, williameclee@arizona.edu (@williameclee)
-%     - Extracted from PROCESSSTERICDATAEN4 for reusability
+%   2026/09/25, williameclee@arizona.edu (@williameclee)
 
 function computeStericDensity(dataPath, options)
     %% Validation and checks
@@ -50,7 +49,7 @@ function computeStericDensity(dataPath, options)
     for iDepth = 1:size(data.pres, 2)
         density(:, :, iDepth) = gsw_rho( ...
             squeeze(data.salinity(:, :, iDepth)), squeeze(data.consTemp(:, :, iDepth)), ...
-            data.pres(1, iDepth));
+            data.pres(:, iDepth));
     end
 
     % Save density data back to the same .mat file

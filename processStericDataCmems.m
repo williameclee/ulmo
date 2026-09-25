@@ -4,10 +4,7 @@
 %	2026/02/15, En-Chi Lee (williameclee@arizona.edu)
 %
 % Last modified
-%	2026/04/08, En-Chi Lee (williameclee@arizona.edu)
-%     - Fixed comment descriptions for better clarity
-%	2026/03/03, En-Chi Lee (williameclee@arizona.edu)
-%     - Added toggle for parallel processing
+%	2026/09/25, En-Chi Lee (williameclee@arizona.edu)
 
 function processStericDataCmems(inputFolder, outputFolder, aggregatePath, climatologyTimeRange, options)
 
@@ -259,7 +256,7 @@ function convertTSvars(dataPath, options)
 
     for iDepth = 1:length(data.depth)
         layerSalinityPsu = data.salinityPsu(:, :, iDepth);
-        salinity(:, :, iDepth) = gsw_SA_from_SP(layerSalinityPsu, pres(1, iDepth), mod(data.lon, 360), data.lat);
+        salinity(:, :, iDepth) = gsw_SA_from_SP(layerSalinityPsu, pres(:, iDepth), mod(data.lon(:)', 360), data.lat(:));
     end
 
     consTemp = gsw_CT_from_pt(salinity, data.potTemp); %#ok<NASGU> - Saved through outputVars

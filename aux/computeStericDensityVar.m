@@ -1,7 +1,7 @@
 %% COMPUTESTERICDENSITYVAR - Computes density from temperature and salinity, with one fixed as climatology
 %
 % Author
-%   2026/03/02, williameclee@arizona.edu (@williameclee)
+%   2026/09/25, williameclee@arizona.edu (@williameclee)
 
 function computeStericDensityVar(dataPath, climatologyPath, options)
 	%% Validation and checks
@@ -59,7 +59,7 @@ function computeStericDensityVar(dataPath, climatologyPath, options)
     for iPres = 1:size(data.pres, 2)
         haloDensity(:, :, iPres) = gsw_rho( ...
             squeeze(data.salinity(:, :, iPres)), squeeze(cdata.consTempClim(:, :, iPres)), ...
-            data.pres(1, iPres));
+            data.pres(:, iPres));
     end
 
     % Compute thermosteric density
@@ -68,7 +68,7 @@ function computeStericDensityVar(dataPath, climatologyPath, options)
     for iPres = 1:size(data.pres, 2)
         thermoDensity(:, :, iPres) = gsw_rho( ...
             squeeze(cdata.salinityClim(:, :, iPres)), squeeze(data.consTemp(:, :, iPres)), ...
-            data.pres(1, iPres));
+            data.pres(:, iPres));
     end
 
     % Save density data back to the same .mat file

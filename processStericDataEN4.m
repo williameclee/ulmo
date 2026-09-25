@@ -4,11 +4,7 @@
 %	2026/02/14, williameclee@arizona.edu (@williameclee)
 %
 % Last modified
-%   2026/04/07, williameclee@arizona.edu (@williameclee)
-%     - Added pressure as an additional output variable in `computeDensity`
-%       for later use
-%   2026/02/17, williameclee@arizona.edu (@williameclee)
-%     - Extracted auxiliary functions to their own files for reusability
+%   2026/09/25, williameclee@arizona.edu (@williameclee)
 
 function processStericDataEN4(inputFolder, outputFolder, aggregatePath, climatologyTimeRange, options)
 
@@ -139,7 +135,7 @@ function computeDensity(inputPath, outputFolder, options)
 
     for iDepth = 1:length(depth)
         layerSalinityPsu = salinityPsu(:, :, iDepth);
-        salinity(:, :, iDepth) = gsw_SA_from_SP(layerSalinityPsu, pres(iDepth), mod(lon, 360), lat);
+        salinity(:, :, iDepth) = gsw_SA_from_SP(layerSalinityPsu, pres(:, iDepth), mod(lon, 360), lat);
     end
 
     consTemp = gsw_CT_from_pt(salinity, potTemp);
@@ -148,7 +144,7 @@ function computeDensity(inputPath, outputFolder, options)
 
     for iDepth = 1:length(depth)
         density(:, :, iDepth) = gsw_rho( ...
-            squeeze(salinity(:, :, iDepth)), squeeze(consTemp(:, :, iDepth)), pres(iDepth));
+            squeeze(salinity(:, :, iDepth)), squeeze(consTemp(:, :, iDepth)), pres(:, iDepth));
     end
 
     try
