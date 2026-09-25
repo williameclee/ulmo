@@ -100,9 +100,7 @@
 %   2025/03/18, En-Chi Lee (williameclee@arizona.edu)
 %
 % Last modified by
-%   2026/04/01, En-Chi Lee (williameclee@arizona.edu)
-%     - Made sure the waitbar is properly deleted
-%   2025/10/01, En-Chi Lee (williameclee@arizona.edu)
+%   2026/09/25, En-Chi Lee (williameclee@arizona.edu)
 
 function varargout = solvedegree1(varargin)
     %% Initialisation
@@ -165,7 +163,7 @@ function [coeffs, coeffStds, dates] = ...
     %% Loading data
     wbar = waitbar(0, 'Loading GRACE data', ...
         "Name", upper(mfilename), "CreateCancelBtn", 'setappdata(gcbf,''canceling'',1)');
-    cleanup = onCleanup(@() delete(wbar));
+    cleanup = onCleanup(@() (deleteWaitbar(wbar)));
 
     [gracePlmt, graceStdPlmt, dates] = grace2plmt_new(pcenter, rlevel, Ldata, ...
         "Unit", 'SD', "OutputFormat", 'timefirst', "TimeFormat", 'datetime', ...
@@ -545,6 +543,21 @@ function plm = putcoeffs(plm, coeffs, coeffLocs)
 
     for iCoeff = 1:nCoeffs
         plm(coeffLocs(iCoeff, 1), 2 + coeffLocs(iCoeff, 2), :) = coeffs(iCoeff, :);
+    end
+
+end
+
+% Helper function to delete the waitbar if it still exists
+% Should not return any error or warning
+function deleteWaitbar(wbar)
+
+    try
+
+        if ishghandle(wbar)
+            delete(wbar)
+        end
+
+    catch
     end
 
 end
