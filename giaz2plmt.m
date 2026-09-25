@@ -54,9 +54,7 @@
 %       PANGAEA, doi: 10.1594/PANGAEA.932462
 %
 % Last modified by
-%   2026/04/01, En-Chi Lee (williameclee@arizona.edu)
-%     - Added support for models from the SELEN software
-%   2025/08/03, En-Chi Lee (williameclee@arizona.edu)
+%   2026/09/25, En-Chi Lee (williameclee@arizona.edu)
 
 function varargout = giaz2plmt(varargin)
     %% Initialisation
@@ -64,6 +62,12 @@ function varargout = giaz2plmt(varargin)
     [model, L, dYear, beQuiet, makePlot] = parseinputs(varargin{:});
 
     % Loading the model
+    if ~isempty(getenv('GIA'))
+        inputBaseFolder = getenv('GIA');
+    elseif ~isempty(getenv('IFILES'))
+        inputBaseFolder = fullfile(getenv('IFILES'), 'GIA');
+    end
+
     if contains(lower(model), 'steffen')
         wPlmt = findsteffendata(model);
         wUPlmt = [];
@@ -75,14 +79,14 @@ function varargout = giaz2plmt(varargin)
         wLPlmt = [];
     elseif contains(lower(model), 'caron')
         % Load the Caron model
-        inputFolder = fullfile(getenv('IFILES'), 'GIA', capitalise(model));
+        inputFolder = fullfile(inputBaseFolder, capitalise(model));
         inputPath = fullfile(inputFolder, [capitalise(model), '_VLM.mat']);
         load(inputPath, 'lmcosiM', 'lmcosiU', 'lmcosiL');
         wPlmt = lmcosiM(lmcosiM(:, 1) <= L, :);
         wUPlmt = lmcosiU(lmcosiU(:, 1) <= L, :);
         wLPlmt = lmcosiL(lmcosiL(:, 1) <= L, :);
     elseif strcmpi(model, 'ice6gd') || strcmpi(model, 'ice-6g_d')
-        inputFolder = fullfile(getenv('IFILES'), 'GIA', 'ICE-6G_D');
+        inputFolder = fullfile(inputBaseFolder, 'ICE-6G_D');
         inputPath = fullfile(inputFolder, 'ICE-6G_D_VLM.mat');
         load(inputPath, 'wSph');
         wPlmt = wSph;
@@ -90,7 +94,7 @@ function varargout = giaz2plmt(varargin)
         wLPlmt = [];
     elseif strncmpi(model, 'selen-', 6) || strncmpi(model, 'selen_', 6)
         model = regexprep(model, 'selen[-_]', '', 'ignorecase');
-        inputFolder = fullfile(getenv('IFILES'), 'GIA', 'Selen', sprintf("RUN_%s", model));
+        inputFolder = fullfile(inputBaseFolder, 'Selen', sprintf("RUN_%s", model));
         inputPath = fullfile(inputFolder, sprintf('%s_VLM.mat', model));
 
         if ~exist(inputPath, 'file')
@@ -98,11 +102,11 @@ function varargout = giaz2plmt(varargin)
         end
 
         load(inputPath, 'lmcosiM');
-        wPlmt = lmcosiM;
+        wPlmt = lmcosiM(lmcosiM(:, 1) <= L, :);
         wUPlmt = [];
         wLPlmt = [];
     else
-        error('Slepian:LoadData:FileNotFound', 'Unrecognised model name %s', upper(model));
+        error('ULMO:LoadData:FileNotFound', 'Unrecognised model name %s', upper(model));
     end
 
     if (size(wPlmt, 1) < addmup(L) || ...
