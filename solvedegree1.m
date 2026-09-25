@@ -175,7 +175,7 @@ function [coeffs, coeffStds, dates] = ...
 
     % Add back GAC and remove GAD instead (Sun et al., 2016)
     % GAC/GAD products don't have uncertainties
-    % Only replace for l >= 2 (see TN-13)
+    % Only replace for l >= 2 (see TN-13 & Sun et al., 2015)
     if rwGad
         [gacPlmt, ~] = aod1b2plmt(pcenter, rlevel, 'GAC', Lsle, ...
             "OutputFormat", 'timefirst', "BeQuiet", beQuiet);
