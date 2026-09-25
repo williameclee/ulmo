@@ -86,12 +86,11 @@
 %       by cryosphere and climate driven mass change. Geoscientific Model
 %       Development, 9(3):1087–1109. doi: 10.5194/gmd-9-1087-2016
 %
-% Authored by
-%   2024/11/20, williameclee@arizona.edu (@williameclee)
+% Author
+%   2024/11/20, En-Chi Lee (williameclee@arizona.edu)
 %
 % Last modified by
-%   2026/02/12, williameclee@arizona.edu (@williameclee)
-%     - Added support for ALMA3 love numbers
+%   2026/09/25, En-Chi Lee (williameclee@arizona.edu)
 
 function varargout = solvesle(varargin)
     %% Initialisation
@@ -107,6 +106,7 @@ function varargout = solvesle(varargin)
     if ~beQuiet
         wbar = waitbar(0, 'Initialising', ...
             "Name", upper(mfilename), "CreateCancelBtn", 'setappdata(gcbf,''canceling'',1)');
+        cleanup = onCleanup(@() deleteWaitbar(wbar));
     end
 
     % Load the ocean function if not provided
@@ -480,4 +480,19 @@ function L = finddegree(Plm)
     eq = subs(eq, y, terms);
     Ls = solve(eq, x);
     L = Ls(Ls > 0);
+end
+
+% Helper function to delete the waitbar if it still exists
+% Should not return any error or warning
+function deleteWaitbar(wbar)
+
+    try
+
+        if ishghandle(wbar)
+            delete(wbar)
+        end
+
+    catch
+    end
+
 end

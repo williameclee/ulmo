@@ -14,11 +14,11 @@
 %
 % Input arguments
 %   model - Name of the GIA model
-%       - Name of a model computed by H. Steffen. It can be specified as,
+%         - Name of a model computed by H. Steffen. It can be specified as,
 %           e.g. 'Steffen_ice6g_vm5a' or {'Steffen', 'ice6g', 'vm5a'}.
-%       - LM17.3 is also supported.
+%         - LM17.3 is also supported.
 %       Other models are specified in the same way.
-%       - The input can also be the path to the model file.
+%         - The input can also be the path to the model file.
 %		The default model is 'Steffen_ice6g_vm5a'.
 %       Format: string or 1 x 3 cell array.
 %   years - Number of years to calculate the GIA change for
@@ -54,7 +54,7 @@
 %       PANGAEA, doi: 10.1594/PANGAEA.932462
 %
 % Last modified by
-%   2025/08/03, williameclee@arizona.edu (@williameclee)
+%   2026/09/25, En-Chi Lee (williameclee@arizona.edu)
 
 function varargout = giaz2plmt(varargin)
     %% Initialisation
@@ -62,6 +62,12 @@ function varargout = giaz2plmt(varargin)
     [model, L, dYear, beQuiet, makePlot] = parseinputs(varargin{:});
 
     % Loading the model
+    if ~isempty(getenv('GIA'))
+        inputBaseFolder = getenv('GIA');
+    elseif ~isempty(getenv('IFILES'))
+        inputBaseFolder = fullfile(getenv('IFILES'), 'GIA');
+    end
+
     if contains(lower(model), 'steffen')
         wPlmt = findsteffendata(model);
         wUPlmt = [];
@@ -73,17 +79,30 @@ function varargout = giaz2plmt(varargin)
         wLPlmt = [];
     elseif contains(lower(model), 'caron')
         % Load the Caron model
-        inputFolder = fullfile(getenv('IFILES'), 'GIA', capitalise(model));
+        inputFolder = fullfile(inputBaseFolder, capitalise(model));
         inputPath = fullfile(inputFolder, [capitalise(model), '_VLM.mat']);
         load(inputPath, 'lmcosiM', 'lmcosiU', 'lmcosiL');
         wPlmt = lmcosiM(lmcosiM(:, 1) <= L, :);
         wUPlmt = lmcosiU(lmcosiU(:, 1) <= L, :);
         wLPlmt = lmcosiL(lmcosiL(:, 1) <= L, :);
     elseif strcmpi(model, 'ice6gd') || strcmpi(model, 'ice-6g_d')
-        inputFolder = fullfile(getenv('IFILES'), 'GIA', 'ICE-6G_D');
+        inputFolder = fullfile(inputBaseFolder, 'ICE-6G_D');
         inputPath = fullfile(inputFolder, 'ICE-6G_D_VLM.mat');
         load(inputPath, 'wSph');
         wPlmt = wSph;
+        wUPlmt = [];
+        wLPlmt = [];
+    elseif strncmpi(model, 'selen-', 6) || strncmpi(model, 'selen_', 6)
+        model = regexprep(model, 'selen[-_]', '', 'ignorecase');
+        inputFolder = fullfile(inputBaseFolder, 'Selen', sprintf("RUN_%s", model));
+        inputPath = fullfile(inputFolder, sprintf('%s_VLM.mat', model));
+
+        if ~exist(inputPath, 'file')
+            convertSelenModel(inputFolder);
+        end
+
+        load(inputPath, 'lmcosiM');
+        wPlmt = lmcosiM(lmcosiM(:, 1) <= L, :);
         wUPlmt = [];
         wLPlmt = [];
     else
@@ -238,7 +257,7 @@ function plm = findsteffendata(model)
 
         % Make sure the file exists
         if exist(inputPath, 'file') ~= 2
-            error('ULMO:LoadData:FileNotFound', ...
+            error('Slepian:LoadData:FileNotFound', ...
                 'Model %s not found at %s', upper(model), inputPath);
         end
 
