@@ -95,7 +95,7 @@ function domainName = domainname(domain, format)
 
             switch format
                 case 'abbrevation'
-                    domainName = 'Atl.';
+                    domainName = 'Atl';
                 case 'short'
                     domainName = 'Atlantic';
                 case 'long'
@@ -106,7 +106,7 @@ function domainName = domainname(domain, format)
 
             switch format
                 case 'abbrevation'
-                    domainName = 'N. Atl.';
+                    domainName = 'N Atl';
                 case 'short'
                     domainName = 'N Atlantic';
                 case 'long'
@@ -117,7 +117,7 @@ function domainName = domainname(domain, format)
 
             switch format
                 case 'abbrevation'
-                    domainName = 'S. Atl.';
+                    domainName = 'S Atl';
                 case 'short'
                     domainName = 'S Atlantic';
                 case 'long'
@@ -128,7 +128,7 @@ function domainName = domainname(domain, format)
 
             switch format
                 case 'abbrevation'
-                    domainName = 'Pac.';
+                    domainName = 'Pac';
                 case 'short'
                     domainName = 'Pacific';
                 case 'long'
@@ -139,7 +139,7 @@ function domainName = domainname(domain, format)
 
             switch format
                 case 'abbrevation'
-                    domainName = 'N. Pac.';
+                    domainName = 'N Pac';
                 case 'short'
                     domainName = 'N Pacific';
                 case 'long'
@@ -150,7 +150,7 @@ function domainName = domainname(domain, format)
 
             switch format
                 case 'abbrevation'
-                    domainName = 'S. Pac.';
+                    domainName = 'S Pac';
                 case 'short'
                     domainName = 'S Pacific';
                 case 'long'
