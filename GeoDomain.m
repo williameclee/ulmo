@@ -45,7 +45,7 @@
 %   SPHAREA
 %
 % Last modified by
-%   2026/09/25, williameclee@arizona.edu (@williameclee)
+%   2025/11/03, williameclee@arizona.edu (@williameclee)
 
 classdef GeoDomain
 
