@@ -45,7 +45,7 @@
 %   SPHAREA
 %
 % Last modified by
-%   2025/11/03, williameclee@arizona.edu (@williameclee)
+%   2026/09/25, williameclee@arizona.edu (@williameclee)
 
 classdef GeoDomain
 
@@ -118,7 +118,7 @@ classdef GeoDomain
 
             arguments (Input)
                 obj (1, 1) GeoDomain
-                fmt (1, 1) string {mustBeMember(fmt, {'abbrevation', 'abbr', 'short', 'long'})} = 'short'
+                fmt (1, 1) string {mustBeMember(fmt, {'abbreviation', 'abbr', 'short', 'long'})} = 'short'
             end
 
             arguments (Output)
