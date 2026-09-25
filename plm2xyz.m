@@ -59,8 +59,7 @@
 % Special thanks to kwlewis@princeton.edu for spotting a bug.
 %
 % Last modified by
-%   2025/10/16, williameclee@arizona.edu (@williameclee)
-%   2024/08/13, williameclee@arizona.edu (@williameclee)
+%   2026/09/25, williameclee@arizona.edu (@williameclee)
 %   2023/11/20, fjsimons@alum.mit.edu (@fjsimons)
 
 function varargout = plm2xyz(varargin)
@@ -209,6 +208,7 @@ function varargout = plm2xyz(varargin)
                 wbar = waitbar(0, sprintf( ...
                     'Evaluating Legendre polynomials between %i and %i', ...
                     ldown, lup));
+                cleanup = onCleanup(@() deleteWaitbar(wbar));
             end
 
             in1 = 0;

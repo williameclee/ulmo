@@ -264,9 +264,7 @@ function varargout = solvesle(varargin)
                 sprintf('Solving SLE iteratively (%d/%d)', iIter, maxIter));
 
             if getappdata(wbar, 'canceling')
-                delete(wbar);
-                error(sprintf('%s:ProcessCancelledByUser', upper(mfilename)), ...
-                'Processing cancelled');
+                error('ULMO:ProcessCancelledByUser', 'SLE computation cancelled');
             end
 
         end
@@ -327,11 +325,6 @@ function varargout = solvesle(varargin)
 
     if ~computeError
         varargout = {rslLoadPlm, [], gmsl(:), []};
-
-        if ~beQuiet
-            delete(wbar);
-        end
-
         return
     end
 
@@ -360,11 +353,6 @@ function varargout = solvesle(varargin)
     end
 
     varargout = {rslLoadPlm, rslLoadStdPlm, gmsl(:), gmslStd(:)};
-
-    if ~beQuiet
-        delete(wbar);
-    end
-
 end
 
 %% Subfunctions
@@ -480,19 +468,4 @@ function L = finddegree(Plm)
     eq = subs(eq, y, terms);
     Ls = solve(eq, x);
     L = Ls(Ls > 0);
-end
-
-% Helper function to delete the waitbar if it still exists
-% Should not return any error or warning
-function deleteWaitbar(wbar)
-
-    try
-
-        if ishghandle(wbar)
-            delete(wbar)
-        end
-
-    catch
-    end
-
 end

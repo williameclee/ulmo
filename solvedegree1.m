@@ -97,14 +97,14 @@
 %   SOLVESLE, GRACE2PLMT
 %
 % References
-%   Sun, Y., Ditmar, P., and Riva, R. E. M. (2015). Observed changes 
-%       in the Earth’s dynamic oblateness from GRACE data and 
-%       geophysical models. Journal of Geodesy, 90(1):81-89. doi: 
+%   Sun, Y., Ditmar, P., and Riva, R. E. M. (2015). Observed changes
+%       in the Earth’s dynamic oblateness from GRACE data and
+%       geophysical models. Journal of Geodesy, 90(1):81-89. doi:
 %       10.1007/s00190-015-0852-y.
-%   Sun, Y., Riva, R. E. M., and Ditmar, P. (2016). Optimizing 
-%       estimates of annual variations and trends in geocenter 
-%       motion and J2  from a combination of GRACE data and 
-%       geophysical models. Journal of Geophysical Research: Solid 
+%   Sun, Y., Riva, R. E. M., and Ditmar, P. (2016). Optimizing
+%       estimates of annual variations and trends in geocenter
+%       motion and J2  from a combination of GRACE data and
+%       geophysical models. Journal of Geophysical Research: Solid
 %       Earth, 121(11):8352-8370. doi: 10.1002/2016JB013073.
 %
 % Author
@@ -174,7 +174,7 @@ function [coeffs, coeffStds, dates] = ...
     %% Loading data
     wbar = waitbar(0, 'Loading GRACE data', ...
         "Name", upper(mfilename), "CreateCancelBtn", 'setappdata(gcbf,''canceling'',1)');
-    cleanup = onCleanup(@() (deleteWaitbar(wbar)));
+    cleanup = onCleanup(@() deleteWaitbar(wbar));
 
     [gracePlmt, graceStdPlmt, dates] = grace2plmt_new(pcenter, rlevel, Ldata, ...
         "Unit", 'SD', "OutputFormat", 'timefirst', "TimeFormat", 'datetime', ...
@@ -210,9 +210,7 @@ function [coeffs, coeffStds, dates] = ...
     graceStdPlmt = permute(graceStdPlmt, [2, 3, 1]); % timefirst -> traditional
 
     if getappdata(wbar, 'canceling')
-        delete(wbar);
-        error(sprintf('%s:ProcessCancelledByUser', upper(mfilename)), ...
-        'Processing cancelled');
+        error('ULMO:ProcessCancelledByUser', 'Geocentre computation cancelled');
     end
 
     % Whether to also reestimate C20 and C30
@@ -270,9 +268,7 @@ function [coeffs, coeffStds, dates] = ...
             sprintf('Solving degree-1 coefficients iteratively (%d/%d)', iIter, maxIter));
 
         if getappdata(wbar, 'canceling')
-            delete(wbar);
-            error(sprintf('%s:ProcessCancelledByUser', upper(mfilename)), ...
-            'Computation cancelled');
+            error('ULMO:ProcessCancelledByUser', 'Geocentre computation cancelled');
         end
 
         landPlmt = localise(gracePlmt, "L", Lsle, "K", landKernelSle);
@@ -335,8 +331,6 @@ function [coeffs, coeffStds, dates] = ...
         coeffs(:, 5) = coeffs(:, 5) + ...
             squeeze(giaPlmt(:, 7, 3));
     end
-
-    delete(wbar);
 
 end
 
@@ -554,21 +548,6 @@ function plm = putcoeffs(plm, coeffs, coeffLocs)
 
     for iCoeff = 1:nCoeffs
         plm(coeffLocs(iCoeff, 1), 2 + coeffLocs(iCoeff, 2), :) = coeffs(iCoeff, :);
-    end
-
-end
-
-% Helper function to delete the waitbar if it still exists
-% Should not return any error or warning
-function deleteWaitbar(wbar)
-
-    try
-
-        if ishghandle(wbar)
-            delete(wbar)
-        end
-
-    catch
     end
 
 end

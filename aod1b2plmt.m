@@ -81,7 +81,7 @@
 %   GRACEDEG1, GRACEDEG2, PLM2POT, GRACE2PLMT (GRACE2PLMT_NEW)
 %
 % Last modified by
-%   2025/10/16, williameclee@arizona.edu (@williameclee)
+%   2026/09/25, williameclee@arizona.edu (@williameclee)
 %   2014/02/27, charig@princeton.edu
 %   2011/05/17, fjsimons@alum.mit.edu
 
@@ -156,17 +156,14 @@ function [aod1bPlmt, aod1bStdPlmt, dates, equatorRadius, gravityParam] = ...
     % Loop over the months
     wbar = waitbar(0, sprintf('Reading %s data', product), ...
         "Name", upper(mfilename), "CreateCancelBtn", 'setappdata(gcbf,''canceling'',1)');
+    cleanup = onCleanup(@() deleteWaitbar(wbar));
 
     for iDate = 1:nDates
         waitbar(iDate / nDates, wbar, ...
             sprintf('Reading %s data (%d/%d)', product, iDate, nDates));
 
         if getappdata(wbar, 'canceling')
-            delete(wbar);
-            warning(sprintf('%s:ProcessCancelledByUser', upper(mfilename)), ...
-            'Processing cancelled');
-            fclose(logFid);
-            return
+            error('ULMO:ProcessCancelledByUser', 'AOD1B input file reading cancelled');
         end
 
         % load gravity coefficients
@@ -176,8 +173,6 @@ function [aod1bPlmt, aod1bStdPlmt, dates, equatorRadius, gravityParam] = ...
         aod1bStdPlmt(iDate, :, :) = graceStdPlm;
         dates(iDate) = date;
     end
-
-    delete(wbar);
 
     %% Converting unit
     [~, ~, ~, ~, gravityParam, equatorRadius] = ...
