@@ -11,7 +11,7 @@ function processStericDataCmems(inputFolder, outputFolder, aggregatePath, climat
     arguments (Input)
         inputFolder (1, :) char
         outputFolder (1, :) char
-        aggregatePath (1, :) char = fullfile(outputFolder, 'CMEMS-steric.nc')
+        aggregatePath (1, :) char = fullfile(outputFolder, 'CMEMS-StericSeaLevel.mat')
         climatologyTimeRange (1, 2) datetime = [datetime(1990, 1, 1), datetime(2010, 12, 31)]
         options.DeAggregate (1, 1) logical = true
         options.UseParallel (1, 1) logical = true

@@ -11,7 +11,7 @@ function processStericDataEN4(inputFolder, outputFolder, aggregatePath, climatol
     arguments (Input)
         inputFolder (1, :) char
         outputFolder (1, :) char
-        aggregatePath (1, :) char = fullfile(outputFolder, 'EN4c14-steric.nc')
+        aggregatePath (1, :) char = fullfile(outputFolder, 'EN4c14-StericSeaLevel.mat')
         climatologyTimeRange (1, 2) datetime = [datetime(1990, 1, 1), datetime(2010, 12, 31)]
         options.ForceNew (1, 1) logical = false
         options.BeQuiet (1, 1) logical = false
