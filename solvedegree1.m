@@ -183,14 +183,14 @@ function [coeffs, coeffStds, dates] = ...
         [gadPlmt, ~] = aod1b2plmt(pcenter, rlevel, 'GAD', Lsle, ...
             "OutputFormat", 'timefirst', "BeQuiet", beQuiet);
         gadPlmt = ensureplmdegree(gadPlmt, Lsle);
-        gracePlmt(:, 3:end, 3:4) = gracePlmt(:, 3:end, 3:4) ...
-            + gacPlmt(:, 3:end, 3:4) - gadPlmt(:, 3:end, 3:4);
+        gracePlmt(:, 4:end, 3:4) = gracePlmt(:, 4:end, 3:4) ...
+            + gacPlmt(:, 4:end, 3:4) - gadPlmt(:, 4:end, 3:4);
     end
 
     % Remove GIA signal for l >= 2 (Sun et al., 2016)
     giaPlmt = gia2plmt(dates, giaModel, "L", Lsle, ...
         "OutputFormat", 'timefirst', "BeQuiet", beQuiet);
-    gracePlmt(:, 3:end, 3:4) = gracePlmt(:, 3:end, 3:4) - giaPlmt(:, 3:end, 3:4);
+    gracePlmt(:, 4:end, 3:4) = gracePlmt(:, 4:end, 3:4) - giaPlmt(:, 4:end, 3:4);
     % Ignore STD of GIA for now
 
     %% Preparing/preallocating variables
