@@ -63,10 +63,12 @@
 %       - 1: Get the opposite of the region you specify.
 %       The default value is 0.
 %   rotateBack - Whether to rotate the eigenfunctions back to the pole
-%   There are a few more cosmetic options
-%   ForceNew - Force the function to recomputed the data
-%   SaveData - Save the data to a file
-%   BeQuiet - Suppress the output messages
+%   Method (name-value) - Which computation method to use.
+%       - "Simons": As implemented in the slepian_alpha package.
+%       - "efficient": As described in Bates, Alice P et al. (2017).
+%   ForceNew (name-value) - Force the function to recomputed the data
+%   SaveData (name-value) - Save the data to a file
+%   BeQuiet (name-value) - Suppress the output messages
 %
 % Output arguments
 %   G - The unitary matrix of localisation coefficients
@@ -110,11 +112,7 @@
 %   back...
 %
 % Last modified by
-%   2026/02/12, williameclee@arizona.edu (@williameclee)
-%     - Added support for the efficient_slepian module and the 'Method'
-%       option. The module is not included in the repo, though. It also
-%       only support single, closed shapes.
-%   2025/11/03, williameclee@arizona.edu (@williameclee)
+%   2026/09/25, williameclee@arizona.edu (@williameclee)
 %   2017/12/01, fjsimons@alum.mit.edu (@fjsimons)
 %   2016/06/27, charig@princeton.edu (@harig00)
 %   2016/10/11, plattner@alumni.ethz.ch (@AlainPlattner)
@@ -152,10 +150,51 @@ function varargout = glmalpha_new(varargin)
 
     % Output file
     vars = {'G', 'V', 'EL', 'EM', 'N'};
-    [dataPath, GM2AL, MTAP, IMTAP, xver] = ...
-        getoutputfile(domain, L, sord, blox, upco, resc, ...
-        truncation, anti, bp, ldim, [], [], [], [], method);
 
+    [dataPath, domainType] = ...
+        getoutputfile(domain, L, sord, blox, upco, resc, ...
+        truncation, anti, bp);
+
+    GM2AL = [];
+    MTAP = [];
+    IMTAP = [];
+    xver = [];
+    xver = conddefval(xver, 0);
+
+    if strcmpi(domainType, "cap")
+        sord = conddefval(sord, 1);
+        % Initialise ordering matrices
+        MTAP = zeros([1, ldim]);
+        IMTAP = zeros([1, ldim]);
+    end
+
+    %% Short circuting for efficient Slepian
+    if strcmpi(method, "efficient")
+
+        if anti
+            error("ULMO:glmalpha:UnsupportedComputationMethod", ...
+                ['Computing the Slepian kernel for the complement of the domain is not supported by the efficient method.', ...
+             'Change the method to "Simons".'])
+        elseif ~isscalar(L)
+            error("ULMO:glmalpha:UnsupportedComputationMethod", ...
+                ['Computing the band-passed Slepian kernel is not supported by the efficient method.', ...
+             'Change the method to "Simons".'])
+        end
+
+        [EM, EL, ~, ~] = addmout(maxL);
+        [G, V, N] = glmalpha_eff(domain, L, truncation, rotb, ...
+            ForceNew = forceNew, SaveData = saveData, BeQuiet = beQuiet);
+
+        varargout = {G, V, EL, EM, N, GM2AL, MTAP, IMTAP};
+
+        if nargout == 0
+            plotvweightmap(G, V, domain, beQuiet, callChain)
+        end
+
+        return
+    end
+
+    %% Short circuting if precomputed
     if ~forceNew && exist(dataPath, 'file') && ...
             all(ismember(vars, who('-file', dataPath)))
         data = load(dataPath, vars{:});
@@ -167,23 +206,8 @@ function varargout = glmalpha_new(varargin)
 
         varargout = {data.G, data.V, data.EL, data.EM, data.N, GM2AL, MTAP, IMTAP};
 
-        if nargout > 0
-            return
-        end
-
-        %% Plot eignvalue-weighted maps
-        if ~beQuiet
-            t = tic;
-            templine = 'this may take a while...';
-            fprintf('[ULMO>%s] Generating eigenvalue-weighted map, %s\n', ...
-                callchaintext(callChain), templine);
-        end
-
-        plotvweightmap(data.G, data.V, domain)
-
-        if ~beQuiet
-            fprintf(repmat('\b', 1, length(templine) + 1));
-            fprintf('took %.1f seconds.\n', toc(t));
+        if nargout == 0
+            plotvweightmap(data.G, data.V, domain, beQuiet, callChain)
         end
 
         return
@@ -196,23 +220,22 @@ function varargout = glmalpha_new(varargin)
 
     % For geographical or lonlat regions
     if ismatrix(domain) || isa(domain, 'GeoDomain')
+        upscale = sord;
+        [G, V, N] = glmalpha_geographic( ...
+            maxL, domain, upscale, anti, rotb, ldim, bp, EL, EM, xver, ...
+            beQuiet, forceNew, mesg, callChain);
 
-        if strcmpi(method, "efficient")
-            [G, V, N] = glmalpha_eff(L, domain);
-        else
-            upscale = sord;
-            [G, V, N] = glmalpha_geographic( ...
-                maxL, domain, upscale, anti, rotb, ldim, bp, EL, EM, xver, ...
-                beQuiet, forceNew, mesg, callChain);
+        G = G(:, 1:truncation);
+        V = V(1:truncation);
 
-            G = G(:, 1:truncation);
-            V = V(1:truncation);
-        end
+        if saveData
 
-        try
-            save(dataPath, '-v7.3', 'G', 'V', 'EL', 'EM', 'N')
-        catch
-            save(dataPath, 'G', 'V', 'EL', 'EM', 'N')
+            try
+                save(dataPath, '-v7.3', 'G', 'V', 'EL', 'EM', 'N')
+            catch
+                save(dataPath, 'G', 'V', 'EL', 'EM', 'N')
+            end
+
         end
 
     else
@@ -239,20 +262,7 @@ function varargout = glmalpha_new(varargin)
     end
 
     %% Plot eignvalue-weighted maps
-    if ~beQuiet
-        t = tic;
-        templine = 'this may take a while...';
-        fprintf('[ULMO>%s] Generating eigenvalue-weighted map, %s\n', ...
-            callchaintext(callChain), templine);
-    end
-
-    plotvweightmap(G, V, domain)
-
-    if ~beQuiet
-        fprintf(repmat('\b', 1, length(templine) + 1));
-        fprintf('took %.1f seconds.\n', toc(t));
-    end
-
+    plotvweightmap(G, V, domain, beQuiet, callChain)
 end
 
 %% Subfunctions
@@ -321,7 +331,13 @@ function varargout = parseinputs(Inputs)
         domain = GeoDomain(domain{1}, "Upscale", sord, domain{2:end});
     end
 
-    if strcmpi(method, "efficient") && ~exist("glmalpha_eff", "file")
+    % Validate method
+    if ~(strcmpi(method, "Simons") || strcmpi(method, "efficient"))
+        error("ULMO:glmalpha:UnsupportedComputationMethod", ...
+            ['The requested computation method is not supported.', ...
+         'Method must be "Simons" or "efficient", but got "%s"'], ...
+            method)
+    elseif strcmpi(method, "efficient") && ~exist("glmalpha_eff", "file")
         error('The efficient method (%s) is not available. Please make sure you have the %s module and that it is on the path.', ...
             upper("glmalpha_eff"), upper("efficient_slepian"))
     end
@@ -331,12 +347,11 @@ function varargout = parseinputs(Inputs)
          forceNew, saveData, beQuiet, callChain};
 end
 
-function [dataPath, GM2AL, MTAP, IMTAP, xver] = ...
+function [dataPath, domainType] = ...
         getoutputfile(domain, L, sord, blox, upco, resc, truncation, ...
-        anti, bp, ldim, GM2AL, MTAP, IMTAP, xver, method)
+        anti, bp)
 
     if upco == 0 && resc == 0
-        xver = conddefval(xver, 0);
 
         if isnumeric(domain) && isscalar(domain)
             domainType = 'cap';
@@ -348,15 +363,9 @@ function [dataPath, GM2AL, MTAP, IMTAP, xver] = ...
             error('Unrecognised domain type.')
         end
 
-        if strcmpi(method, "efficient")
-            dataFolder = fullfile(getenv('IFILES'), 'GLMALPHA_EFFICIENT');
-        else
-            dataFolder = fullfile(getenv('IFILES'), 'GLMALPHA');
-        end
-
+        % Don't bother with Efficient Slepian's own folder because it is offloaded to glmalpha_eff
+        dataFolder = fullfile(getenv('IFILES'), 'GLMALPHA');
     else
-        xver = conddefval(xver, 0);
-
         domainType = 'pto';
         dataFolder = fullfile(getenv('IFILES'), 'GLMALPHAPTO');
     end
@@ -372,10 +381,6 @@ function [dataPath, GM2AL, MTAP, IMTAP, xver] = ...
                 outputFile = sprintf('glmalphabl-%i-%i-%i-%i-%i.mat', ...
                     domain, L(1), L(2), sord, blox);
             end
-
-            % Initialise ordering matrices
-            MTAP = zeros([1, ldim]);
-            IMTAP = zeros([1, ldim]);
 
         case 'GeoDomain'
 
@@ -431,7 +436,15 @@ function [lp, bp, maxL, ldim] = ldimension(L)
 
 end
 
-function plotvweightmap(G, V, domain)
+function plotvweightmap(G, V, domain, beQuiet, callChain)
+
+    if ~beQuiet
+        t = tic;
+        templine = 'this may take a while...';
+        fprintf('[ULMO>%s] Generating eigenvalue-weighted map, %s\n', ...
+            callchaintext(callChain), templine);
+    end
+
     [mesh, lon, lat] = eigwmesh(G, V, 2);
     mesh = mesh / max(mesh(:));
     figName = 'Eigenvalue-weighted map of the Slepian functions';
@@ -466,4 +479,10 @@ function plotvweightmap(G, V, domain)
     formatlatticks
 
     colorbar
+
+    if ~beQuiet
+        fprintf(repmat('\b', 1, length(templine) + 1));
+        fprintf('took %.1f seconds.\n', toc(t));
+    end
+
 end
