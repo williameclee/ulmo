@@ -10,7 +10,7 @@
 %       The domain name should be the name of a function that returns the
 %       domain vertices.
 %   fmt - The format of the domain name
-%       - 'abbrevation' or 'abbr' - Abbrevation
+%       - 'abbreviation' or 'abbr' - Abbreviation
 %       - 'short' - Short name
 %       - 'long' - Long name
 %       The default value is 'short'.
@@ -31,7 +31,7 @@ function domainName = domainname(domain, format)
 
     arguments (Input)
         domain {mustBeA(domain, {'char', 'string', 'cell'})}
-        format char {mustBeMember(format, {'abbrevation', 'abbr', 'short', 'long'})} = 'short'
+        format char {mustBeMember(format, {'abbreviation', 'abbr', 'short', 'long'})} = 'short'
     end
 
     arguments (Output)
@@ -51,14 +51,14 @@ function domainName = domainname(domain, format)
     domain = lower(domain);
 
     if strcmp(format, 'abbr')
-        format = 'abbrevation';
+        format = 'abbreviation';
     end
 
     switch domain
         case 'namerica'
 
             switch format
-                case 'abbrevation'
+                case 'abbreviation'
                     domainName = 'NA';
                 case 'short'
                     domainName = 'N America';
@@ -69,7 +69,7 @@ function domainName = domainname(domain, format)
         case 'samerica'
 
             switch format
-                case 'abbrevation'
+                case 'abbreviation'
                     domainName = 'SA';
                 case 'short'
                     domainName = 'S America';
@@ -83,7 +83,7 @@ function domainName = domainname(domain, format)
         case 'oceans'
 
             switch format
-                case 'abbrevation'
+                case 'abbreviation'
                     domainName = 'Global';
                 case 'short'
                     domainName = 'Global mean';
@@ -94,8 +94,8 @@ function domainName = domainname(domain, format)
         case 'atlantic'
 
             switch format
-                case 'abbrevation'
-                    domainName = 'Atl.';
+                case 'abbreviation'
+                    domainName = 'Atl';
                 case 'short'
                     domainName = 'Atlantic';
                 case 'long'
@@ -105,8 +105,8 @@ function domainName = domainname(domain, format)
         case 'natlantic'
 
             switch format
-                case 'abbrevation'
-                    domainName = 'N. Atl.';
+                case 'abbreviation'
+                    domainName = 'N Atl';
                 case 'short'
                     domainName = 'N Atlantic';
                 case 'long'
@@ -116,8 +116,8 @@ function domainName = domainname(domain, format)
         case 'satlantic'
 
             switch format
-                case 'abbrevation'
-                    domainName = 'S. Atl.';
+                case 'abbreviation'
+                    domainName = 'S Atl';
                 case 'short'
                     domainName = 'S Atlantic';
                 case 'long'
@@ -127,8 +127,8 @@ function domainName = domainname(domain, format)
         case 'pacific'
 
             switch format
-                case 'abbrevation'
-                    domainName = 'Pac.';
+                case 'abbreviation'
+                    domainName = 'Pac';
                 case 'short'
                     domainName = 'Pacific';
                 case 'long'
@@ -138,8 +138,8 @@ function domainName = domainname(domain, format)
         case 'npacific'
 
             switch format
-                case 'abbrevation'
-                    domainName = 'N. Pac.';
+                case 'abbreviation'
+                    domainName = 'N Pac';
                 case 'short'
                     domainName = 'N Pacific';
                 case 'long'
@@ -149,8 +149,8 @@ function domainName = domainname(domain, format)
         case 'spacific'
 
             switch format
-                case 'abbrevation'
-                    domainName = 'S. Pac.';
+                case 'abbreviation'
+                    domainName = 'S Pac';
                 case 'short'
                     domainName = 'S Pacific';
                 case 'long'
