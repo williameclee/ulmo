@@ -23,7 +23,7 @@
 %       For example, a value of 0.1 means a 10% increase in volume, while a
 %       value of -0.2 means a 20% decrease in volume.
 %       The default value is 0, meaning no change in volume.
-%   timeDelay (optional) - Time delay in years for the specified ice sheet
+%   timeDelay (optional) - Time delay in time steps for the specified ice sheet
 %       A positive value means the ice sheet changes later than in the
 %       original model, while a negative value means it changes earlier.
 %       The default value is 0, meaning no time delay.
@@ -39,7 +39,7 @@
 %       https://doi.org/10.5194/gmd-12-5055-2019
 %
 % Author
-%   2026/04/07, En-Chi Lee (williameclee@arizona.edu)
+%   2026/09/25, En-Chi Lee (williameclee@arizona.edu)
 
 function modSelenIceModel(model, icesheet, newModel, volumeChangeFrac, timeDelay)
 
