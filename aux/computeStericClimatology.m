@@ -1,12 +1,7 @@
 %% COMPUTESTERICCLIMATOLOGY - Computes climatology of temperature, salinity, and density
 %
 % Last modified
-%   2026/04/08, En-Chi Lee (williameclee@arizona.edu)
-%     - Fixed typo and improved error message when input file is not readable
-%   2026/03/03, En-Chi Lee (williameclee@arizona.edu)
-%     - Added fail safe for unreadable climatology file
-%   2026/02/16, En-Chi Lee (williameclee@arizona.edu)
-%     - Extracted from PROCESSSTERICDATAEN4 for reusability
+%   2026/09/25, En-Chi Lee (williameclee@arizona.edu)
 
 function computeStericClimatology(tlim, inputFolder, inputFiles, outputPath, options)
 
@@ -74,7 +69,8 @@ function computeStericClimatology(tlim, inputFolder, inputFiles, outputPath, opt
             if ~options.BeQuiet
                 fprintf(repmat('\b', 1, cnt));
                 cnt = cprintf('[ULMO>%s] Skipped %s %s for climatology, out of time range (%d/%d).\n', ...
-                    callchaintext(callChain), datetime(ddate.date, "Format", 'yyyy/MM'), filehref(inputPath, 'data'), iFile, length(inputFiles));
+                    callchaintext(callChain), datetime(ddate.date, "Format", 'yyyy/MM'), ...
+                    filehref(inputPath, 'data'), iFile, length(inputFiles));
             end
 
             continue
@@ -83,17 +79,17 @@ function computeStericClimatology(tlim, inputFolder, inputFiles, outputPath, opt
         load(inputPath, 'salinity', 'consTemp', 'density');
 
         if ~exist('salinityClim', 'var')
-            salinityClim = zeros(size(salinity), 'single');
+            salinityClim = zeros(size(salinity), 'double');
             salinityCnt = zeros(size(salinity), 'uint16');
         end
 
         if ~exist('consTempClim', 'var')
-            consTempClim = zeros(size(consTemp), 'single');
+            consTempClim = zeros(size(consTemp), 'double');
             consTempCnt = zeros(size(consTemp), 'uint16');
         end
 
         if ~exist('densityClim', 'var')
-            densityClim = zeros(size(density), 'single');
+            densityClim = zeros(size(density), 'double');
             densityCnt = zeros(size(density), 'uint16');
         end
 
@@ -117,7 +113,8 @@ function computeStericClimatology(tlim, inputFolder, inputFiles, outputPath, opt
         if ~options.BeQuiet
             fprintf(repmat('\b', 1, cnt));
             cnt = cprintf('[ULMO>%s] Processed %s %s for climatology (%d/%d).\n', ...
-                callchaintext(callChain), datetime(ddate.date, "Format", 'yyyy/MM'), filehref(inputPath, 'data'), iFile, length(inputFiles));
+                callchaintext(callChain), datetime(ddate.date, "Format", 'yyyy/MM'), ...
+                filehref(inputPath, 'data'), iFile, length(inputFiles));
         end
 
     end
@@ -126,14 +123,14 @@ function computeStericClimatology(tlim, inputFolder, inputFiles, outputPath, opt
 
     assert(numClimFiles > 0, 'No files found for climatology in the specified time range.');
 
-    salinityClim = salinityClim ./ single(salinityCnt);
-    salinityClim(salinityCnt == 0) = nan; %#ok<NASGU> - actually saved through VARS variable
+    salinityClim = salinityClim ./ double(salinityCnt);
+    salinityClim(salinityCnt == 0) = nan; %#ok<NASGU>
 
-    consTempClim = consTempClim ./ single(consTempCnt);
-    consTempClim(consTempCnt == 0) = nan; %#ok<NASGU> - actually saved through VARS variable
+    consTempClim = consTempClim ./ double(consTempCnt);
+    consTempClim(consTempCnt == 0) = nan; %#ok<NASGU>
 
-    densityClim = densityClim ./ single(densityCnt);
-    densityClim(densityCnt == 0) = nan; %#ok<NASGU> - actually saved through VARS variable
+    densityClim = densityClim ./ double(densityCnt);
+    densityClim(densityCnt == 0) = nan; %#ok<NASGU>
 
     if ~options.BeQuiet
         fprintf(repmat('\b', 1, length(msg) + 1));
