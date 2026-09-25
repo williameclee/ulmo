@@ -1,6 +1,7 @@
 %% LOCALISE
 % Localise spherical harmonic coefficients to a domain.
-% This goal is very similar to that of Slepian functions', but this function don't truncate anything.
+% This goal is very similar to that of Slepian functions', but this 
+% function don't truncate anything.
 %
 % Syntax
 %   Plm = LOCALISE(Plm, domain, L)
@@ -10,7 +11,8 @@
 %
 % Input arguments
 %   Plm - Spherical harmonic coefficients
-%       The coefficients are in the form lmcosi, but the first two columns (degree and order) can be omitted.
+%       The coefficients are in the form lmcosi, but the first two columns 
+%       (degree and order) can be omitted.
 %       Can be three-dimensional, where the third dimension is the data.
 %   domain - Geographic domain
 %       A geographic domain (GeoDomain object).
@@ -33,7 +35,7 @@
 %   2024/11/20, williameclee@arizona.edu (@williameclee)
 %
 % Last modified by
-%   2025/08/03, williameclee@arizona.edu (@williameclee)
+%   2025/09/25, williameclee@arizona.edu (@williameclee)
 
 function [plm, K] = localise(plm, varargin)
     ip = inputParser;
@@ -105,7 +107,7 @@ function [plm, K] = localise(plm, varargin)
     end
 
     if is3d
-        plm = reshape(plm, [nInput * size(plm, 2), size(plm, 3)]);
+        plm = reshape(plm, [], size(plm, 3));
         plm = plm(j2, :);
     else
         plm = plm(j2);
