@@ -96,6 +96,17 @@
 % See also
 %   SOLVESLE, GRACE2PLMT
 %
+% References
+%   Sun, Y., Ditmar, P., and Riva, R. E. M. (2015). Observed changes 
+%       in the Earth’s dynamic oblateness from GRACE data and 
+%       geophysical models. Journal of Geodesy, 90(1):81-89. doi: 
+%       10.1007/s00190-015-0852-y.
+%   Sun, Y., Riva, R. E. M., and Ditmar, P. (2016). Optimizing 
+%       estimates of annual variations and trends in geocenter 
+%       motion and J2  from a combination of GRACE data and 
+%       geophysical models. Journal of Geophysical Research: Solid 
+%       Earth, 121(11):8352-8370. doi: 10.1002/2016JB013073.
+%
 % Author
 %   2025/03/18, En-Chi Lee (williameclee@arizona.edu)
 %
