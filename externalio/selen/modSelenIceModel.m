@@ -63,13 +63,21 @@ function modSelenIceModel(model, icesheet, newModel, volumeChangeFrac, timeDelay
         iceDiff(isIcesheet, :) = iceDiff(isIcesheet, :) * (1 + volumeChangeFrac);
     end
 
+    nSteps = size(iceDiff, 2);
+
+    if abs(timeDelay) >= nSteps
+        error('Delay time step (%d) must be smaller than the history length (%d).', ...
+            abs(timeDelay), nSteps);
+    end
+
     if timeDelay > 0
         iceDiff(isIcesheet, timeDelay + 1:end) = iceDiff(isIcesheet, 1:end - timeDelay);
 
         iceDiff(isIcesheet, 1:timeDelay) = repmat(iceDiff(isIcesheet, 1), [1, timeDelay]);
-
     elseif timeDelay < 0
-        iceDiff(isIcesheet, 1:end + timeDelay) = iceDiff(isIcesheet, -timeDelay + 1:end);
+        nShift = -timeDelay;
+        iceDiff(isIcesheet, 1:end - nShift) = iceDiff(isIcesheet, nShift + 1:end);
+        iceDiff(isIcesheet, end - nShift + 1:end) = 0;
     end
 
     iceNew = [ice(:, 1:4), ice(:, end) + iceDiff];
