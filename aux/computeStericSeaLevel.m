@@ -1,17 +1,14 @@
 %% COMPUTESTERICSEALEVEL - Computes sea level anomalies from density and climatology
 %
 % Last modified
-%   2026/03/02, williameclee@arizona.edu (@williameclee)
-%     - Corrected ocean bottom thickness calculation
-%   2026/02/17, williameclee@arizona.edu (@williameclee)
-%     - Extracted from PROCESSSTERICDATAEN4 for reusability
+%   2026/09/25, williameclee@arizona.edu (@williameclee)
 
 function computeStericSeaLevel(dataPath, climatologyPath, options)
     %% Validation and checks
     arguments (Input)
         dataPath {mustBeTextScalar, mustBeFile}
         climatologyPath {mustBeTextScalar, mustBeFile}
-        options.Bottom (1, 1) double = 6000
+        options.Bottom double {mustBePositive, mustBeFinite} = 6000
         options.HasDeepLayer (1, 1) logical = true
         options.ForceNew (1, 1) logical = false
         options.BeQuiet (1, 1) logical = false
@@ -66,46 +63,49 @@ function computeStericSeaLevel(dataPath, climatologyPath, options)
     cdata = load(climatologyPath, inputClimVars{:});
 
     %% Main computation
+    depth = double(data.depth);
+
+    if isvector(depth)
+        depth = repmat(depth(:)', size(data.density, 1), 1);
+    end
+
+    assert(size(depth, 1) == size(data.density, 1) && ...
+        size(depth, 2) == size(data.density, 3), 'Depth grid does not match density.');
+    assert(all(isfinite(depth), 'all') && all(depth >= 0, 'all') && ...
+        all(diff(depth, 1, 2) > 0, 'all'), 'Depth must be finite and increasing.');
+
+    if isscalar(bottom)
+        bottom = repmat(bottom, size(depth, 1), 1);
+    else
+        bottom = bottom(:);
+    end
+
+    assert(numel(bottom) == size(depth, 1), 'Bottom must be scalar or one value per latitude.');
+
+    % Calculate layer thicknesses
+    layerTop = [zeros(size(depth, 1), 1), (depth(:, 1:end - 1) + depth(:, 2:end)) / 2];
+    layerBottom = [layerTop(:, 2:end), bottom];
+    assert(all(layerBottom >= layerTop, 'all'), 'Bottom lies above the final layer top.');
+    layerThk = layerBottom - layerTop;
+    shallowThk = max(0, min(layerBottom, 2000) - min(layerTop, 2000));
+    deepThk = max(0, layerBottom - max(layerTop, 2000));
+
     % Integrate steric sea level
-    layerTop = [0; (data.depth(1:end - 1) + data.depth(2:end)) / 2];
-    layerBottom = [layerTop(2:end); bottom];
-    layerThickness = abs(layerTop - layerBottom);
-    % layerThickness(end) = layerThickness(end - 1) ...
-    %     + (layerThickness(end - 1) - layerThickness(end - 2)); % Extrapolate bottom layer thickness
+    denPtrbtn = cdata.densityClim ./ data.density - 1;
+    thermoDenPtrbtn = cdata.densityClim ./ data.thermoDensity - 1;
+    haloDenPtrbtn = cdata.densityClim ./ data.haloDensity - 1;
 
-    thermostericSls = (cdata.densityClim ./ data.thermoDensity - 1) .* ...
-        reshape(layerThickness, 1, 1, []);
-    halostericSls = (cdata.densityClim ./ data.haloDensity - 1) .* ...
-        reshape(layerThickness, 1, 1, []);
-    thermostericSl = sum(thermostericSls, 3, 'omitnan'); %#ok<NASGU> - actually saved through VARS variable
-    halostericSl = sum(halostericSls, 3, 'omitnan'); %#ok<NASGU> - actually saved through VARS variable
-
-    stericSls = (cdata.densityClim ./ data.density - 1) .* ...
-        reshape(layerThickness, 1, 1, []);
-    stericSl = sum(stericSls, 3, 'omitnan'); %#ok<NASGU> - actually saved through VARS variable
+    stericSl = integrateLayers(denPtrbtn, layerThk); %#ok<NASGU>
+    thermostericSl = integrateLayers(thermoDenPtrbtn, layerThk); %#ok<NASGU>
+    halostericSl = integrateLayers(haloDenPtrbtn, layerThk); %#ok<NASGU>
 
     if hasDeepLayer
-        isShallow = layerTop < 2000;
-        shallowStericSls = (cdata.densityClim(:, :, isShallow) ./ data.density(:, :, isShallow) - 1) .* ...
-            reshape(layerThickness(isShallow), 1, 1, []);
-        shallowStericSl = sum(shallowStericSls, 3, 'omitnan'); %#ok<NASGU> - actually saved through VARS variable
-        shallowThermostericSls = (cdata.densityClim(:, :, isShallow) ./ data.thermoDensity(:, :, isShallow) - 1) .* ...
-            reshape(layerThickness(isShallow), 1, 1, []);
-        shallowThermostericSl = sum(shallowThermostericSls, 3, 'omitnan'); %#ok<NASGU> - actually saved through VARS variable
-        shallowHalostericSls = (cdata.densityClim(:, :, isShallow) ./ data.haloDensity(:, :, isShallow) - 1) .* ...
-            reshape(layerThickness(isShallow), 1, 1, []);
-        shallowHalostericSl = sum(shallowHalostericSls, 3, 'omitnan'); %#ok<NASGU> - actually saved through VARS variable
-
-        isDeep = layerTop >= 2000;
-        deepStericSls = (cdata.densityClim(:, :, isDeep) ./ data.density(:, :, isDeep) - 1) .* ...
-            reshape(layerThickness(isDeep), 1, 1, []);
-        deepStericSl = sum(deepStericSls, 3, 'omitnan'); %#ok<NASGU> - actually saved through VARS variable
-        deepThermostericSls = (cdata.densityClim(:, :, isDeep) ./ data.thermoDensity(:, :, isDeep) - 1) .* ...
-            reshape(layerThickness(isDeep), 1, 1, []);
-        deepThermostericSl = sum(deepThermostericSls, 3, 'omitnan'); %#ok<NASGU> - actually saved through VARS variable
-        deepHalostericSls = (cdata.densityClim(:, :, isDeep) ./ data.haloDensity(:, :, isDeep) - 1) .* ...
-            reshape(layerThickness(isDeep), 1, 1, []);
-        deepHalostericSl = sum(deepHalostericSls, 3, 'omitnan'); %#ok<NASGU> - actually saved through VARS variable
+        shallowStericSl = integrateLayers(denPtrbtn, shallowThk); %#ok<NASGU>
+        deepStericSl = integrateLayers(denPtrbtn, deepThk); %#ok<NASGU>
+        shallowThermostericSl = integrateLayers(thermoDenPtrbtn, shallowThk); %#ok<NASGU>
+        deepThermostericSl = integrateLayers(thermoDenPtrbtn, deepThk); %#ok<NASGU>
+        shallowHalostericSl = integrateLayers(haloDenPtrbtn, shallowThk); %#ok<NASGU>
+        deepHalostericSl = integrateLayers(haloDenPtrbtn, deepThk); %#ok<NASGU>
     end
 
     try
@@ -130,4 +130,14 @@ function computeStericSeaLevel(dataPath, climatologyPath, options)
             filehref(dataPath, 'steric sea level data'));
     end
 
+end
+
+%% Subfunctions
+function intgVal = integrateLayers(val, layerThk)
+    weights = reshape(layerThk, size(layerThk, 1), 1, []);
+    valid = isfinite(val) & weights > 0;
+    terms = val .* weights;
+    terms(~valid) = 0;
+    intgVal = sum(terms, 3);
+    intgVal(~any(valid, 3)) = NaN;
 end
