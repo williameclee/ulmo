@@ -1,11 +1,11 @@
-%% PACIFIC
-% Finds the longitude and latitude coordinates of the Pacific Ocean.
+%% NATLANTIC
+% Finds the longitude and latitude coordinates of the North Atlantic Ocean.
 %
 % Syntax
-%   XY = pacific(upscale, buf)
-%   XY = pacific(upscale, buf, latlim, morebuffers)
-%   XY = pacific(__, 'Name', value)
-%   [XY, p] = pacific(__)
+%   XY = natlantic(upscale, buf)
+%   XY = natlantic(upscale, buf, latlim, morebuffers)
+%   XY = natlantic(__, 'Name', value)
+%   [XY, p] = natlantic(__)
 %
 % Input arguments
 %   upscale - How many times to upscale the data
@@ -31,7 +31,8 @@
 %   LonOrigin - The longitude origin of the data
 %       The domain will be contained within the range
 %       [LonOrigin - 180, LonOrigin + 180].
-%       The default value is 180 (i.e. the range of longitude is [0, 360]).
+%       The default value is 200 (i.e. the range of longitude is
+%       [20, 380]).
 %   ForceNew - Force the function to reload the data
 %       The default value is false.
 %   BeQuiet - Suppress the output messages
@@ -48,13 +49,12 @@
 %
 % Examples
 %   The 'default' domain used for most applications is given by
-%   XY = pacific('Buffer', 1, 'MoreBuffers', {'earthquakes', 10}, ...
-%      'Latlim', [-60, 90]);
+%   XY = natlantic('Buffer', 1);
 %
 % Notes
 %   The function is written intentionally so that it is compatible with
 %   other region functions from slepian_alpha, i.e.
-%   XY = pacific(upscale, buf)
+%   XY = natlantic(upscale, buf)
 %   works as intended.
 %
 % Data source
@@ -68,10 +68,12 @@
 % See also
 %   OCEANPOLY, GSHHSCOASTLINE, BUFFER4OCEANS
 %
-% Last modified by
+% Last modified
+%   2026/02/12, williameclee@arizona.edu (@williameclee)
+%     - Added variable check before loading
 %   2024/08/15, williameclee@arizona.edu (@williameclee)
 
-function varargout = pacific(varargin)
+function varargout = natlantic(varargin)
     %% Initialisation
     % Suppress warnings
     warning('off', 'MATLAB:polyshape:repairedBySimplify');
@@ -83,40 +85,32 @@ function varargout = pacific(varargin)
     end
 
     % Parse the inputs
-    lonOriginD = 180;
+    lonOriginD = 200;
     [upscale, latlim, buf, moreBufs, lonOrigin, ~, ...
          forceNew, saveData, beQuiet] = ...
         parseoceaninputs(varargin, 'DefaultLonOrigin', lonOriginD);
-    oceanParts = ...
-        {'Pacific Ocean, eastern part', ...
-     'Pacific Ocean, western part'};
+    oceanParts = 'North Atlantic Ocean';
 
     %% Check if the data file exists
     [dataFile, ~, dataExists] = oceanfilename(mfilename, ...
-        'Upscale', upscale, 'LatLim', latlim, ...
+        'Upscale', upscale, 'Latlim', latlim, ...
         'Buffer', buf, 'MoreBuffers', moreBufs);
 
-    if dataExists && ~forceNew
+    if dataExists && ~forceNew && all(ismember({'XY', 'p'}, who('-file', dataFile)))
         load(dataFile, 'XY', 'p')
 
-        % Make sure the requested data exists
-        if exist('XY', 'var') && exist('p', 'var')
-
-            if beQuiet < 2
-                fprintf('%s loaded %s\n', upper(mfilename), dataFile)
-            end
-
-            if lonOrigin ~= lonOriginD
-                [Y, X] = flatearthpoly(XY(:, 2), XY(:, 1), lonOrigin);
-                p = polyshape(X, Y);
-                XY = poly2xy(p);
-            end
-
-            varargout = returncoastoutputs(nargout, XY, p);
-
-            return
+        if beQuiet < 2
+            fprintf('%s loaded %s\n', upper(mfilename), dataFile)
         end
 
+        if lonOrigin ~= lonOriginD
+            [Y, X] = flatearthpoly(XY(:, 2), XY(:, 1), lonOrigin);
+            p = polyshape(X, Y);
+            XY = poly2xy(p);
+        end
+
+        varargout = returncoastoutputs(nargout, XY, p);
+        return
     end
 
     %% Compute the ocean boundary
@@ -131,7 +125,7 @@ function varargout = pacific(varargin)
     [~, coastPoly] = buffer4oceans(coastPoly, ...
         'MoreBuffers', moreBufs, 'LonOrigin', lonOrigin);
     % Manually remove small holes
-    coastPoly = manualadjustments(coastPoly, buf, moreBufs, lonOrigin);
+    coastPoly = manualadjustments(coastPoly, buf, lonOrigin);
     % Subtract the land regions from the ocean boundary
     p = subtract(oceanPoly, coastPoly);
 
@@ -155,33 +149,57 @@ end
 
 %% Subfunctions
 % Manually remove small holes in the coastline
-function coastPoly = manualadjustments(coastPoly, buf, moreBufs, lonOrigin)
+function coastPoly = manualadjustments(coastPoly, buf, lonOrigin)
+
+    if buf >= 0.5
+        coastPoly = addlandregion(coastPoly, ...
+            'Latlim', [45, 50; 48, 51; 52, 55; 49.5, 50.5; 57, 59], ...
+            'Lonlim', [-68, -59.5; -60, -58; -6, -2; -2, 1; 8, 12], ...
+            'LongitudeOrigin', lonOrigin);
+    end
 
     if buf >= 1
         coastPoly = addlandregion(coastPoly, ...
-            'Latlim', [58, 61; 38, 39; 22, 24; 9, 11; -40, -39], ...
-            'Lonlim', [156, 160; 122, 124; 118, 120; 124, 125; 143.5, 145.5], ...
+            'Latlim', [18, 19], 'Lonlim', [-76, -75], ...
             'LongitudeOrigin', lonOrigin);
-
-        if any(strcmp(moreBufs, 'earthquakes'))
-            coastPoly = addlandregion(coastPoly, ...
-                'Latlim', [38, 40; 35, 36], ...
-                'Lonlim', [129, 130; 130, 131], ...
-                'LongitudeOrigin', lonOrigin);
-        end
-
     end
 
     if buf >= 2
         coastPoly = addlandregion(coastPoly, ...
-            'Latlim', [37, 43; 3, 4.5], ...
-            'Lonlim', [130, 138; 125, 127], ...
+            'Latlim', [54, 58], 'Lonlim', [0, 6], ...
+            'LongitudeOrigin', lonOrigin);
+    end
+
+    if buf >= 2.5
+        coastPoly = addlandregion(coastPoly, ...
+            'Latlim', [60, 62], 'Lonlim', [-2, 0], ...
+            'LongitudeOrigin', lonOrigin);
+    end
+
+    if buf >= 3
+        coastPoly = addlandregion(coastPoly, ...
+            'Latlim', [20, 30; 10, 20], ...
+            'Lonlim', [-95, -85; -85, -68], ...
+            'LongitudeOrigin', lonOrigin);
+    end
+
+    if buf >= 3.5
+        coastPoly = addlandregion(coastPoly, ...
+            'Latlim', [13, 15; 60, 65], ...
+            'Lonlim', [-80, -65; -10, 0], ...
             'LongitudeOrigin', lonOrigin);
     end
 
     if buf >= 4
         coastPoly = addlandregion(coastPoly, ...
-            'Latlim', [49.5, 52.5], 'Lonlim', [149, 152], ...
+            'Latlim', [60, 61; 56, 60], ...
+            'Lonlim', [-56, -52; -12, -10], ...
+            'LongitudeOrigin', lonOrigin);
+    end
+
+    if buf >= 4.5
+        coastPoly = addlandregion(coastPoly, ...
+            'Latlim', [0, 2], 'Lonlim', [-8, 5], ...
             'LongitudeOrigin', lonOrigin);
     end
 

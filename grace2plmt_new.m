@@ -57,6 +57,12 @@
 %       The default option is 'timefirst' (to be consistent with
 %       GRACE2PLMT).
 %       Data type: char
+%   LoveNumSource - Source of load Love numbers
+%       - 'ISSM': Love numbers from the Ice Sheet System Model (ISSM)
+%       - 'Wahr': Love numbers as used in slepian_delta package
+%       - 'ALMA3 <model>': Love numbers from the ALMA3 models (currently
+%           has to be added manually)
+%       The default source is 'ISSM'.
 %   Deg1Correction, C20Correction, C30Correction - Logical flag to apply
 %       these corrections
 %       The default options are all true.
@@ -118,7 +124,7 @@
 %   printed to the log file instead.
 %
 % Last modified by
-%   2025/11/02, williameclee@arizona.edu (@williameclee)
+%   2026/01/29, williameclee@arizona.edu (@williameclee)
 %   2022/05/18, charig@email.arizona.edu (@harig00)
 %   2020/11/09, lashokkumar@arizona.edu
 %   2019/03/18, mlubeck@email.arizona.edu
@@ -128,13 +134,13 @@ function [gracePlmt, graceStdPlmt, dates] = grace2plmt_new(varargin)
     %% Initialisation
     % Parse inputs
     [Pcenter, Rlevel, Ldata, unit, timelim, redoDeg1, ...
-         deg1corr, c20corr, c30corr, outputFmt, timeFmt, Loutput, ...
+         deg1corr, c20corr, c30corr, outputFmt, timeFmt, Loutput, loveNumSrc, ...
          forceNew, saveData, beQuiet, callChain] = ...
         parseinputs(varargin{:});
 
     % Find the coefficient files
     [inputFolder, outputPath, logPath] = getIOpaths( ...
-        Pcenter, Rlevel, Ldata, unit, deg1corr, c20corr, c30corr);
+        Pcenter, Rlevel, Ldata, unit, loveNumSrc, deg1corr, c20corr, c30corr);
 
     % If this file already exists, load it.  Otherwise, or if we force it, make
     % a new one (e.g. you added extra months to the database).
@@ -153,7 +159,7 @@ function [gracePlmt, graceStdPlmt, dates] = grace2plmt_new(varargin)
     else
         % Reload from the raw data
         [gracePlmt, graceStdPlmt, dates, gravityParam, equatorRadius] = ...
-            grace2plmtCore(Pcenter, Rlevel, Ldata, unit, inputFolder, ...
+            grace2plmtCore(Pcenter, Rlevel, Ldata, unit, loveNumSrc, inputFolder, ...
             deg1corr, c20corr, c30corr, beQuiet, logPath);
 
         if saveData
@@ -200,7 +206,7 @@ end
 %% Subfunctions
 % Heart of the programme
 function [gracePlmt, graceStdPlmt, dates, gravityParam, equatorRadius] = ...
-        grace2plmtCore(Pcenter, Rlevel, Ldata, unit, inputFolder, ...
+        grace2plmtCore(Pcenter, Rlevel, Ldata, unit, loveNumSrc, inputFolder, ...
         deg1corr, c20corr, c30corr, beQuiet, logPath)
     %% Computing the coefficients
     logFid = fopen(logPath, 'w');
@@ -333,10 +339,10 @@ function [gracePlmt, graceStdPlmt, dates, gravityParam, equatorRadius] = ...
     % Convert gravity to the desired unit
     gracePlmt = convertgravity(gracePlmt, 'GRAV', unit, ...
         "EquatorRadius", equatorRadius, ...
-        "InputFormat", 'lmcosi', "TimeDim", 'timefirst');
+        "InputFormat", 'lmcosi', "TimeDim", 'timefirst', "LoveNumSource", loveNumSrc);
     graceStdPlmt = convertgravity(graceStdPlmt, 'GRAV', unit, ...
         "EquatorRadius", equatorRadius, ...
-        "InputFormat", 'lmcosi', "TimeDim", 'timefirst');
+        "InputFormat", 'lmcosi', "TimeDim", 'timefirst', "LoveNumSource", loveNumSrc);
 end
 
 % Parse input arguments
@@ -357,6 +363,7 @@ function varargout = parseinputs(varargin)
     dfOpt.OutputFormat = 'timefirst';
     dfOpt.TimeFormat = 'datenum';
     dfOpt.Loutput = [];
+    dfOpt.LoveNumSrc = 'ISSM';
     dfOpt.ForceNew = 0.5;
     dfOpt.SaveData = true;
     dfOpt.BeQuiet = 0.5;
@@ -387,6 +394,7 @@ function varargout = parseinputs(varargin)
         @(x) ischar(validatestring(x, {'datetime', 'datenum'})));
     addParameter(ip, 'Loutput', dfOpt.Loutput, ...
         @(x) (isscalar(x) && isnumeric(x) && x > 0) || isempty(x));
+    addParameter(ip, 'LoveNumSource', dfOpt.LoveNumSrc, @(x) ischar(x) || isstring(x));
     addParameter(ip, 'ForceNew', dfOpt.ForceNew, ...
         @(x) (isnumeric(x) || islogical(x)) && isscalar(x));
     addParameter(ip, 'SaveData', dfOpt.SaveData, ...
@@ -422,6 +430,8 @@ function varargout = parseinputs(varargin)
         conddefval(ip.Results.OutputFormat, dfOpt.OutputFormat);
     timeFmt = conddefval(ip.Results.TimeFormat, dfOpt.TimeFormat);
     Loutput = conddefval(ip.Results.Loutput, dfOpt.Loutput);
+    loveNumSource = ...
+        char(conddefval(ip.Results.LoveNumSource, dfOpt.LoveNumSrc));
     forceNew = uint8(double(ip.Results.ForceNew) * 2);
     saveData = logical(ip.Results.SaveData);
     beQuiet = uint8(double(ip.Results.BeQuiet) * 2);
@@ -443,7 +453,7 @@ function varargout = parseinputs(varargin)
 
     varargout = ...
         {Pcenter, Rlevel, Ldata, unit, timelim, redoDeg1, ...
-         deg1correction, c20correction, c30correction, outputFmt, timeFmt, Loutput, ...
+         deg1correction, c20correction, c30correction, outputFmt, timeFmt, Loutput, loveNumSource, ...
          forceNew, saveData, beQuiet, callChain};
 end
 
@@ -485,7 +495,7 @@ end
 
 % Get the input folder and output file names
 function [inputFolder, outputPath, logPath] = ...
-        getIOpaths(Pcenter, Rlevel, Ldata, unit, deg1corr, c20corr, c30corr)
+        getIOpaths(Pcenter, Rlevel, Ldata, unit, loveNumSrc, deg1corr, c20corr, c30corr)
 
     if ~isempty(getenv('ORIGINALGRACEDATA'))
         inputFolder = fullfile(getenv('ORIGINALGRACEDATA'), ...
@@ -509,9 +519,12 @@ function [inputFolder, outputPath, logPath] = ...
         case 'POT'
             outputFile = sprintf('%s_%s_alldata_%s.mat', ...
                 Pcenter, Rlevel, num2str(Ldata));
-        otherwise
+        case 'GRAV'
             outputFile = sprintf('%s_%s_alldata_%s_%s.mat', ...
                 Pcenter, Rlevel, num2str(Ldata), unit);
+        case 'SD'
+            outputFile = sprintf('%s_%s_%s_alldata_%s_%s.mat', ...
+                Pcenter, Rlevel, num2str(Ldata), unit, replace(loveNumSrc, " ", ""));
     end
 
     if ~c30corr

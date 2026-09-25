@@ -1,11 +1,11 @@
-%% SATLANTIC
-% Finds the longitude and latitude coordinates of the South Atlantic Ocean.
+%% GULF
+% Finds the longitude and latitude coordinates of the Gulf of Mexico.
 %
 % Syntax
-%   XY = satlantic(upscale, buf)
-%   XY = satlantic(upscale, buf, latlim, morebuffers)
-%   XY = satlantic(__, 'Name', value)
-%   [XY, p] = satlantic(__)
+%   XY = gulf(upscale, buf)
+%   XY = gulf(upscale, buf, latlim, morebuffers)
+%   XY = gulf(__, 'Name', value)
+%   [XY, p] = gulf(__)
 %
 % Input arguments
 %   upscale - How many times to upscale the data
@@ -31,7 +31,7 @@
 %   LonOrigin - The longitude origin of the data
 %       The domain will be contained within the range
 %       [LonOrigin - 180, LonOrigin + 180].
-%       The default value is 0 (i.e. the range of longitude is [180, 540]).
+%       The default value is 180 (i.e. the range of longitude is [0, 360]).
 %   ForceNew - Force the function to reload the data
 %       The default value is false.
 %   BeQuiet - Suppress the output messages
@@ -48,12 +48,12 @@
 %
 % Examples
 %   The 'default' domain used for most applications is given by
-%   XY = satlantic('Buffer', 1, 'MoreBuffers', {'earthquakes', 10});
+%   XY = gulf('Buffer', 1, 'MoreBuffers', {'earthquakes', 10});
 %
 % Notes
 %   The function is written intentionally so that it is compatible with
 %   other region functions from slepian_alpha, i.e.
-%   XY = satlantic(upscale, buf)
+%   XY = gulf(upscale, buf)
 %   works as intended.
 %
 % Data source
@@ -67,10 +67,10 @@
 % See also
 %   OCEANPOLY, GSHHSCOASTLINE, BUFFER4OCEANS
 %
-% Last modified by
-%   2024/08/15, williameclee@arizona.edu (@williameclee)
+% Created by
+%   2026/01/22, williameclee@arizona.edu (@williameclee)
 
-function varargout = satlantic(varargin)
+function varargout = gulf(varargin)
     %% Initialisation
     % Suppress warnings
     warning('off', 'MATLAB:polyshape:repairedBySimplify');
@@ -82,37 +82,32 @@ function varargout = satlantic(varargin)
     end
 
     % Parse the inputs
-    lonOriginD = 0;
+    lonOriginD = 180;
     [upscale, latlim, buf, moreBufs, lonOrigin, ~, ...
          forceNew, saveData, beQuiet] = ...
-        parseoceaninputs(varargin, 'DefaultLonOrigin', lonOriginD);
-    oceanParts = 'South Atlantic Ocean';
+        parseoceaninputs(varargin, "DefaultLonOrigin", lonOriginD);
+    oceanParts = {'Gulf of Mexico'};
 
     %% Check if the data file exists
     [dataFile, ~, dataExists] = oceanfilename(mfilename, ...
         'Upscale', upscale, 'Latlim', latlim, ...
         'Buffer', buf, 'MoreBuffers', moreBufs);
 
-    if dataExists && ~forceNew
+    if dataExists && ~forceNew && all(ismember({'XY', 'p'}, who('-file', dataFile)))
         load(dataFile, 'XY', 'p')
-        % Make sure the requested data exists
-        if exist('XY', 'var') && exist('p', 'var')
 
-            if beQuiet < 2
-                fprintf('%s loaded %s\n', upper(mfilename), dataFile)
-            end
-
-            if lonOrigin ~= lonOriginD
-                [Y, X] = flatearthpoly(XY(:, 2), XY(:, 1), lonOrigin);
-                p = polyshape(X, Y);
-                XY = poly2xy(p);
-            end
-
-            varargout = returncoastoutputs(nargout, XY, p);
-
-            return
+        if beQuiet < 2
+            fprintf('%s loaded %s\n', upper(mfilename), dataFile)
         end
 
+        if lonOrigin ~= lonOriginD
+            [Y, X] = flatearthpoly(XY(:, 2), XY(:, 1), lonOrigin);
+            p = polyshape(X, Y);
+            XY = poly2xy(p);
+        end
+
+        varargout = returncoastoutputs(nargout, XY, p);
+        return
     end
 
     %% Compute the ocean boundary
@@ -126,12 +121,8 @@ function varargout = satlantic(varargin)
     % Crop out more buffers
     [~, coastPoly] = buffer4oceans(coastPoly, ...
         'MoreBuffers', moreBufs, 'LonOrigin', lonOrigin);
-    % Manually remove small holes
-    coastPoly = manualadjustments(coastPoly, buf, lonOrigin);
     % Subtract the land regions from the ocean boundary
     p = subtract(oceanPoly, coastPoly);
-    p = subtract(p, intersect(p, coastPoly));
-    p = subtract(p, intersect(p, coastPoly));
 
     % Turn the polygon into a well-defined curve
     XY = poly2xy(p, upscale);
@@ -147,31 +138,6 @@ function varargout = satlantic(varargin)
 
     if beQuiet < 2
         fprintf('%s saved %s\n', upper(mfilename), dataFile)
-    end
-
-end
-
-%% Subfunctions
-% Manually remove small holes in the coastline
-function coastPoly = manualadjustments(coastPoly, buf, lonOrigin)
-
-    if buf >= 0
-        coastPoly = addlandregion(coastPoly, ...
-            'Latlim', [-3, 0; -2, -1], ...
-            'Lonlim', [-52, -48.5; -49, -48], ...
-            'LongitudeOrigin', lonOrigin);
-    end
-
-    if buf >= 0.5
-        coastPoly = addlandregion(coastPoly, ...
-            'Latlim', [-42, -41], 'Lonlim', [-65, -64], ...
-            'LongitudeOrigin', lonOrigin);
-    end
-
-    if buf >= 4.5
-        coastPoly = addlandregion(coastPoly, ...
-            'Latlim', [-61, -58], 'Lonlim', [-68, -61], ...
-            'LongitudeOrigin', lonOrigin);
     end
 
 end
