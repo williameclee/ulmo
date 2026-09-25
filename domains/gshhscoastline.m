@@ -1,8 +1,7 @@
 %% GSHHSCOASTLINE Retrieves the GSHHS coastline data and formats it
 %
 % Last modified
-%   2026/02/12, williameclee@arizona.edu (@williameclee)
-%     - Added variable check before loading
+%   2026/09/25, williameclee@arizona.edu (@williameclee)
 
 function varargout = gshhscoastline(varargin)
     %% Initialisation
