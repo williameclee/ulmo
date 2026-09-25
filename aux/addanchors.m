@@ -21,7 +21,7 @@
 %   This function was originally part of the slepian_ulmo package.
 %
 % Last modified by
-%   2024/10/15, En-Chi Lee (williameclee@arizona.edu)
+%   2026/09/25, En-Chi Lee (williameclee@arizona.edu)
 
 function varargout = addanchors(varargin)
     isPoly = false;
@@ -30,16 +30,21 @@ function varargout = addanchors(varargin)
 
         if isa(varargin{1}, 'polyshape')
             isPoly = true;
-            varargin{1} = varargin{1}.Vertices;
-            varargin{1} = closecoastline(varargin{1});
+            p = varargin{1};
+            lonlat = p.Vertices;
+            lonlat = closecoastline(lonlat);
+            lon = lonlat(:, 1);
+            lat = lonlat(:, 2);
+        elseif size(varargin{1}, 2) == 2
+            lon = varargin{1}(:, 1);
+            lat = varargin{1}(:, 2);
         elseif size(varargin{1}, 1) == 2
-            varargin{1} = varargin{1}';
-        elseif size(varargin{1}, 2) ~= 2
-            error('Invalid input argument')
+            lon = varargin{1}(1, :);
+            lat = varargin{1}(2, :);
+        else
+            error('Invalid input argument');
         end
 
-        lon = varargin{1}(:, 1);
-        lat = varargin{1}(:, 2);
     elseif nargin == 2
         lon = varargin{1};
         lat = varargin{2};
