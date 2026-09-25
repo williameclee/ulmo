@@ -2,7 +2,7 @@
 
 [![DOI](https://zenodo.org/badge/839424980.svg)](https://doi.org/10.5281/zenodo.17625698)
 
-A pipeline for using GRACE satellite gravimetry, altimetry-steric measurements, and forward modelling to study ocean mass change over ocean basins, with extended functionalities for Slepian functions and sea level equation modelling.
+A mostly MATLAB pipeline for using GRACE satellite gravimetry, altimetry-steric measurements, and forward modelling to study ocean mass change over ocean basins, with extended functionalities for Slepian functions and sea level equation modelling.
 
 Research findings using this code were presented at the [AGU24 Fall Meeting](https://agu.confex.com/agu/agu24/meetingapp.cgi/Paper/1579620). A manuscript is submitted to *JGR: Solid Earth* and is available on [EarthArXiv](https://doi.org/10.31223/X5RR16).
 
@@ -30,4 +30,4 @@ Functions in this repository may call or overwrite functions from the following 
 
 ---
 
-Last modified: 2026/02/12, [En-Chi Lee (@williameclee)](mailto:williameclee@arizona.edu)
+Last modified: 2026/09/25, [En-Chi Lee (@williameclee)](mailto:williameclee@arizona.edu)
