@@ -96,6 +96,17 @@
 % See also
 %   SOLVESLE, GRACE2PLMT
 %
+% References
+%   Sun, Y., Ditmar, P., and Riva, R. E. M. (2015). Observed changes 
+%       in the Earth’s dynamic oblateness from GRACE data and 
+%       geophysical models. Journal of Geodesy, 90(1):81-89. doi: 
+%       10.1007/s00190-015-0852-y.
+%   Sun, Y., Riva, R. E. M., and Ditmar, P. (2016). Optimizing 
+%       estimates of annual variations and trends in geocenter 
+%       motion and J2  from a combination of GRACE data and 
+%       geophysical models. Journal of Geophysical Research: Solid 
+%       Earth, 121(11):8352-8370. doi: 10.1002/2016JB013073.
+%
 % Author
 %   2025/03/18, En-Chi Lee (williameclee@arizona.edu)
 %
@@ -175,7 +186,7 @@ function [coeffs, coeffStds, dates] = ...
 
     % Add back GAC and remove GAD instead (Sun et al., 2016)
     % GAC/GAD products don't have uncertainties
-    % Only replace for l >= 2 (see TN-13)
+    % Only replace for l >= 2 (see TN-13 & Sun et al., 2015)
     if rwGad
         [gacPlmt, ~] = aod1b2plmt(pcenter, rlevel, 'GAC', Lsle, ...
             "OutputFormat", 'timefirst', "BeQuiet", beQuiet);
@@ -183,14 +194,14 @@ function [coeffs, coeffStds, dates] = ...
         [gadPlmt, ~] = aod1b2plmt(pcenter, rlevel, 'GAD', Lsle, ...
             "OutputFormat", 'timefirst', "BeQuiet", beQuiet);
         gadPlmt = ensureplmdegree(gadPlmt, Lsle);
-        gracePlmt(:, 3:end, 3:4) = gracePlmt(:, 3:end, 3:4) ...
-            + gacPlmt(:, 3:end, 3:4) - gadPlmt(:, 3:end, 3:4);
+        gracePlmt(:, 4:end, 3:4) = gracePlmt(:, 4:end, 3:4) ...
+            + gacPlmt(:, 4:end, 3:4) - gadPlmt(:, 4:end, 3:4);
     end
 
     % Remove GIA signal for l >= 2 (Sun et al., 2016)
     giaPlmt = gia2plmt(dates, giaModel, "L", Lsle, ...
         "OutputFormat", 'timefirst', "BeQuiet", beQuiet);
-    gracePlmt(:, 3:end, 3:4) = gracePlmt(:, 3:end, 3:4) - giaPlmt(:, 3:end, 3:4);
+    gracePlmt(:, 4:end, 3:4) = gracePlmt(:, 4:end, 3:4) - giaPlmt(:, 4:end, 3:4);
     % Ignore STD of GIA for now
 
     %% Preparing/preallocating variables

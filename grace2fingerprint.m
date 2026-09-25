@@ -122,15 +122,15 @@ function [rslLoadPlmt, rslLoadStdPlmt, dates] = ...
         [gadPlmt, ~] = aod1b2plmt(product{1:2}, 'GAD', Ldata, ...
             "OutputFormat", 'timefirst', "BeQuiet", beQuiet);
         gadPlmt = ensureplmdegree(gadPlmt, Ldata);
-        gracePlmt(:, 3:end, 3:4) = gracePlmt(:, 3:end, 3:4) ...
-            + gacPlmt(:, 3:end, 3:4) - gadPlmt(:, 3:end, 3:4);
+        gracePlmt(:, 4:end, 3:4) = gracePlmt(:, 4:end, 3:4) ...
+            + gacPlmt(:, 4:end, 3:4) - gadPlmt(:, 4:end, 3:4);
     end
 
     % Load GIA model
     if doGia
         giaPlmt = gia2plmt(dates, giaModel, "L", Ldata, ...
             "OutputFormat", 'timefirst', "BeQuiet", beQuiet);
-        gracePlmt(:, 3:end, 3:4) = gracePlmt(:, 3:end, 3:4) - giaPlmt(:, 3:end, 3:4);
+        gracePlmt(:, 4:end, 3:4) = gracePlmt(:, 4:end, 3:4) - giaPlmt(:, 4:end, 3:4);
     end
 
     gracePlmt = permute(gracePlmt, [2, 3, 1]); % timefirst -> traditional

@@ -96,9 +96,7 @@
 %       PANGAEA, doi: 10.1594/PANGAEA.932462
 %
 % Last modified by
-%   2026/04/01, En-Chi Lee (williameclee@arizona.edu)
-%     - Added support for models from the SELEN software
-%   2025/11/16, En-Chi Lee (williameclee@arizona.edu)
+%   2026/09/20, williameclee@arizona.edu (@williameclee)
 
 function varargout = gia2plmt(varargin)
     %% Initialisation
@@ -183,7 +181,7 @@ function varargout = gia2plmt(varargin)
             rslLmcosi(:, 3:4) = data.lmcosiM(:, 3:4) - vlmLmcosi(1:size(data.lmcosiM, 1), 3:4);
             oceanDomain = GeoDomain('alloceans', "Buffer", 0.5);
             rslLmcosi = localise(rslLmcosi, oceanDomain, 60, "BeQuiet", true);
-            data.lmcosiM(1, 3) = data.lmcosiM(1, 3) - rslLmcosi(1, 3);
+            data.lmcosiM(1, 3) = data.lmcosiM(1, 3) - rslLmcosi(1, 3) / oceanDomain.SphArea;
         catch ME
 
             switch model
