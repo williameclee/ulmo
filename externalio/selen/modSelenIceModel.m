@@ -82,10 +82,20 @@ function modSelenIceModel(model, icesheet, newModel, volumeChangeFrac, timeDelay
 
     iceNew = [ice(:, 1:4), ice(:, end) + iceDiff];
 
-    if ~isempty(newModel)
-        newModel = sprintf("%s-%s_V%s_T%s", newModel, upper(icesheet), ...
+    if strlength(string(newModel)) == 0
+        newModelBase = char(newModel);
+
+        if isempty(newModelBase)
+            newModelBase = char(model);
+        end
+
+        newModel = sprintf("%s-%s_V%s_T%s", newModelBase, upper(icesheet), ...
             replace(replace(sprintf("%+03.0f", volumeChangeFrac * 100), "+", "p"), "-", "n"), ...
             replace(replace(sprintf("%+03d", timeDelay), "+", "p"), "-", "n"));
+    end
+
+    if ~endsWith(newModel, ".pix")
+        newModel = strcat(newModel, ".pix");
     end
 
     newModelPath = fullfile(getenv("SELEN"), "DATA", newModel);
