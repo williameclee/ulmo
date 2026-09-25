@@ -95,17 +95,17 @@ function computeStericClimatology(tlim, inputFolder, inputFiles, outputPath, opt
 
         isValidSalinity = ~isnan(salinity);
         salinityClim(isValidSalinity) = ...
-            salinityClim(isValidSalinity) + salinity(isValidSalinity);
+            salinityClim(isValidSalinity) + double(salinity(isValidSalinity));
         salinityCnt(isValidSalinity) = salinityCnt(isValidSalinity) + 1;
 
         isValidConsTemp = ~isnan(consTemp);
         consTempClim(isValidConsTemp) = ...
-            consTempClim(isValidConsTemp) + consTemp(isValidConsTemp);
+            consTempClim(isValidConsTemp) + double(consTemp(isValidConsTemp));
         consTempCnt(isValidConsTemp) = consTempCnt(isValidConsTemp) + 1;
 
         isValidDensity = ~isnan(density);
         densityClim(isValidDensity) = ...
-            densityClim(isValidDensity) + density(isValidDensity);
+            densityClim(isValidDensity) + double(density(isValidDensity));
         densityCnt(isValidDensity) = densityCnt(isValidDensity) + 1;
 
         numClimFiles = numClimFiles + 1;
