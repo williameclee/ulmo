@@ -174,7 +174,7 @@ function [coeffs, coeffStds, dates] = ...
     %% Loading data
     wbar = waitbar(0, 'Loading GRACE data', ...
         "Name", upper(mfilename), "CreateCancelBtn", 'setappdata(gcbf,''canceling'',1)');
-    cleanup = onCleanup(@() (deleteWaitbar(wbar)));
+    cleanup = onCleanup(@() deleteWaitbar(wbar));
 
     [gracePlmt, graceStdPlmt, dates] = grace2plmt_new(pcenter, rlevel, Ldata, ...
         "Unit", 'SD', "OutputFormat", 'timefirst', "TimeFormat", 'datetime', ...
@@ -210,9 +210,7 @@ function [coeffs, coeffStds, dates] = ...
     graceStdPlmt = permute(graceStdPlmt, [2, 3, 1]); % timefirst -> traditional
 
     if getappdata(wbar, 'canceling')
-        delete(wbar);
-        error(sprintf('%s:ProcessCancelledByUser', upper(mfilename)), ...
-        'Processing cancelled');
+        error('ULMO:ProcessCancelledByUser', 'Geocentre computation cancelled');
     end
 
     % Whether to also reestimate C20 and C30
@@ -270,9 +268,7 @@ function [coeffs, coeffStds, dates] = ...
             sprintf('Solving degree-1 coefficients iteratively (%d/%d)', iIter, maxIter));
 
         if getappdata(wbar, 'canceling')
-            delete(wbar);
-            error(sprintf('%s:ProcessCancelledByUser', upper(mfilename)), ...
-            'Computation cancelled');
+            error('ULMO:ProcessCancelledByUser', 'Geocentre computation cancelled');
         end
 
         landPlmt = localise(gracePlmt, "L", Lsle, "K", landKernelSle);
@@ -335,8 +331,6 @@ function [coeffs, coeffStds, dates] = ...
         coeffs(:, 5) = coeffs(:, 5) + ...
             squeeze(giaPlmt(:, 7, 3));
     end
-
-    delete(wbar);
 
 end
 

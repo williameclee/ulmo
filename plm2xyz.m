@@ -208,7 +208,7 @@ function varargout = plm2xyz(varargin)
                 wbar = waitbar(0, sprintf( ...
                     'Evaluating Legendre polynomials between %i and %i', ...
                     ldown, lup));
-                cleanup = onCleanup(@() (deleteWaitbar(wbar)));
+                cleanup = onCleanup(@() deleteWaitbar(wbar));
             end
 
             in1 = 0;

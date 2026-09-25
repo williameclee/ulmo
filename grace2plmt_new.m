@@ -210,6 +210,7 @@ function [gracePlmt, graceStdPlmt, dates, gravityParam, equatorRadius] = ...
         deg1corr, c20corr, c30corr, beQuiet, logPath)
     %% Computing the coefficients
     logFid = fopen(logPath, 'w');
+    logCleanup = onCleanup(@() fclose(logFid));
     fprintf(logFid, '%s - Local time %s\n', ...
         upper(mfilename), datetime('now', 'Format', 'yyyy/MM/dd HH:mm:ss'));
     fprintf(logFid, 'Data centre: %s, release level: %s\n', ...
@@ -239,18 +240,14 @@ function [gracePlmt, graceStdPlmt, dates, gravityParam, equatorRadius] = ...
     %% Loop over the months
     wbar = waitbar(0, 'Reading GRACE data', ...
         "Name", upper(mfilename), "CreateCancelBtn", 'setappdata(gcbf,''canceling'',1)');
-    cleanup = onCleanup(@() (deleteWaitbar(wbar)));
+    cleanup = onCleanup(@() deleteWaitbar(wbar));
 
     for iDate = 1:nDates
         waitbar(iDate / nDates, wbar, ...
             sprintf('Reading GRACE data (%d/%d)', iDate, nDates));
 
         if getappdata(wbar, 'canceling')
-            delete(wbar);
-            warning(sprintf('%s:ProcessCancelledByUser', upper(mfilename)), ...
-            'Processing cancelled');
-            fclose(logFid);
-            return
+            error('ULMO:ProcessCancelledByUser', 'GRACE input file reading cancelled');
         end
 
         % load gravity coefficients
@@ -329,9 +326,6 @@ function [gracePlmt, graceStdPlmt, dates, gravityParam, equatorRadius] = ...
     wgs84C40 = -0.237091120053e-5 * -1 / sqrt(5); % will be row 11
     gracePlmt(:, 4, 3) = gracePlmt(:, 4, 3) - wgs84C20;
     gracePlmt(:, 11, 3) = gracePlmt(:, 11, 3) - wgs84C40;
-
-    fclose(logFid);
-    delete(wbar);
 
     %% Converting unit
     % Use the actual parameters stored in the file instead of from FRALMANAC
