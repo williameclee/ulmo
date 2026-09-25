@@ -35,7 +35,7 @@ The ultimate goal is to drop the `_new` suffixes and replace the original functi
 
 | Function name | Description | Package dependencies | Data dependencies | Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| `glmalpha_new` | Computes the projection matrix of Slepian functions. | [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git) | none | Replacement for `glmalpha` in [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git), with support for `GeoDomain` objects. |
+| `glmalpha_new` | Computes the projection matrix of Slepian functions. | [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git), [EfficientSlepian](https://github.com/williameclee/EfficientSlepian.git) (optional) | none | Replacement for `glmalpha` in [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git), with support for `GeoDomain` objects. |
 | `integratebasis_new` | Integrate the Slepian functions within the domain. | [slepian_delta](https://github.com/csdms-contrib/slepian_delta.git) | none | Replacement for `integratebasis` in [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git), with support for `GeoDomain` objects. |
 | `kernelcp_new` | Computes the localisation matrix of Slepian functions in parallel. | [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git) | none | Replacement for `kernelcp` in [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git), with support for `GeoDomain` objects. |
 | `plm2slep_new` | Projects spherical harmonics onto Slepian basis. | [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git) | none | Replacement for `plm2slep` in [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git), with support for `GeoDomain` objects. |
