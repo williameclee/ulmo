@@ -22,7 +22,7 @@
 %   lonL - Formatted longitude tick labels
 %
 % Last modified by
-%   2024/10/25, williameclee@arizona.edu (@williameclee)
+%   2026/09/25, williameclee@arizona.edu (@williameclee)
 
 function varargout = formatlonticks(varargin)
 
@@ -97,7 +97,9 @@ function lonL = formatlontick(lon, sigNum)
 
     lon = mod(lon + 180, 360) - 180;
 
-    if ~isnan(sigNum)
+    if isnan(sigNum)
+        lonL = num2str(abs(lon));
+    else
         lonL = sprintf(['%0.', num2str(sigNum), 'f'], abs(lon));
     end
 
