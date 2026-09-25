@@ -97,14 +97,14 @@
 %   SOLVESLE, GRACE2PLMT
 %
 % References
-%   Sun, Y., Ditmar, P., and Riva, R. E. M. (2015). Observed changes 
-%       in the Earth’s dynamic oblateness from GRACE data and 
-%       geophysical models. Journal of Geodesy, 90(1):81-89. doi: 
+%   Sun, Y., Ditmar, P., and Riva, R. E. M. (2015). Observed changes
+%       in the Earth’s dynamic oblateness from GRACE data and
+%       geophysical models. Journal of Geodesy, 90(1):81-89. doi:
 %       10.1007/s00190-015-0852-y.
-%   Sun, Y., Riva, R. E. M., and Ditmar, P. (2016). Optimizing 
-%       estimates of annual variations and trends in geocenter 
-%       motion and J2  from a combination of GRACE data and 
-%       geophysical models. Journal of Geophysical Research: Solid 
+%   Sun, Y., Riva, R. E. M., and Ditmar, P. (2016). Optimizing
+%       estimates of annual variations and trends in geocenter
+%       motion and J2  from a combination of GRACE data and
+%       geophysical models. Journal of Geophysical Research: Solid
 %       Earth, 121(11):8352-8370. doi: 10.1002/2016JB013073.
 %
 % Author
@@ -554,21 +554,6 @@ function plm = putcoeffs(plm, coeffs, coeffLocs)
 
     for iCoeff = 1:nCoeffs
         plm(coeffLocs(iCoeff, 1), 2 + coeffLocs(iCoeff, 2), :) = coeffs(iCoeff, :);
-    end
-
-end
-
-% Helper function to delete the waitbar if it still exists
-% Should not return any error or warning
-function deleteWaitbar(wbar)
-
-    try
-
-        if ishghandle(wbar)
-            delete(wbar)
-        end
-
-    catch
     end
 
 end

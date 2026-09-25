@@ -481,18 +481,3 @@ function L = finddegree(Plm)
     Ls = solve(eq, x);
     L = Ls(Ls > 0);
 end
-
-% Helper function to delete the waitbar if it still exists
-% Should not return any error or warning
-function deleteWaitbar(wbar)
-
-    try
-
-        if ishghandle(wbar)
-            delete(wbar)
-        end
-
-    catch
-    end
-
-end

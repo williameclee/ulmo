@@ -75,8 +75,7 @@
 %   PLOTSLEP, PLM2AVG, KERNELC, LEGENDREPRODINT, DLMLMP
 %
 % Last modified by
-%   2025/10/16, williameclee@arizona.edu (@williameclee)
-%   2024/08/15, williameclee@arizona.edu (@williameclee)
+%   2026/09/25, williameclee@arizona.edu (@williameclee)
 %   2023/11/11, fjsimons@alum.mit.edu (@fjsimons)
 %   2017/05/26, plattner@alumni.ethz.ch (@AlainPlattner)
 %   2016/09/23, charig@princeton.edu (@harig00)
@@ -229,7 +228,10 @@ function varargout = kernelcp_new(varargin)
         % Prepare the reindexing arrays
         % We're not fully using the recursion here, so there is wastage
         % Perform the masked spherical harmonic transform
-        wbar = waitbar(0, sprintf('%s: Loop over all degrees and orders', upper(mfilename)));
+        wbar = waitbar(0, sprintf('%s: Loop over all degrees and orders', ...
+            "Name", upper(mfilename), ...
+            "CreateCancelBtn", 'setappdata(gcbf,''canceling'',1)'));
+        cleanup = onCleanup(@() (deleteWaitbar(wbar)));
         % With the recursions as they are, we are not yet taking full
         % advantage of this method. See Mark Wieczorek's Fortran code which
         % presumably works better for this case.
