@@ -13,7 +13,7 @@
 %   Spada, Giorgio & Melini, Daniele. (2019). SELEN4 (SELEN version 4.0): a
 %       Fortran program for solving the gravitationally and topographically
 %       self-consistent sea-level equation in glacial isostatic adjustment
-%       modeling. Geosci. Model Dev. 
+%       modeling. Geosci. Model Dev.
 %       https://doi.org/10.5194/gmd-12-5055-2019
 %       https://github.com/geodynamics/selen
 %   Tamisiea, Mark E. (2011). Ongoing glacial isostatic contributions to
@@ -21,7 +21,7 @@
 %       https://doi.org/10.1111/j.1365-246X.2011.05116.x
 %
 % Author
-%	2026/04/01, En-Chi Lee (williameclee@arizona.edu)
+%	2026/09/25, En-Chi Lee (williameclee@arizona.edu)
 
 function convertSelenModel(modelFolder)
 
@@ -32,11 +32,26 @@ function convertSelenModel(modelFolder)
     dataFolder = fullfile(modelFolder, "FPR");
     % Detect the degree of the model from the model folder name
     [~, modelFolderSelf] = fileparts(modelFolder);
-    modelName = regexp(modelFolderSelf, "RUN_([A-Za-z0-9-_]+)", "tokens", "once");
-    modelInfo = regexp(modelFolderSelf, "RUN_([A-Za-z0-9]+)-R(\d+)-L(\d+)-I(\d+)", "tokens", "once");
+    modelName = extractAfter(string(modelFolderSelf), "RUN_");
+    modelInfo = regexp(modelFolderSelf, "^RUN_([A-Za-z0-9_-]+)-R(\d+)-L(\d+)-I(\d+)$", ...
+        "tokens", "once");
+
+    if isempty(modelInfo)
+        error("ULMO:convertSelenModel:InvalidModelFolderName", ...
+            ['Model folder name "%s" does not match expected pattern ', ...
+         'RUN_<name>-R<number>-L<number>-I<number>.'], ...
+            modelFolderSelf);
+    end
 
     % Prepare grid for interpolation
     L = str2double(modelInfo{3});
+
+    if isnan(L)
+        error("ULMO:convertSelenModel:InvalidModelDegree", ...
+            "Unable to parse spherical harmonic degree L from model folder name '%s'.", ...
+            modelFolderSelf);
+    end
+
     h = 360 / (2 * L);
     lon = 0:h:360;
     lat = -90:h:90;
