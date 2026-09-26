@@ -156,7 +156,9 @@ function p = croptolims(p, latlim, lonlim, lonOrigin)
     XY = poly2xy(p);
     [Y, X] = ...
         flatearthpoly(XY(:, 2), XY(:, 1), lonOrigin);
-    X = X - floor(min(X(:)) / 360) * 360;
+    while max(X) <= min(lonlim)
+        X = X + 360;
+    end
     p = polyshape([X, Y]);
 
     %% Cropping
