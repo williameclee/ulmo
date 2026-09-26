@@ -13,7 +13,7 @@
 %   2025/05/20, williameclee@arizona.edu (@williameclee)
 %
 % Last modified by
-%   2025/07/21, williameclee@arizona.edu (@williameclee)
+%   2025/09/26, williameclee@arizona.edu (@williameclee)
 
 function varargout = parsegracesourcefile(dataPath)
     %% Loading data
