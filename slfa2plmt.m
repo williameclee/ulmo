@@ -278,16 +278,16 @@ function varargout = slf2plm(inputPath)
     degreeorder = [degree, order];
     [degreeorder, sortId] = sortrows(degreeorder, [1, 2]);
 
-    plmLandload = [inputData{3}(:), inputData{4}(:)];
+    plmLandload = [inputData{3}(:), inputData{5}(:)];
     plmLandload = [degreeorder, plmLandload(sortId, :)];
 
-    plmRsl = [inputData{7}(:), inputData{8}(:)];
+    plmRsl = [inputData{7}(:), inputData{9}(:)];
     plmRsl = [degreeorder, plmRsl(sortId, :)];
 
-    plmGeoid = [inputData{11}(:), inputData{12}(:)];
+    plmGeoid = [inputData{11}(:), inputData{13}(:)];
     plmGeoid = [degreeorder, plmGeoid(sortId, :)];
 
-    plmBedrock = [inputData{15}(:), inputData{16}(:)];
+    plmBedrock = [inputData{15}(:), inputData{17}(:)];
     plmBedrock = [degreeorder, plmBedrock(sortId, :)];
 
     varargout = {plmLandload, plmRsl, plmGeoid, plmBedrock};
