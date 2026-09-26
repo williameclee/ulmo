@@ -2,11 +2,14 @@
 %
 % Created by
 %   2026/09/25, williameclee@arizona.edu (@williameclee)
+% Last modified by
+%   2026/09/26, williameclee@arizona.edu (@williameclee)
 
 classdef oceanTopologyTest < matlab.unittest.TestCase
 
     properties
         OriginalCoasts
+        OriginalGshhs
         ScratchDir
     end
 
@@ -18,22 +21,31 @@ classdef oceanTopologyTest < matlab.unittest.TestCase
     methods (TestClassSetup)
 
         function setupCoastsEnvironment(testCase)
-            % Isolate test execution in a scratch COASTS directory to avoid mutating production caches
+            % Isolate ocean and coastline caches, including cold-cache writes.
             testCase.OriginalCoasts = getenv('COASTS');
+            testCase.OriginalGshhs = getenv('GSHHS');
             testCase.ScratchDir = tempname;
             mkdir(testCase.ScratchDir);
+            % Register cleanup before copying inputs so setup failures also clean up.
+            testCase.addTeardown(@() testCase.restoreCoastsEnvironment());
+            scratchGshhs = fullfile(testCase.ScratchDir, 'gshhs');
+            mkdir(scratchGshhs);
             copyfile(fullfile(testCase.OriginalCoasts, 'Limits_of_oceans_and_seas.mat'), ...
                 testCase.ScratchDir);
+            % Copy only raw input; all derived coastline caches belong to this run.
+            copyfile(fullfile(testCase.OriginalGshhs, 'gshhs_l.b'), scratchGshhs);
             setenv('COASTS', testCase.ScratchDir);
+            setenv('GSHHS', scratchGshhs);
         end
 
     end
 
-    methods (TestClassTeardown)
+    methods (Access = private)
 
         function restoreCoastsEnvironment(testCase)
-            % Restore original COASTS environment variable and remove scratch directory
+            % Restore both environment variables before removing scratch caches.
             setenv('COASTS', testCase.OriginalCoasts);
+            setenv('GSHHS', testCase.OriginalGshhs);
 
             if exist(testCase.ScratchDir, 'dir')
                 rmdir(testCase.ScratchDir, 's');
@@ -75,7 +87,7 @@ classdef oceanTopologyTest < matlab.unittest.TestCase
             for edge = edges'
                 x = linspace(xy(edge, 1), xy(edge + 1, 1), 101);
                 testCase.verifyFalse(any(isinterior(land, x(2:end - 1), ...
-                    repmat(-limit + 1e-7, 1, 99))));
+                    repmat(-limit +1e-7, 1, 99))));
             end
 
         end
