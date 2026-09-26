@@ -21,10 +21,29 @@ function varargout = parsegracesourcefile(dataPath)
     end
 
     % Extract the data from the file
-    dataBarrier = '# End of YAML header\n';
+    dataBarriers = ...
+        ["# End of YAML header", ...
+         "     90   90,", ...
+         "SHM      90   90 1.00 fully normalized exclusive permanent tide", ...
+         "     60   60,", ...
+     "CMMNT Reported standard deviations are formal (not calibrated)"];
     dataStr = fileread(dataPath);
-    dataStr = strsplit(dataStr, dataBarrier);
-    data = dataStr{2};
+
+    for iBarrier = 1:length(dataBarriers)
+
+        if contains(dataStr, dataBarriers(iBarrier))
+            dataStr = strsplit(dataStr, dataBarriers(iBarrier));
+            break
+        end
+
+        if iBarrier ~= length(dataBarriers)
+            continue
+        end
+
+        error("Unrecognised file format")
+    end
+
+    data = dataStr{end};
     data = textscan(data, '%s%f%f%f%f%f%f%s%s%s');
     gravitySph = [data{2}, data{3}, data{4}, data{5}];
     gravityStdSph = [data{2}, data{3}, data{6}, data{7}];
@@ -80,8 +99,17 @@ function varargout = parsegracesourcefile(dataPath)
     header = dataStr{1};
     lines = strtrim(strsplit(header, '\n'));
 
-    gravityParam = extractheadervalue(lines, 'earth_gravity_param');
-    equatorRadius = extractheadervalue(lines, 'mean_equator_radius');
+    try
+        gravityParam = extractheadervalue(lines, 'earth_gravity_param');
+    catch
+        gravityParam = 0.3986004415E+15;
+    end
+
+    try
+        equatorRadius = extractheadervalue(lines, 'mean_equator_radius');
+    catch
+        equatorRadius = 0.6378136300E+07;
+    end
 
     varargout = ...
         {gravitySph, gravityStdSph, meanDate, [startDate, endDate], gravityParam, equatorRadius};

@@ -221,12 +221,23 @@ function [gracePlmt, graceStdPlmt, dates, gravityParam, equatorRadius] = ...
     fprintf(logFid, '%d files to process\n', length(inputFiles));
 
     % C20 and C30 correction setup
-    [tnC2030, tnC2030Std, tnC2030dates] = ...
-        gracedeg2(Rlevel, "BeQuiet", (uint8(beQuiet == 1) + beQuiet));
+    if c20corr || c30corr
+        [tnC2030, tnC2030Std, tnC2030dates] = ...
+            gracedeg2(Rlevel, "BeQuiet", (uint8(beQuiet == 1) + beQuiet));
+    end
 
     % Degree 1 correction setup
-    [tnDeg1, tnDeg1Std, tnDeg1dates] = ...
-        gracedeg1(Pcenter, Rlevel, "BeQuiet", (uint8(beQuiet == 1) + beQuiet));
+    % Special handling for CSR mascon
+    if strcmp(Pcenter, 'CSR mascon')
+        deg1Pcenter = 'CSR';
+    else
+        deg1Pcenter = Pcenter;
+    end
+
+    if deg1corr
+        [tnDeg1, tnDeg1Std, tnDeg1dates] = ...
+            gracedeg1(deg1Pcenter, Rlevel, "BeQuiet", (uint8(beQuiet == 1) + beQuiet));
+    end
 
     % Preallocation
     nDates = length(inputFiles);
@@ -293,8 +304,8 @@ function [gracePlmt, graceStdPlmt, dates, gravityParam, equatorRadius] = ...
         end
 
         % Combine into one matrix
-        gracePlmt(iDate, :, :) = gracePlm;
-        graceStdPlmt(iDate, :, :) = graceStdPlm;
+        gracePlmt(iDate, 1:size(gracePlm, 1), 1:size(gracePlm, 2)) = gracePlm;
+        graceStdPlmt(iDate, 1:size(graceStdPlm, 1), 1:size(graceStdPlm, 2)) = graceStdPlm;
     end
 
     if ~beQuiet
@@ -365,7 +376,7 @@ function varargout = parseinputs(varargin)
 
     ip = inputParser;
     addOptional(ip, 'Pcenter', dfOpt.Pcenter, ...
-        @(x) ischar(validatestring(x, {'CSR', 'GFZ', 'JPL'})));
+        @(x) ischar(validatestring(x, {'CSR', 'CSR mascon', 'GFZ', 'JPL'})));
     addOptional(ip, 'Rlevel', dfOpt.Rlevel, ...
         @(x) (isnumeric(x) && isscalar(x)) || ...
         (ischar(validatestring(x, {'RL04', 'RL05', 'RL06'}))));
@@ -434,6 +445,28 @@ function varargout = parseinputs(varargin)
 
     if isnumeric(Rlevel)
         Rlevel = sprintf('RL%02d', floor(Rlevel));
+    end
+
+    % CSR mascon solution is hard coded to have L=720
+    if strcmpi(Pcenter, 'CSR mascon') && (Ldata ~= 720)
+        warning("ULMO:grace2plmt:InvalidLdata", ...
+            'CSR mascon solution only has L=720, overriding input Ldata value of %d.', Ldata);
+        Ldata = 720;
+    elseif (strcmpi(Pcenter, 'JPL') && strcmpi(Rlevel, 'RL05')) && (Ldata ~= 90)
+        warning("ULMO:grace2plmt:InvalidLdata", ...
+            'JPL RL05 solution only has L=90, overriding input Ldata value of %d.', Ldata);
+        Ldata = 90;
+    elseif (strcmpi(Pcenter, 'GFZ') && strcmpi(Rlevel, 'RL05')) && (Ldata ~= 90)
+        warning("ULMO:grace2plmt:InvalidLdata", ...
+            'GFZ RL05 solution only has L=90, overriding input Ldata value of %d.', Ldata);
+        Ldata = 90;
+    end
+
+    if ~strcmpi(Rlevel, 'RL06')
+        % Don't do degree 1/C20/C30 correction for other release levels for now
+        deg1correction = false;
+        c20correction = false;
+        c30correction = false;
     end
 
     if ~isempty(timelim) && isnumeric(timelim)
@@ -546,31 +579,58 @@ end
 % Get the raw input files
 function [dataFiles, Ldata] = ...
         getinputfiles(Pcenter, Rlevel, Ldata, inputFolder)
-    % Only RL06 is supported for now
-    if ~strcmp(Rlevel, 'RL06')
-        error( ...
-            sprintf('%s:LoadData:SolutionLoadingNotImplemented', upper(mfilename)), ...
+
+    if strcmpi(Rlevel, 'RL05')
+
+        switch Pcenter
+            case 'CSR'
+                dataFiles = ls2cell(fullfile(inputFolder, 'GSM-2_2*-2*_*_UTCSR_0060_0005*'));
+            case 'GFZ'
+                dataFiles = ls2cell(fullfile(inputFolder, 'GSM-2_2*-2*_*_EIGEN_G---_005a'));
+            case 'JPL'
+                dataFiles = ls2cell(fullfile(inputFolder, 'GSM-2_2*-2*_*_JPLEM_0000_0005*'));
+            otherwise
+                error(sprintf('%s:LoadData:SolutionDNE', upper(mfilename)), ...
+                    '%s %s solutions not available', ...
+                    upper(Pcenter), Rlevel);
+        end
+
+    elseif strcmpi(Rlevel, 'RL06')
+
+        if strcmp(Pcenter, 'CSR mascon')
+            dataFiles = ls2cell(fullfile(inputFolder, 'GSU-2_*_B---_06*'));
+
+            if isempty(dataFiles)
+                error('ULMO:grace2plmt_new:LoadData:NoRawGRACEDataFound', ...
+                    'No data files found in %s', inputFolder)
+            end
+
+            return
+        end
+
+        % Get the data files
+        switch Ldata
+            case 60
+                dataFiles = ls2cell(fullfile(inputFolder, ...
+                'GSM-2_*_BA01_06*'));
+            case 96
+                dataFiles = ls2cell(fullfile(inputFolder, ...
+                'GSM-2_*_BB01_06*'));
+            otherwise
+                error("ULMO:grace2plmt:LoadData:SolutionDNE", ...
+                    '%s degree %d solutions not available', ...
+                    upper(Pcenter), Ldata);
+        end
+
+    else
+        error('ULMO:grace2plmt:LoadData:SolutionLoadingNotImplemented', ...
             'Loading %s %s solutions is not currently implemented', ...
             upper(Pcenter), Rlevel);
     end
 
-    % Get the data files
-    switch Ldata
-        case 60
-            dataFiles = ls2cell(fullfile(inputFolder, ...
-            'GSM-2_*_BA01_06*'));
-        case 96
-            dataFiles = ls2cell(fullfile(inputFolder, ...
-            'GSM-2_*_BB01_06*'));
-        otherwise
-            error(sprintf('%s:LoadData:SolutionDNE', upper(mfilename)), ...
-                '%s degree %d solutions not available', ...
-                upper(Pcenter), Ldata);
-    end
-
     % Make sure the files exist
     if isempty(dataFiles)
-        error(sprintf('%s:LoadData:NoRawGRACEDataFound', upper(mfilename)), ...
+        error("ULMO:grace2plmt:LoadData:NoRawGRACEDataFound", ...
             'No data files found in %s', inputFolder)
     end
 
