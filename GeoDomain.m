@@ -163,6 +163,16 @@ classdef GeoDomain
                     'BeQuiet', true);
             end
 
+            if ~isempty(lonOrigin)
+                [lat, lon] = flatearthpoly(lonlat(:, 2), lonlat(:, 1), lonOrigin);
+
+                while max(lon) <= lonOrigin - 180
+                    lon = lon + 360;
+                end
+
+                lonlat = [lon, lat];
+            end
+
             if options.Inverse
                 lonlatP = polyshape(lonlat);
                 boxP = polyshape([-180, 180, 180, -180] + lonOrigin, ...
@@ -177,6 +187,8 @@ classdef GeoDomain
 
             lon = lonlat(:, 1);
             lat = lonlat(:, 2);
+
+            lonlatXY = lonlat;
 
             switch options.OutputFormat
                 case 'lonlat'
@@ -206,7 +218,7 @@ classdef GeoDomain
                 return
             end
 
-            plotlonlat(lonlat, obj, options.RotateBack)
+            plotlonlat(lonlatXY, obj, options.RotateBack)
 
         end
 
@@ -505,7 +517,7 @@ function plotlonlat(lonlat, obj, rotateBack)
     end
 
     lonlatnb = feval(obj.Domain, "Upscale", obj.Upscale, "Buffer", 0, ...
-        "Inclang", obj.Latlim, "MoreBuffer", obj.MoreBuffers, ...
+        "Latlim", obj.Latlim, "MoreBuffers", obj.MoreBuffers, ...
         "RotateBack", rotateBack);
     hold on
     plot(lonlatnb(:, 1), lonlatnb(:, 2), 'b', ...
