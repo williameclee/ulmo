@@ -240,6 +240,7 @@ function [gracePlmt, graceStdPlmt, dates, gravityParam, equatorRadius] = ...
     if c20corr || c30corr
         [tnC2030, tnC2030Std, tnC2030dates] = ...
             gracedeg2(Rlevel, "BeQuiet", (uint8(beQuiet == 1) + beQuiet));
+
         if isMascon
             % GSU is relative to GGM05C, whereas TN-14 supplies full-field
             % coefficients. Subtract the zero-tide GGM05C C20/C30 values
@@ -247,6 +248,7 @@ function [gracePlmt, graceStdPlmt, dates, gravityParam, equatorRadius] = ...
             % https://download.csr.utexas.edu/pub/grace/GGM05/GGM05C.ICGEM
             tnC2030 = tnC2030 - [-4.841694573200e-4, 9.571647583412e-7];
         end
+
     end
 
     % Degree 1 correction setup
@@ -368,6 +370,7 @@ function [gracePlmt, graceStdPlmt, dates, gravityParam, equatorRadius] = ...
         gracePlmt(:, 4, 3) = gracePlmt(:, 4, 3) - wgs84C20;
         gracePlmt(:, 11, 3) = gracePlmt(:, 11, 3) - wgs84C40;
     end
+
     % Mascon GSU coefficients already describe updates to GGM05C; applying
     % the full-field WGS84 subtraction would introduce static zonal offsets.
 
@@ -506,14 +509,18 @@ function varargout = parseinputs(varargin)
         % RL05 replacement series are not implemented. Omitted/empty flags
         % default to false; reject explicit true instead of ignoring intent.
         correctionNames = {'Deg1Correction', 'C20Correction', 'C30Correction'};
+
         for k = 1:numel(correctionNames)
             name = correctionNames{k};
+
             if ~ismember(name, ip.UsingDefaults) && ...
                     ~isempty(ip.Results.(name)) && logical(ip.Results.(name))
                 error('ULMO:grace2plmt:UnsupportedCorrection', ...
                     '%s is not supported for %s. Omit it or set it to false.', name, Rlevel);
             end
+
         end
+
         deg1correction = false;
         c20correction = false;
         c30correction = false;
@@ -628,11 +635,6 @@ function [inputFolder, outputPath, logPath] = ...
         outputFile = strrep(outputFile, 'alldata', 'alldata_nDeg1');
     end
 
-    % Do not reuse caches from the initial RL05/GSU reader: they may contain
-    % invalid index padding, the wrong radius, or full-field mascon offsets.
-    if strcmp(Rlevel, 'RL05') || strcmp(Pcenter, 'CSR mascon')
-        outputFile = strrep(outputFile, '.mat', '_inputV2.mat');
-    end
     outputPath = fullfile(outputFolder, outputFile);
     logPath = fullfile(outputFolder, sprintf('%s_log.txt', upper(mfilename)));
 
