@@ -1,8 +1,8 @@
 %% GRACE2PLMT
-% Reads in the Level-2 GRACE geoid products from either the CSR or GFZ data
-% centres, does some processing, and saves them as a plmt matrix in a .mat
-% file. In particular, the coefficients are reordered to our prefered
-% lmcosi format, they are referenced to the WGS84 ellipsoid, the C20/C30
+% Reads Level-2 GRACE GSM products from CSR, GFZ and JPL, or CSR mascon
+% GSU spherical harmonics, and saves processed plmt matrices in .mat files.
+% Coefficients use lmcosi order. GSM fields are referenced to WGS84; GSU
+% fields retain their GGM05C reference. For RL06 by default, the C20/C30
 % coefficients are replaced with more accurate measurements from satellite
 % laser ranging from Loomis et al, (2020), and the degree one coefficients
 % are substituted with those from Sun et al., (2016).  You have the option
@@ -18,6 +18,7 @@
 %       - 'CSR': Center for Space Research
 %       - 'GFZ': GeoForschungsZentrum Potsdam
 %       - 'JPL': Jet Propulsion Laboratory
+%       - 'CSR mascon': RL06 GSU spherical harmonics relative to GGM05C
 %       The default data centre is 'CSR'.
 %       When the first argument is a cell array, it is interpreted as
 %       {Pcenter, Rlevel, Ldata}.
@@ -25,13 +26,16 @@
 %   Rlevel - Release level of the solution
 %       Either 'RL04','RL05', or 'RL06' (or numbers).
 %       The default release level is 'RL06'.
-%       Currently, only RL06 is guaranteed to work.
+%       RL05 and RL06 are supported; RL04 loading is not implemented.
 %       Data type: char | [numeric]
 %   Ldata - Bandwidth of the date product
 %       In the case where there are more than one product from a data
 %       centre (such as BA 60 or BB 96 standard L2 products) this allows
 %       you to choose between them.
-%       The default L is 60.
+%       The default L is 60. RL05 uses CSR=60, GFZ/JPL=90 (JPL months
+%       may stop at 60); CSR mascon uses 720. These override Ldata.
+%       Missing coefficients and uncertainties are NaN, with valid l/m
+%       indices. Use Loutput=60 for a common RL05 bandwidth.
 %       Data type: [numeric]
 %   Unit - Unit of the output
 %       - 'GRAV': Surface gravity (this is POT in SLEPIAN_ALPHA).
@@ -57,6 +61,10 @@
 %       The default option is 'timefirst' (to be consistent with
 %       GRACE2PLMT).
 %       Data type: char
+%   Loutput - Optional output bandwidth
+%       Truncate higher degrees or pad missing coefficients/sigmas with NaN.
+%       Degree/order labels remain valid; the default [] keeps Ldata.
+%       Data type: [numeric]
 %   LoveNumSource - Source of load Love numbers
 %       - 'ISSM': Love numbers from the Ice Sheet System Model (ISSM)
 %       - 'Wahr': Love numbers as used in slepian_delta package
@@ -65,7 +73,11 @@
 %       The default source is 'ISSM'.
 %   Deg1Correction, C20Correction, C30Correction - Logical flag to apply
 %       these corrections
-%       The default options are all true.
+%       The default options are all true for RL06, including CSR mascon.
+%       For GSU, SLR C20/C30 are converted to updates relative to GGM05C;
+%       degree 1 uses CSR TN-13. WGS84 zonals are not subtracted from GSU.
+%       RL05 defaults to false; explicit true raises UnsupportedCorrection.
+%       No GAD restoration, GIA correction or temporal demeaning is applied.
 %       Data type: logical | ([numeric])
 %   RecomputeDegree1 - Logical flag to recompute the degree 1 coefficients
 %       - false: Do not recompute the degree 1 coefficients.
@@ -120,11 +132,13 @@
 %   GRACEDEG1, GRACEDEG2, PLM2POT, AOD1B2PLMT
 %
 % Notes
+%   See docs/grace-input-formats.md for input layout, reference fields,
+%   correction behavior, missing degrees and cache migration.
 %   All the intermediate outputs originally printed on the screen are
 %   printed to the log file instead.
 %
 % Last modified by
-%   2026/01/29, williameclee@arizona.edu (@williameclee)
+%   2026/09/26, williameclee@arizona.edu (@williameclee)
 %   2022/05/18, charig@email.arizona.edu (@harig00)
 %   2020/11/09, lashokkumar@arizona.edu
 %   2019/03/18, mlubeck@email.arizona.edu
@@ -220,19 +234,41 @@ function [gracePlmt, graceStdPlmt, dates, gravityParam, equatorRadius] = ...
     [inputFiles, Ldata] = getinputfiles(Pcenter, Rlevel, Ldata, inputFolder);
     fprintf(logFid, '%d files to process\n', length(inputFiles));
 
+    isMascon = strcmp(Pcenter, 'CSR mascon');
+
     % C20 and C30 correction setup
-    [tnC2030, tnC2030Std, tnC2030dates] = ...
-        gracedeg2(Rlevel, "BeQuiet", (uint8(beQuiet == 1) + beQuiet));
+    if c20corr || c30corr
+        [tnC2030, tnC2030Std, tnC2030dates] = ...
+            gracedeg2(Rlevel, "BeQuiet", (uint8(beQuiet == 1) + beQuiet));
+
+        if isMascon
+            % GSU is relative to GGM05C, whereas TN-14 supplies full-field
+            % coefficients. Subtract the zero-tide GGM05C C20/C30 values
+            % (also listed as the means in TN-14); sigmas are unchanged.
+            % https://download.csr.utexas.edu/pub/grace/GGM05/GGM05C.ICGEM
+            tnC2030 = tnC2030 - [-4.841694573200e-4, 9.571647583412e-7];
+        end
+
+    end
 
     % Degree 1 correction setup
-    [tnDeg1, tnDeg1Std, tnDeg1dates] = ...
-        gracedeg1(Pcenter, Rlevel, "BeQuiet", (uint8(beQuiet == 1) + beQuiet));
+    % Special handling for CSR mascon
+    if strcmp(Pcenter, 'CSR mascon')
+        deg1Pcenter = 'CSR';
+    else
+        deg1Pcenter = Pcenter;
+    end
+
+    if deg1corr
+        [tnDeg1, tnDeg1Std, tnDeg1dates] = ...
+            gracedeg1(deg1Pcenter, Rlevel, "BeQuiet", (uint8(beQuiet == 1) + beQuiet));
+    end
 
     % Preallocation
     nDates = length(inputFiles);
     dates = NaT([nDates, 1]);
-    gracePlmt = nan([nDates, addmup(Ldata), 4]); % l m cos sin
-    graceStdPlmt = nan([nDates, addmup(Ldata), 4]); % l m cos sin
+    gracePlmt = emptyplmt(nDates, Ldata);
+    graceStdPlmt = gracePlmt;
     deg1corrFailedDates = [];
     c20corrFailedDates = [];
     c30corrFailedDates = [];
@@ -292,9 +328,15 @@ function [gracePlmt, graceStdPlmt, dates, gravityParam, equatorRadius] = ...
 
         end
 
-        % Combine into one matrix
-        gracePlmt(iDate, :, :) = gracePlm;
-        graceStdPlmt(iDate, :, :) = graceStdPlm;
+        if size(gracePlm, 1) > addmup(Ldata)
+            error('ULMO:grace2plmt:UnexpectedDegree', ...
+                'Input %s exceeds the expected degree %d', inputPath, Ldata);
+        end
+
+        % Keep missing higher-degree coefficients/sigmas as NaN, but retain
+        % valid degree/order labels for conversion and downstream indexing.
+        gracePlmt(iDate, 1:size(gracePlm, 1), 1:size(gracePlm, 2)) = gracePlm;
+        graceStdPlmt(iDate, 1:size(graceStdPlm, 1), 1:size(graceStdPlm, 2)) = graceStdPlm;
     end
 
     if ~beQuiet
@@ -322,10 +364,15 @@ function [gracePlmt, graceStdPlmt, dates, gravityParam, equatorRadius] = ...
     % WGS84 reference setup
     % For now just hardcode the even zonal coefficients (J), later use
     % Frederik's GRS.m program, don't bother with the higher degrees
-    wgs84C20 = 0.108262982131e-2 * -1 / sqrt(5); % will be row 4
-    wgs84C40 = -0.237091120053e-5 * -1 / sqrt(5); % will be row 11
-    gracePlmt(:, 4, 3) = gracePlmt(:, 4, 3) - wgs84C20;
-    gracePlmt(:, 11, 3) = gracePlmt(:, 11, 3) - wgs84C40;
+    if ~isMascon
+        wgs84C20 = 0.108262982131e-2 * -1 / sqrt(5); % will be row 4
+        wgs84C40 = -0.237091120053e-5 * -1 / sqrt(5); % will be row 11
+        gracePlmt(:, 4, 3) = gracePlmt(:, 4, 3) - wgs84C20;
+        gracePlmt(:, 11, 3) = gracePlmt(:, 11, 3) - wgs84C40;
+    end
+
+    % Mascon GSU coefficients already describe updates to GGM05C; applying
+    % the full-field WGS84 subtraction would introduce static zonal offsets.
 
     %% Converting unit
     % Use the actual parameters stored in the file instead of from FRALMANAC
@@ -365,7 +412,7 @@ function varargout = parseinputs(varargin)
 
     ip = inputParser;
     addOptional(ip, 'Pcenter', dfOpt.Pcenter, ...
-        @(x) ischar(validatestring(x, {'CSR', 'GFZ', 'JPL'})));
+        @(x) ischar(validatestring(x, {'CSR', 'CSR mascon', 'GFZ', 'JPL'})));
     addOptional(ip, 'Rlevel', dfOpt.Rlevel, ...
         @(x) (isnumeric(x) && isscalar(x)) || ...
         (ischar(validatestring(x, {'RL04', 'RL05', 'RL06'}))));
@@ -436,6 +483,49 @@ function varargout = parseinputs(varargin)
         Rlevel = sprintf('RL%02d', floor(Rlevel));
     end
 
+    Pcenter = validatestring(Pcenter, {'CSR', 'CSR mascon', 'GFZ', 'JPL'});
+    Rlevel = validatestring(Rlevel, {'RL04', 'RL05', 'RL06'});
+
+    % Product bandwidth controls the rectangular output and cache identity.
+    if strcmpi(Pcenter, 'CSR mascon') && (Ldata ~= 720)
+        warning("ULMO:grace2plmt:InvalidLdata", ...
+            'CSR mascon solution only has L=720, overriding input Ldata value of %d.', Ldata);
+        Ldata = 720;
+    elseif strcmp(Pcenter, 'CSR') && strcmp(Rlevel, 'RL05') && Ldata ~= 60
+        warning('ULMO:grace2plmt:InvalidLdata', ...
+            'CSR RL05 input is degree 60; overriding Ldata=%d. Use Loutput to resize output.', Ldata);
+        Ldata = 60;
+    elseif (strcmpi(Pcenter, 'JPL') && strcmpi(Rlevel, 'RL05')) && (Ldata ~= 90)
+        warning("ULMO:grace2plmt:InvalidLdata", ...
+            'JPL RL05 contains degree 60/90 files; using Ldata=90 instead of %d. Use Loutput to truncate.', Ldata);
+        Ldata = 90;
+    elseif (strcmpi(Pcenter, 'GFZ') && strcmpi(Rlevel, 'RL05')) && (Ldata ~= 90)
+        warning("ULMO:grace2plmt:InvalidLdata", ...
+            'GFZ RL05 solution only has L=90, overriding input Ldata value of %d.', Ldata);
+        Ldata = 90;
+    end
+
+    if ~strcmp(Rlevel, 'RL06')
+        % RL05 replacement series are not implemented. Omitted/empty flags
+        % default to false; reject explicit true instead of ignoring intent.
+        correctionNames = {'Deg1Correction', 'C20Correction', 'C30Correction'};
+
+        for k = 1:numel(correctionNames)
+            name = correctionNames{k};
+
+            if ~ismember(name, ip.UsingDefaults) && ...
+                    ~isempty(ip.Results.(name)) && logical(ip.Results.(name))
+                error('ULMO:grace2plmt:UnsupportedCorrection', ...
+                    '%s is not supported for %s. Omit it or set it to false.', name, Rlevel);
+            end
+
+        end
+
+        deg1correction = false;
+        c20correction = false;
+        c30correction = false;
+    end
+
     if ~isempty(timelim) && isnumeric(timelim)
         timelim = datetime(timelim, "ConvertFrom", 'datenum');
     end
@@ -470,9 +560,12 @@ function [gracePlmt, graceStdPlmt, dates] = ...
             gracePlmt = gracePlmt(:, 1:addmup(Loutput), :);
             graceStdPlmt = graceStdPlmt(:, 1:addmup(Loutput), :);
         elseif size(gracePlmt, 2) < addmup(Loutput)
-            [order, degree] = addmon(Loutput);
-            gracePlmt(:, 1:addmup(Loutput), 1) = repmat(reshape(degree, 1, 1, []), [size(gracePlmt, 1), addmup(Loutput), 1]);
-            gracePlmt(:, 1:addmup(Loutput), 2) = repmat(reshape(order, 1, 1, []), [size(gracePlmt, 1), addmup(Loutput), 1]);
+            padded = emptyplmt(size(gracePlmt, 1), Loutput);
+            paddedStd = padded;
+            padded(:, 1:size(gracePlmt, 2), :) = gracePlmt;
+            paddedStd(:, 1:size(graceStdPlmt, 2), :) = graceStdPlmt;
+            gracePlmt = padded;
+            graceStdPlmt = paddedStd;
         end
 
     end
@@ -486,6 +579,14 @@ function [gracePlmt, graceStdPlmt, dates] = ...
         dates = datenum(dates); %#ok<DATNM>
     end
 
+end
+
+% Allocate missing coefficients without losing spherical-harmonic indices.
+function plmt = emptyplmt(nDates, L)
+    [order, degree] = addmon(L);
+    plmt = nan(nDates, addmup(L), 4);
+    plmt(:, :, 1) = repmat(degree(:)', nDates, 1);
+    plmt(:, :, 2) = repmat(order(:)', nDates, 1);
 end
 
 % Get the input folder and output file names
@@ -513,13 +614,13 @@ function [inputFolder, outputPath, logPath] = ...
     switch unit % no otherwise case since input validity is already checked
         case 'POT'
             outputFile = sprintf('%s_%s_alldata_%s.mat', ...
-                Pcenter, Rlevel, num2str(Ldata));
+                replace(Pcenter, " ", ""), Rlevel, num2str(Ldata));
         case 'GRAV'
             outputFile = sprintf('%s_%s_alldata_%s_%s.mat', ...
-                Pcenter, Rlevel, num2str(Ldata), unit);
+                replace(Pcenter, " ", ""), Rlevel, num2str(Ldata), unit);
         case 'SD'
             outputFile = sprintf('%s_%s_%s_alldata_%s_%s.mat', ...
-                Pcenter, Rlevel, num2str(Ldata), unit, replace(loveNumSrc, " ", ""));
+                replace(Pcenter, " ", ""), Rlevel, num2str(Ldata), unit, replace(loveNumSrc, " ", ""));
     end
 
     if ~c30corr
@@ -546,31 +647,58 @@ end
 % Get the raw input files
 function [dataFiles, Ldata] = ...
         getinputfiles(Pcenter, Rlevel, Ldata, inputFolder)
-    % Only RL06 is supported for now
-    if ~strcmp(Rlevel, 'RL06')
-        error( ...
-            sprintf('%s:LoadData:SolutionLoadingNotImplemented', upper(mfilename)), ...
+
+    if strcmpi(Rlevel, 'RL05')
+
+        switch Pcenter
+            case 'CSR'
+                dataFiles = ls2cell(fullfile(inputFolder, 'GSM-2_2*-2*_*_UTCSR_0060_0005*'));
+            case 'GFZ'
+                dataFiles = ls2cell(fullfile(inputFolder, 'GSM-2_2*-2*_*_EIGEN_G---_005a'));
+            case 'JPL'
+                dataFiles = ls2cell(fullfile(inputFolder, 'GSM-2_2*-2*_*_JPLEM_0000_0005*'));
+            otherwise
+                error(sprintf('%s:LoadData:SolutionDNE', upper(mfilename)), ...
+                    '%s %s solutions not available', ...
+                    upper(Pcenter), Rlevel);
+        end
+
+    elseif strcmpi(Rlevel, 'RL06')
+
+        if strcmp(Pcenter, 'CSR mascon')
+            dataFiles = ls2cell(fullfile(inputFolder, 'GSU-2_*_B---_06*'));
+
+            if isempty(dataFiles)
+                error('ULMO:grace2plmt_new:LoadData:NoRawGRACEDataFound', ...
+                    'No data files found in %s', inputFolder)
+            end
+
+            return
+        end
+
+        % Get the data files
+        switch Ldata
+            case 60
+                dataFiles = ls2cell(fullfile(inputFolder, ...
+                'GSM-2_*_BA01_06*'));
+            case 96
+                dataFiles = ls2cell(fullfile(inputFolder, ...
+                'GSM-2_*_BB01_06*'));
+            otherwise
+                error("ULMO:grace2plmt:LoadData:SolutionDNE", ...
+                    '%s degree %d solutions not available', ...
+                    upper(Pcenter), Ldata);
+        end
+
+    else
+        error('ULMO:grace2plmt:LoadData:SolutionLoadingNotImplemented', ...
             'Loading %s %s solutions is not currently implemented', ...
             upper(Pcenter), Rlevel);
     end
 
-    % Get the data files
-    switch Ldata
-        case 60
-            dataFiles = ls2cell(fullfile(inputFolder, ...
-            'GSM-2_*_BA01_06*'));
-        case 96
-            dataFiles = ls2cell(fullfile(inputFolder, ...
-            'GSM-2_*_BB01_06*'));
-        otherwise
-            error(sprintf('%s:LoadData:SolutionDNE', upper(mfilename)), ...
-                '%s degree %d solutions not available', ...
-                upper(Pcenter), Ldata);
-    end
-
     % Make sure the files exist
     if isempty(dataFiles)
-        error(sprintf('%s:LoadData:NoRawGRACEDataFound', upper(mfilename)), ...
+        error("ULMO:grace2plmt:LoadData:NoRawGRACEDataFound", ...
             'No data files found in %s', inputFolder)
     end
 

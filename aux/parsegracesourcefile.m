@@ -1,5 +1,7 @@
 %% PARSEGRACESOURCEFILE
-% Parses a GRACE source file and returns the gravity field and its uncertainty. Should work for both GSM and GAC/GAD files.
+% Parses RL05 legacy SHM and RL06 YAML GRCOF2 files (GSM, GSU, GAC/GAD).
+% Returns coefficients, uncertainties, dates, GM and radius. Reference
+% parameters are read from EARTH or YAML attributes; malformed metadata errors.
 %
 % See also
 %	GRACE2PLMT (GRACE2PLMT_NEW), AOD1B2PLMT
@@ -11,7 +13,7 @@
 %   2025/05/20, williameclee@arizona.edu (@williameclee)
 %
 % Last modified by
-%   2025/07/21, williameclee@arizona.edu (@williameclee)
+%   2025/09/26, williameclee@arizona.edu (@williameclee)
 
 function varargout = parsegracesourcefile(dataPath)
     %% Loading data
@@ -20,11 +22,16 @@ function varargout = parsegracesourcefile(dataPath)
             'File %s does not exist', dataPath)
     end
 
-    % Extract the data from the file
-    dataBarrier = '# End of YAML header\n';
+    % Both YAML and legacy SHM headers precede GRCOF2 records. Locating
+    % the records avoids depending on a particular degree or comment line.
     dataStr = fileread(dataPath);
-    dataStr = strsplit(dataStr, dataBarrier);
-    data = dataStr{2};
+    dataStart = regexp(dataStr, '(?m)^GRCOF2\s', 'start', 'once');
+    if isempty(dataStart)
+        error('ULMO:parsegracesourcefile:InvalidFormat', ...
+            'No GRCOF2 records found in %s', dataPath);
+    end
+    header = dataStr(1:dataStart - 1);
+    data = dataStr(dataStart:end);
     data = textscan(data, '%s%f%f%f%f%f%f%s%s%s');
     gravitySph = [data{2}, data{3}, data{4}, data{5}];
     gravityStdSph = [data{2}, data{3}, data{6}, data{7}];
@@ -77,11 +84,19 @@ function varargout = parsegracesourcefile(dataPath)
     end
 
     %% Fetching the parameters
-    header = dataStr{1};
-    lines = strtrim(strsplit(header, '\n'));
-
-    gravityParam = extractheadervalue(lines, 'earth_gravity_param');
-    equatorRadius = extractheadervalue(lines, 'mean_equator_radius');
+    earth = regexp(header, '(?m)^EARTH[ \t]+([^\r\n]+)', 'tokens', 'once');
+    if ~isempty(earth)
+        parameters = sscanf(regexprep(earth{1}, '[dD]', 'E'), '%f');
+        if numel(parameters) < 2 || any(~isfinite(parameters(1:2))) || any(parameters(1:2) <= 0)
+            error('ULMO:parsegracesourcefile:InvalidHeader', ...
+                'Invalid EARTH parameters in %s', dataPath);
+        end
+        gravityParam = parameters(1);
+        equatorRadius = parameters(2);
+    else
+        gravityParam = extractheadervalue(header, 'earth_gravity_param');
+        equatorRadius = extractheadervalue(header, 'mean_equator_radius');
+    end
 
     varargout = ...
         {gravitySph, gravityStdSph, meanDate, [startDate, endDate], gravityParam, equatorRadius};
@@ -90,23 +105,34 @@ end
 %% Subfunctions
 % Extract non-standard attributes from the header
 function param = extractheadervalue(header, paramName)
-
-    if ischar(header)
-        header = strtrim(strsplit(header, '\n'));
-    end
-
-    nameId = find(contains(header, paramName));
-
-    for valueId = nameId + 1:length(header)
-
-        if ~contains(header{valueId}, 'value')
+    % Restrict the value search to this YAML attribute's indented block.
+    lines = regexp(header, '\r?\n', 'split');
+    key = ['^([ \t]*)', paramName, '[ \t]*:'];
+    for k = 1:numel(lines)
+        match = regexp(lines{k}, key, 'tokens', 'once');
+        if isempty(match)
             continue
         end
-
-        param = strsplit(header{valueId}, ':');
-        param = strtrim(param{end});
-        param = str2double(param);
+        indent = length(match{1});
+        for j = k + 1:numel(lines)
+            if isempty(strtrim(lines{j}))
+                continue
+            end
+            whitespace = regexp(lines{j}, '^[ \t]*', 'match', 'once');
+            if length(whitespace) <= indent
+                break
+            end
+            value = regexp(lines{j}, '^\s*value\s*:\s*(\S+)', 'tokens', 'once');
+            if ~isempty(value)
+                param = str2double(regexprep(value{1}, '[dD]', 'E'));
+                if isfinite(param) && param > 0
+                    return
+                end
+                break
+            end
+        end
         break
     end
-
+    error('ULMO:parsegracesourcefile:InvalidHeader', ...
+        'Missing or invalid %s in GRACE header', paramName);
 end
