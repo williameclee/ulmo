@@ -614,13 +614,13 @@ function [inputFolder, outputPath, logPath] = ...
     switch unit % no otherwise case since input validity is already checked
         case 'POT'
             outputFile = sprintf('%s_%s_alldata_%s.mat', ...
-                Pcenter, Rlevel, num2str(Ldata));
+                replace(Pcenter, " ", ""), Rlevel, num2str(Ldata));
         case 'GRAV'
             outputFile = sprintf('%s_%s_alldata_%s_%s.mat', ...
-                Pcenter, Rlevel, num2str(Ldata), unit);
+                replace(Pcenter, " ", ""), Rlevel, num2str(Ldata), unit);
         case 'SD'
             outputFile = sprintf('%s_%s_%s_alldata_%s_%s.mat', ...
-                Pcenter, Rlevel, num2str(Ldata), unit, replace(loveNumSrc, " ", ""));
+                replace(Pcenter, " ", ""), Rlevel, num2str(Ldata), unit, replace(loveNumSrc, " ", ""));
     end
 
     if ~c30corr
