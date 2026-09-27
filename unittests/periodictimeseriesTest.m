@@ -7,6 +7,7 @@ classdef periodictimeseriesTest < matlab.unittest.TestCase
         transposeSigma = {false, true}
         uncertaintyMode = {'none', 'column', 'row'}
         timeType = {'numeric', 'duration', 'datetime'}
+        harmonicPeriods = struct('two', [1, 2], 'three', [1, 2, 0.7])
         invalidInput = {'dataSize', 'sigmaSize', 'zeroSigma', 'infiniteSigma', ...
                             'zeroPeriod', 'missingData', 'differentTimeAxes', 'repeatedTimeAxis'}
     end
@@ -39,6 +40,43 @@ classdef periodictimeseriesTest < matlab.unittest.TestCase
     end
 
     methods (Test)
+
+        function multiplePeriodSinCos(testCase, harmonicPeriods, uncertaintyMode)
+            t = testCase.T;
+            % Build the reference model directly in sine/cosine order.
+            G = [ones(size(t)), t];
+            for period = harmonicPeriods
+                G = [G, sin(2 * pi * t / period), cos(2 * pi * t / period)]; %#ok<AGROW>
+            end
+            beta = [(1:size(G, 2))', -(size(G, 2):-1:1)'];
+            x = G * beta + [0.02 * sin(5 * t), 0.03 * cos(3 * t)];
+            sigma = [];
+            if strcmp(uncertaintyMode, 'column'), sigma = testCase.Sigma(:, 1); end
+            if strcmp(uncertaintyMode, 'row'), sigma = testCase.Sigma(:, 1).'; end
+            [~, harmonics, fitted, ~, errors] = periodictimeseries( ...
+                t, x, sigma, 1, harmonicPeriods, PeriodicFormat = 'sin-cos');
+
+            % Independent QR reference checks period order and error pairing.
+            for j = 1:size(x, 2)
+                design = G;
+                data = x(:, j);
+                if ~isempty(sigma)
+                    design = design ./ sigma(:);
+                    data = data ./ sigma(:);
+                end
+                [Q, R] = qr(design, 0);
+                expected = R \ (Q' * data);
+                inverseR = R \ eye(size(R));
+                variance = sum((data - design * expected) .^ 2) / ...
+                    (size(design, 1) - size(design, 2));
+                se = sqrt(diag(variance * (inverseR * inverseR.')));
+                testCase.verifyEqual(harmonics(:, :, j), ...
+                    reshape(expected(3:end), 2, []).', AbsTol = 1e-9);
+                testCase.verifyEqual(errors(:, :, j), ...
+                    reshape(se(3:end), 2, []).', AbsTol = 1e-9);
+                testCase.verifyEqual(fitted(:, j), G * expected, AbsTol = 1e-9);
+            end
+        end
 
         function matrixOrientations(testCase, format, transposeTime, transposeData, transposeSigma)
             t = testCase.T; x = testCase.X; sigma = testCase.Sigma;

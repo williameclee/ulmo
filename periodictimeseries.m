@@ -348,15 +348,8 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas] = ...
 
     %% Post-processing coefficients
     if strcmpi(harmonFmt, "sin-cos")
-        cosCoeffs = harmons(1:2:end);
-        sinCoeffs = harmons(2:2:end);
-        harmons(1:2:end) = sinCoeffs;
-        harmons(2:2:end) = cosCoeffs;
-
-        cosCoeffs = harmonSigmas(1:2:end);
-        sinCoeffs = harmonSigmas(2:2:end);
-        harmonSigmas(1:2:end) = sinCoeffs;
-        harmonSigmas(2:2:end) = cosCoeffs;
+        harmons = harmons(:, [2, 1]);
+        harmonSigmas = harmonSigmas(:, [2, 1]);
     elseif strcmp(harmonFmt, "amp-phase")
         nPeriods = numel(periods);
         harmons = nan(nPeriods, 2);
