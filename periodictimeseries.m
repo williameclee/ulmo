@@ -140,69 +140,71 @@ function [data, transposed] = normalisedata(data, nTimes, name)
 
 end
 
-function [polyCoeffs, periodicCoeffs, dataFit, polyCoeffSigmas, periodicCoeffSigmas] = ...
-        fitsingleseries(t_tofit, x_tofit, sigma_tofit, p, periods, periodicFormat, isTime)
-    N = numel(t_tofit);
+function [polys, harmons, xFit, polySigmas, harmonSigmas] = ...
+        fitsingleseries(t, x, sigma, p, periods, harmonFmt, isTime)
+    N = numel(t);
     %% Fitting
     X = zeros([N, p + 1 + 2 * numel(periods)]);
-    X(:, 1:p + 1) = t_tofit .^ (0:p);
+    X(:, 1:p + 1) = t .^ (0:p);
 
     for i = 1:numel(periods)
-
-        switch periodicFormat
-            case "sin-cos"
-                X(:, p + 1 + (i - 1) * 2 + [1, 2]) = ...
-                    [sin(2 * pi * t_tofit / periods(i)), cos(2 * pi * t_tofit / periods(i))];
-            otherwise
-                X(:, p + 1 + (i - 1) * 2 + [1, 2]) = ...
-                    [cos(2 * pi * t_tofit / periods(i)), sin(2 * pi * t_tofit / periods(i))];
-        end
-
+        X(:, p + 1 + (i - 1) * 2 + [1, 2]) = ...
+            [cos(2 * pi * t / periods(i)), sin(2 * pi * t / periods(i))];
     end
 
-    if ~isempty(sigma_tofit)
-        W = diag(1 ./ sigma_tofit .^ 2);
-        coeffs = (X' * W * X) \ (X' * W * x_tofit);
-        residuals = x_tofit - X * coeffs;
-        weighted_residual_variance = sum((residuals ./ sigma_tofit) .^ 2) / (N - size(X, 2));
-        cov_matrix = weighted_residual_variance * inv(X' * W * X);
+    if ~isempty(sigma)
+        W = diag(1 ./ sigma .^ 2);
+        coeffs = (X' * W * X) \ (X' * W * x);
+        res = x - X * coeffs;
+        wght_res_var = sum((res ./ sigma) .^ 2) / (N - size(X, 2));
+        cov_matrix = wght_res_var * inv(X' * W * X);
         coeffSigmas = sqrt(diag(cov_matrix));
     else
-        coeffs = X \ x_tofit;
+        coeffs = X \ x;
         % Estimate uncertainties of coeffs when sigma is not provided
-        residuals = x_tofit - X * coeffs;
-        residual_variance = sum(residuals .^ 2) / (N - size(X, 2));
-        cov_matrix = residual_variance * inv(X' * X);
+        res = x - X * coeffs;
+        res_var = sum(res .^ 2) / (N - size(X, 2));
+        cov_matrix = res_var * inv(X' * X);
         coeffSigmas = sqrt(diag(cov_matrix));
     end
 
-    dataFit = X * coeffs;
+    xFit = X * coeffs;
 
-    polyCoeffs = coeffs(1:p + 1);
-    periodicCoeffs = coeffs(p + 2:end);
+    polys = coeffs(1:p + 1);
+    harmons = coeffs(p + 2:end);
 
-    polyCoeffSigmas = coeffSigmas(1:p + 1);
-    periodicCoeffSigmas = coeffSigmas(p + 2:end);
+    polySigmas = coeffSigmas(1:p + 1);
+    harmonSigmas = coeffSigmas(p + 2:end);
 
-    if strcmp(periodicFormat, "amp-phase")
-        periodicCoeffs = reshape(periodicCoeffs, [2, numel(periods)]);
-        periodicCoeffs = ...
-            [sqrt(sum(periodicCoeffs .^ 2, 1)); ...
-             wrapTo2Pi(atan2(periodicCoeffs(2, :), periodicCoeffs(1, :)))];
-        periodicCoeffs = periodicCoeffs';
+    if strcmpi(harmonFmt, "sin-cos")
+        cosCoeffs = harmons(1:2:end);
+        sinCoeffs = harmons(2:2:end);
+        harmons(1:2:end) = sinCoeffs;
+        harmons(2:2:end) = cosCoeffs;
+
+        cosCoeffs = harmonSigmas(1:2:end);
+        sinCoeffs = harmonSigmas(2:2:end);
+        harmonSigmas(1:2:end) = sinCoeffs;
+        harmonSigmas(2:2:end) = cosCoeffs;
+    elseif strcmp(harmonFmt, "amp-phase")
+        harmons = reshape(harmons, [2, numel(periods)]);
+        harmons = ...
+            [sqrt(sum(harmons .^ 2, 1)); ...
+             wrapTo2Pi(atan2(harmons(2, :), harmons(1, :)))];
+        harmons = harmons';
 
         if isTime
-            periodicCoeffs(:, 2) = periodicCoeffs(:, 2) / (2 * pi) * days(years(1));
+            harmons(:, 2) = harmons(:, 2) / (2 * pi) * days(years(1));
         end
 
-        periodicCoeffSigmas = reshape(periodicCoeffSigmas, [2, numel(periods)]);
-        periodicCoeffSigmas = ...
-            [sqrt(sum(periodicCoeffSigmas .^ 2, 1)); ...
-             wrapTo2Pi(atan2(periodicCoeffSigmas(2, :), periodicCoeffSigmas(1, :)))];
-        periodicCoeffSigmas = periodicCoeffSigmas';
+        harmonSigmas = reshape(harmonSigmas, [2, numel(periods)]);
+        harmonSigmas = ...
+            [sqrt(sum(harmonSigmas .^ 2, 1)); ...
+             wrapTo2Pi(atan2(harmonSigmas(2, :), harmonSigmas(1, :)))];
+        harmonSigmas = harmonSigmas';
 
         if isTime
-            periodicCoeffSigmas(:, 2) = periodicCoeffSigmas(:, 2) / (2 * pi) * days(years(1));
+            harmonSigmas(:, 2) = harmonSigmas(:, 2) / (2 * pi) * days(years(1));
         end
 
     end
