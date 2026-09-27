@@ -1,6 +1,139 @@
-%% PERIODICTIMESERIES
+%% PERIODICTIMESERIES - Fits a polynomial and periodic terms to time series sharing a time axis.
+% Each series is fitted independently by ordinary or weighted least squares.
+% The polynomial can be returned as coefficients or interval-average
+% derivatives, with associated standard errors.
 %
-% Created by
+% Syntax
+%   polys = periodictimeseries(t, x)
+%   [polys, harmons, xFit] = periodictimeseries(t, x, sigma, p, periods)
+%   [polys, harmons, xFit, polySigmas, harmonSigmas] = periodictimeseries(__)
+%   [__] = periodictimeseries(__, "Name", Value)
+%
+% Input arguments
+%   t - Shared observation times
+%       Times may be supplied in either orientation. Numeric values are used
+%       directly, without shifting their origin. Datetimes are converted to
+%       years since January 1 of the first nonmissing input time's year.
+%       Durations are converted to years without shifting their origin.
+%       Data type: NUMERIC | DATETIME | DURATION
+%       Dimension: [N x 1] | [1 x N]
+%   x - Observations for M time series
+%       The dimension matching N is treated as the observation dimension.
+%       If x is square, rows are observations. Nonfinite observations are
+%       excluded from fitting separately for each series.
+%       Data type: NUMERIC (real; converted to DOUBLE)
+%       Dimension: [N x M] | [M x N]
+%   sigma (optional) - Observation standard deviations used for weighting
+%       A vector is shared by all series; a matrix supplies individual
+%       uncertainties. Nonmissing entries must be finite and positive.
+%       NaN entries exclude the corresponding observations from fitting.
+%       The weights are 1./sigma.^2; see Notes for covariance scaling.
+%       The default value is [], for ordinary least squares.
+%       Unit: same as x
+%       Data type: NUMERIC (real; converted to DOUBLE)
+%       Dimension: [] | [N x 1] | [1 x N] | [N x M] | [M x N]
+%   p (optional) - Polynomial degree
+%       A nonnegative integer. The polynomial includes powers 0 through p.
+%       The default value is 2.
+%       Data type: DOUBLE
+%       Dimension: scalar
+%   periods (optional) - Periods of the fitted harmonics
+%       Each period adds both a cosine and a sine term. Values must be
+%       finite and positive. Duration values are converted to years.
+%       Numeric periods must use the same units as the converted time axis:
+%       years for datetime/duration t, otherwise the numeric units of t.
+%       The default value is [], for no periodic terms.
+%       Data type: NUMERIC | DURATION
+%       Dimension: [] | [K x 1] | [1 x K]
+%   PeriodicFormat (name-value) - Representation of the harmonic outputs
+%       - "cos-sin": cosine and sine coefficients (default).
+%       - "sin-cos": sine and cosine coefficients.
+%       - "amp-phase": amplitude and phase lag, using A*cos(omega*t-phi).
+%       This option does not change the fitted model or reconstruction.
+%       Data type: STRING | CHAR
+%   PolynomialFormat (name-value) - Representation of the polynomial outputs
+%       - "coefficients": coefficients in ascending power order (default).
+%       - "average-derivatives": interval averages of derivatives of orders
+%           0 through p over AverageRange. Order 0 is the mean level,
+%           order 1 the mean trend, and order 2 the mean acceleration.
+%       This option does not change the fitted model or reconstruction.
+%       Data type: STRING | CHAR
+%   Reconstruction (name-value) - Components included in xFit
+%       - "includeharmonics": polynomial and periodic terms (default).
+%       - "omitharmonics": polynomial component only.
+%       Harmonics are still included in the fit when omitted from xFit.
+%       Data type: STRING | CHAR
+%   FitRange (name-value) - Inclusive time interval selecting observations for fitting
+%       Endpoints must be nonmissing and in ascending order, with the same
+%       time type and units as t. This does not restrict reconstruction.
+%       The default interval is [min(t), max(t)], omitting missing times.
+%       Data type: NUMERIC | DATETIME | DURATION (matching t)
+%       Dimension: [1 x 2]
+%   AverageRange (name-value) - Interval used for average-derivative outputs
+%       Endpoints use the same time type and units as t. In
+%       "average-derivatives" mode, endpoints must be finite and the
+%       interval must have positive length. This does not select fit data.
+%       The default interval is [min(t), max(t)], omitting missing times,
+%       independently of FitRange and missing observations in x or sigma.
+%       The interval may extend beyond FitRange, implying extrapolation.
+%       This option has no effect in "coefficients" mode.
+%       Data type: NUMERIC | DATETIME | DURATION (matching t)
+%       Dimension: [1 x 2]
+%
+% Output arguments
+%   polys - Polynomial coefficients or average derivatives
+%       Row k+1 corresponds to power/derivative order k, for k = 0:p.
+%       In "average-derivatives" mode, each entry is the integral of the
+%       kth derivative of the fitted polynomial divided by interval length.
+%       For q(t) = b0+b1*t+b2*t^2 over [a,b], the average trend is
+%       b1+b2*(a+b), and the average acceleration is 2*b2.
+%       Unit: units of x / (time unit)^k; the time unit is years for
+%           datetime/duration input and the units of t for numeric input
+%       Data type: DOUBLE
+%       Dimension: [p+1 x M]
+%   harmons - Harmonic coefficients or amplitude/phase pairs
+%       Each row corresponds to a supplied period, in the input order.
+%       The two columns follow PeriodicFormat. For datetime input,
+%       amplitude/phase output expresses the phase lag in days; otherwise
+%       it is in radians. Phase is referenced to the converted time origin.
+%       At exactly zero amplitude, phase is NaN.
+%       Unit: same as x for coefficients/amplitudes; days or radians for phase
+%       Data type: DOUBLE
+%       Dimension: [K x 2 x M] (or [K x 2] for one series)
+%           K = numel(periods); empty when periods is empty
+%   xFit - Reconstructed values at the original input times
+%       Reconstruction uses raw fitted coefficients regardless of
+%       PolynomialFormat. Values are evaluated even at times outside
+%       FitRange or where x/sigma was missing, provided the time is valid.
+%       Unit: same as x
+%       Data type: DOUBLE
+%       Dimension: same as x, including its original orientation and order
+%   polySigmas - Standard errors of polys
+%       Average-derivative errors propagate the full fitted polynomial
+%       coefficient covariance, including off-diagonal terms.
+%       The units and dimensions are the same as polys.
+%       Data type: DOUBLE
+%   harmonSigmas - Standard errors of harmons
+%       Amplitude/phase errors use first-order covariance propagation.
+%       At exactly zero amplitude, both transformed errors are NaN.
+%       The units and dimensions are the same as harmons.
+%       Data type: DOUBLE
+%
+% Notes
+%   N is the number of input times, M the number of series, and K the number
+%   of harmonic periods. Invalid times and nonfinite observations are
+%   excluded from each fit. Each series must retain more than p+1+2*K
+%   observations; reliable coefficient estimates also require full rank.
+%   Coefficient covariance is scaled by residual variance, using the
+%   residual degrees of freedom. Weighted fits use weighted residual
+%   variance, so supplied sigma values act as relative uncertainty weights.
+%   Reported uncertainties are standard errors, not confidence intervals;
+%   the fit does not model temporal correlation in residuals.
+%   FitRange and AverageRange serve separate purposes: a full-record fit
+%   can report an average derivative over a shorter interval, while a
+%   restricted fit can report over its own or a different averaging interval.
+%
+% Author
 %   2025/06/03, En-Chi Lee (williameclee@arizona.edu)
 %
 % Last modified by
