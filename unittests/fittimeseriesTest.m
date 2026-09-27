@@ -1,5 +1,5 @@
-classdef periodictimeseriesTest < matlab.unittest.TestCase
-    % Run with runtests('periodictimeseriesTest').
+classdef fittimeseriesTest < matlab.unittest.TestCase
+    % Run with runtests('fittimeseriesTest').
     properties (TestParameter)
         format = {'cos-sin', 'sin-cos', 'amp-phase'}
         transposeTime = {false, true}
@@ -53,7 +53,7 @@ classdef periodictimeseriesTest < matlab.unittest.TestCase
             sigma = [];
             if strcmp(uncertaintyMode, 'column'), sigma = testCase.Sigma(:, 1); end
             if strcmp(uncertaintyMode, 'row'), sigma = testCase.Sigma(:, 1).'; end
-            [~, harmonics, fitted, ~, errors] = periodictimeseries( ...
+            [~, harmonics, fitted, ~, errors] = fittimeseries( ...
                 t, x, sigma, 1, harmonicPeriods, PeriodicFormat = 'sin-cos');
 
             % Independent QR reference checks period order and error pairing.
@@ -84,14 +84,14 @@ classdef periodictimeseriesTest < matlab.unittest.TestCase
             if transposeData, x = x.'; end
             if transposeSigma, sigma = sigma.'; end
             [poly, periodic, fitted, polySigma, periodicSigma] = ...
-                periodictimeseries(t, x, sigma, 2, 1, PeriodicFormat = format);
+                fittimeseries(t, x, sigma, 2, 1, PeriodicFormat = format);
             testCase.verifySize(fitted, size(x));
             testCase.verifySize(periodic, [1, 2, 2]);
             testCase.verifySize(periodicSigma, [1, 2, 2]);
             if transposeData, fitted = fitted.'; end
 
             for j = 1:2
-                [a, b, c, d, e] = periodictimeseries(testCase.T, testCase.X(:, j), ...
+                [a, b, c, d, e] = fittimeseries(testCase.T, testCase.X(:, j), ...
                     testCase.Sigma(:, j), 2, 1, PeriodicFormat = format);
                 testCase.verifyEqual(poly(:, j), a, AbsTol = 1e-9, RelTol = 1e-9);
                 testCase.verifyEqual(periodic(:, :, j), b, AbsTol = 1e-9, RelTol = 1e-9);
@@ -107,8 +107,8 @@ classdef periodictimeseriesTest < matlab.unittest.TestCase
             sigma = [];
             if strcmp(uncertaintyMode, 'column'), sigma = testCase.Sigma(:, 1); end
             if strcmp(uncertaintyMode, 'row'), sigma = testCase.Sigma(:, 1).'; end
-            [a, b, c, d, e] = periodictimeseries(t, x, sigma, 2, 1);
-            [aa, bb, cc, dd, ee] = periodictimeseries(t.', x.', sigma, 2, 1);
+            [a, b, c, d, e] = fittimeseries(t, x, sigma, 2, 1);
+            [aa, bb, cc, dd, ee] = fittimeseries(t.', x.', sigma, 2, 1);
             testCase.verifyEqual(a, aa, AbsTol = 1e-9, RelTol = 1e-9);
             testCase.verifyEqual(b, bb, AbsTol = 1e-9, RelTol = 1e-9);
             testCase.verifyEqual(c, cc.', AbsTol = 1e-9, RelTol = 1e-9);
@@ -116,15 +116,15 @@ classdef periodictimeseriesTest < matlab.unittest.TestCase
             testCase.verifyEqual(e, ee, AbsTol = 1e-9, RelTol = 1e-9);
             % Shared weights must also agree with independent scalar fits.
             for j = 1:2
-                expected = periodictimeseries(t, x(:, j), sigma, 2, 1);
+                expected = fittimeseries(t, x(:, j), sigma, 2, 1);
                 testCase.verifyEqual(a(:, j), expected, AbsTol = 1e-9, RelTol = 1e-9);
             end
 
         end
 
         function singleRowSeries(testCase)
-            [a, ~, c] = periodictimeseries(testCase.T.', testCase.X(:, 1).', [], 2, 1);
-            [b, ~, d] = periodictimeseries(testCase.T, testCase.X(:, 1), [], 2, 1);
+            [a, ~, c] = fittimeseries(testCase.T.', testCase.X(:, 1).', [], 2, 1);
+            [b, ~, d] = fittimeseries(testCase.T, testCase.X(:, 1), [], 2, 1);
             testCase.verifySize(c, [1, numel(testCase.T)]);
             testCase.verifyEqual(a, b, AbsTol = 1e-9, RelTol = 1e-9);
             testCase.verifyEqual(c, d.', AbsTol = 1e-9, RelTol = 1e-9);
@@ -134,7 +134,7 @@ classdef periodictimeseriesTest < matlab.unittest.TestCase
             t = testCase.T; x = testCase.X; sigma = testCase.Sigma;
             t(8) = NaN; t(12) = Inf;
             x(3, 1) = NaN; x(5, 2) = Inf; sigma(10, 2) = NaN;
-            [a, h, fitted, d] = periodictimeseries(t, x, sigma, 2, 1);
+            [a, h, fitted, d] = fittimeseries(t, x, sigma, 2, 1);
             valid = isfinite(t) & isfinite(x) & isfinite(sigma);
             % Missing observations/weights are excluded from fitting, but
             % predictions remain defined wherever the original time is finite.
@@ -142,7 +142,7 @@ classdef periodictimeseriesTest < matlab.unittest.TestCase
 
             for j = 1:2
                 keep = valid(:, j);
-                [aa, ~, cc, dd] = periodictimeseries(t(keep), x(keep, j), sigma(keep, j), 2, 1);
+                [aa, ~, cc, dd] = fittimeseries(t(keep), x(keep, j), sigma(keep, j), 2, 1);
                 testCase.verifyEqual(a(:, j), aa, AbsTol = 1e-9, RelTol = 1e-9);
                 testCase.verifyEqual(fitted(keep, j), cc, AbsTol = 1e-9, RelTol = 1e-9);
                 testCase.verifyEqual(d(:, j), dd, AbsTol = 1e-9, RelTol = 1e-9);
@@ -151,7 +151,7 @@ classdef periodictimeseriesTest < matlab.unittest.TestCase
                 testCase.verifyEqual(fitted(isfinite(t), j), expected, AbsTol = 1e-9, RelTol = 1e-9);
             end
 
-            [~, ~, transposed] = periodictimeseries(t.', x.', sigma.', 2, 1);
+            [~, ~, transposed] = fittimeseries(t.', x.', sigma.', 2, 1);
             testCase.verifyEqual(fitted, transposed.', AbsTol = 1e-9, RelTol = 1e-9);
         end
 
@@ -164,9 +164,9 @@ classdef periodictimeseriesTest < matlab.unittest.TestCase
                 t = datetime(2005, 1, 1) + years(t); periods = years(1);
             end
 
-            [a, ~, c] = periodictimeseries(t, testCase.X, [], 2, periods);
-            [b, ~, d] = periodictimeseries(t.', testCase.X.', [], 2, periods);
-            [expected, ~, expectedFit] = periodictimeseries(testCase.T, testCase.X, [], 2, 1);
+            [a, ~, c] = fittimeseries(t, testCase.X, [], 2, periods);
+            [b, ~, d] = fittimeseries(t.', testCase.X.', [], 2, periods);
+            [expected, ~, expectedFit] = fittimeseries(testCase.T, testCase.X, [], 2, 1);
             testCase.verifyEqual(a, b, AbsTol = 1e-9, RelTol = 1e-9);
             testCase.verifyEqual(c, d.', AbsTol = 1e-9, RelTol = 1e-9);
             testCase.verifyEqual(a, expected, AbsTol = 1e-9, RelTol = 1e-9);
@@ -175,14 +175,14 @@ classdef periodictimeseriesTest < matlab.unittest.TestCase
 
         function missingFirstDatetime(testCase)
             dates = datetime(2005, 1, 1) + years(testCase.T); dates(1) = NaT;
-            [~, ~, fitted] = periodictimeseries(dates, testCase.X);
+            [~, ~, fitted] = fittimeseries(dates, testCase.X);
             testCase.verifyTrue(all(isnan(fitted(1, :))));
             testCase.verifyTrue(all(isfinite(fitted(2:end, :)), 'all'));
         end
 
         function emptyHarmonicsAndExactPolynomial(testCase, format)
             t = testCase.T; exact = [1 + 2 * t, 3 - 4 * t];
-            [a, b, c, d, e] = periodictimeseries(t, exact, [], 1, [], PeriodicFormat = format);
+            [a, b, c, d, e] = fittimeseries(t, exact, [], 1, [], PeriodicFormat = format);
             testCase.verifyEqual(a, [1 3; 2 -4], AbsTol = 1e-9, RelTol = 1e-9);
             testCase.verifyEqual(c, exact, AbsTol = 1e-9, RelTol = 1e-9);
             testCase.verifySize(b, [0 2 2]); testCase.verifySize(e, [0 2 2]);
@@ -191,14 +191,14 @@ classdef periodictimeseriesTest < matlab.unittest.TestCase
 
         function descendingTimes(testCase)
             t = flipud(testCase.T); exact = [1 + 2 * t, 3 - 4 * t];
-            [a, ~, c] = periodictimeseries(t, exact, [], 1);
+            [a, ~, c] = fittimeseries(t, exact, [], 1);
             testCase.verifyEqual(a, [1 3; 2 -4], AbsTol = 1e-9, RelTol = 1e-9);
             testCase.verifyEqual(c, exact, AbsTol = 1e-9, RelTol = 1e-9);
         end
 
         function squareDataUsesRowsAsObservations(testCase)
             t = (1:4)'; x = t * (1:4);
-            [a, ~, c] = periodictimeseries(t, x, [], 1);
+            [a, ~, c] = fittimeseries(t, x, [], 1);
             testCase.verifyEqual(a, [zeros(1, 4); 1:4], AbsTol = 1e-9, RelTol = 1e-9);
             testCase.verifyEqual(c, x, AbsTol = 1e-9, RelTol = 1e-9);
         end
@@ -208,28 +208,28 @@ classdef periodictimeseriesTest < matlab.unittest.TestCase
 
             switch invalidInput
                 case 'dataSize'
-                    callback = @() periodictimeseries(t, zeros(5, 2));
-                    id = 'ULMO:periodictimeseries:SizeMismatch';
+                    callback = @() fittimeseries(t, zeros(5, 2));
+                    id = 'ULMO:fittimeseries:SizeMismatch';
                 case 'sigmaSize'
-                    callback = @() periodictimeseries(t, x, ones(numel(t), 3));
-                    id = 'ULMO:periodictimeseries:SizeMismatch';
+                    callback = @() fittimeseries(t, x, ones(numel(t), 3));
+                    id = 'ULMO:fittimeseries:SizeMismatch';
                 case 'zeroSigma'
-                    callback = @() periodictimeseries(t, x, zeros(numel(t), 1));
-                    id = 'ULMO:periodictimeseries:InvalidSigma';
+                    callback = @() fittimeseries(t, x, zeros(numel(t), 1));
+                    id = 'ULMO:fittimeseries:InvalidSigma';
                 case 'infiniteSigma'
-                    callback = @() periodictimeseries(t, x, inf(numel(t), 1));
-                    id = 'ULMO:periodictimeseries:InvalidSigma';
+                    callback = @() fittimeseries(t, x, inf(numel(t), 1));
+                    id = 'ULMO:fittimeseries:InvalidSigma';
                 case 'zeroPeriod'
-                    callback = @() periodictimeseries(t, x, [], 2, 0);
-                    id = 'periodictimeseries:InvalidPeriods';
+                    callback = @() fittimeseries(t, x, [], 2, 0);
+                    id = 'fittimeseries:InvalidPeriods';
                 case 'missingData'
-                    callback = @() periodictimeseries(t, nan(size(x)));
-                    id = 'ULMO:periodictimeseries:InsufficientData';
+                    callback = @() fittimeseries(t, nan(size(x)));
+                    id = 'ULMO:fittimeseries:InsufficientData';
                 case 'differentTimeAxes'
-                    callback = @() periodictimeseries([t, t + 1], x);
+                    callback = @() fittimeseries([t, t + 1], x);
                     id = 'MATLAB:validators:mustBeVector';
                 case 'repeatedTimeAxis'
-                    callback = @() periodictimeseries(repmat(t, 1, 3), x);
+                    callback = @() fittimeseries(repmat(t, 1, 3), x);
                     id = 'MATLAB:validators:mustBeVector';
             end
 

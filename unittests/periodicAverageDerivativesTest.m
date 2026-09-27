@@ -21,7 +21,7 @@ classdef periodicAverageDerivativesTest < matlab.unittest.TestCase
         function quadraticExample(testCase)
             t = linspace(0, 4, 101)';
             y = 1 + 2 * t + 3 * t .^ 2;
-            [averages, ~, fitted] = periodictimeseries(t, y, [], 2, [], ...
+            [averages, ~, fitted] = fittimeseries(t, y, [], 2, [], ...
                 PolynomialFormat = "average-derivatives", AverageRange = [1, 3]);
 
             testCase.verifyEqual(averages, [18; 14; 6], AbsTol = 1e-7, RelTol = 1e-7);
@@ -33,7 +33,7 @@ classdef periodicAverageDerivativesTest < matlab.unittest.TestCase
             interval = [1, 3];
             beta = (1:degree + 1)' / 10;
             y = (t .^ (0:degree)) * beta;
-            [averages, ~, fitted] = periodictimeseries(t, y, [], degree, [], ...
+            [averages, ~, fitted] = fittimeseries(t, y, [], degree, [], ...
                 PolynomialFormat = "average-derivatives", AverageRange = interval);
 
             % Integrate differentiated polynomials independently of the implementation.
@@ -63,9 +63,9 @@ classdef periodicAverageDerivativesTest < matlab.unittest.TestCase
                 sigma = [1 + .1 * t, 2 + .2 * t];
             end
 
-            [raw, harmonics, rawFit] = periodictimeseries(t, y, sigma, p, periods, ...
+            [raw, harmonics, rawFit] = fittimeseries(t, y, sigma, p, periods, ...
                 FitRange = [.4, 3.6]);
-            [averages, averagedHarmonics, fitted, se] = periodictimeseries(t, y, sigma, p, periods, ...
+            [averages, averagedHarmonics, fitted, se] = fittimeseries(t, y, sigma, p, periods, ...
                 FitRange = [.4, 3.6], PolynomialFormat = "average-derivatives", AverageRange = interval);
             testCase.verifyEqual(averages, A * raw, AbsTol = 1e-7, RelTol = 1e-7);
             testCase.verifyEqual(averagedHarmonics, harmonics, AbsTol = 1e-7, RelTol = 1e-7);
@@ -91,7 +91,7 @@ classdef periodicAverageDerivativesTest < matlab.unittest.TestCase
                 testCase.verifyEqual(se(:, j), expectedSE, AbsTol = 1e-7, RelTol = 1e-7);
             end
 
-            [transposedAverages, ~, transposedFit] = periodictimeseries(t.', y.', sigma.', p, periods, ...
+            [transposedAverages, ~, transposedFit] = fittimeseries(t.', y.', sigma.', p, periods, ...
                 FitRange = [.4, 3.6], PolynomialFormat = "average-derivatives", AverageRange = interval);
             testCase.verifyEqual(transposedAverages, averages, AbsTol = 1e-7, RelTol = 1e-7);
             testCase.verifyEqual(transposedFit, fitted.', AbsTol = 1e-7, RelTol = 1e-7);
@@ -99,7 +99,7 @@ classdef periodicAverageDerivativesTest < matlab.unittest.TestCase
 
         function defaultAverageRangeIsIndependentOfFitRange(testCase)
             t = linspace(0, 4, 101)';
-            averages = periodictimeseries(t, 1 + 2 * t + 3 * t .^ 2, [], 2, [], ...
+            averages = fittimeseries(t, 1 + 2 * t + 3 * t .^ 2, [], 2, [], ...
                 FitRange = [1, 2], PolynomialFormat = "average-derivatives");
             testCase.verifyEqual(averages, [21; 14; 6], AbsTol = 1e-7, RelTol = 1e-7);
         end
@@ -118,7 +118,7 @@ classdef periodicAverageDerivativesTest < matlab.unittest.TestCase
             end
 
             y = 1 + 2 * t + 3 * t .^ 2;
-            [averages, ~, fitted] = periodictimeseries(times, y, [], 2, [], FitRange = fitRange, ...
+            [averages, ~, fitted] = fittimeseries(times, y, [], 2, [], FitRange = fitRange, ...
                 PolynomialFormat = "average-derivatives", AverageRange = range, Reconstruction = "omitharmonics");
             testCase.verifyEqual(averages, [18; 14; 6], AbsTol = 1e-7, RelTol = 1e-7);
             testCase.verifyEqual(fitted, y, AbsTol = 1e-7, RelTol = 1e-7);
@@ -127,7 +127,7 @@ classdef periodicAverageDerivativesTest < matlab.unittest.TestCase
         function averageRangeChangesSummaryOnly(testCase)
             t = linspace(0, 4, 101)';
             y = 1 + 2 * t + 3 * t .^ 2;
-            [averages, ~, fitted] = periodictimeseries(t, y, [], 2, [], ...
+            [averages, ~, fitted] = fittimeseries(t, y, [], 2, [], ...
                 PolynomialFormat = "average-derivatives", AverageRange = [0, 1]);
             testCase.verifyEqual(averages, [3; 5; 6], AbsTol = 1e-7, RelTol = 1e-7);
             testCase.verifyEqual(fitted, y, AbsTol = 1e-7, RelTol = 1e-7);
@@ -135,9 +135,9 @@ classdef periodicAverageDerivativesTest < matlab.unittest.TestCase
 
         function rejectsInvalidAverageRange(testCase, invalidRange)
             t = linspace(0, 4, 101)';
-            testCase.verifyError(@() periodictimeseries(t, t, [], 1, [], ...
+            testCase.verifyError(@() fittimeseries(t, t, [], 1, [], ...
                 PolynomialFormat = "average-derivatives", AverageRange = invalidRange), ...
-            'ULMO:periodictimeseries:InvalidAverageRange');
+            'ULMO:fittimeseries:InvalidAverageRange');
         end
 
     end

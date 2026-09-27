@@ -101,7 +101,7 @@ The ultimate goal is to drop the `_new` suffixes and replace the original functi
 
 | Function name | Description | Package dependencies | Data dependencies | Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| `periodictimeseries` | Fits polynomials and sinusoidal functions to a time series. | | | WIP |
+| `fittimeseries` | Fits multiple time series with polynomial and periodic terms; supports fit intervals, polynomial-only reconstruction, and average derivatives with standard errors. | | | |
 
 ## Appendices
 

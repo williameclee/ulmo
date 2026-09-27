@@ -1,13 +1,13 @@
-%% PERIODICTIMESERIES - Fits a polynomial and periodic terms to time series sharing a time axis.
+%% FITTIMESERIES - Fits a polynomial and periodic terms to time series sharing a time axis.
 % Each series is fitted independently by ordinary or weighted least squares.
 % The polynomial can be returned as coefficients or interval-average
 % derivatives, with associated standard errors.
 %
 % Syntax
-%   polys = periodictimeseries(t, x)
-%   [polys, harmons, xFit] = periodictimeseries(t, x, sigma, p, periods)
-%   [polys, harmons, xFit, polySigmas, harmonSigmas] = periodictimeseries(__)
-%   [__] = periodictimeseries(__, "Name", Value)
+%   polys = fittimeseries(t, x)
+%   [polys, harmons, xFit] = fittimeseries(t, x, sigma, p, periods)
+%   [polys, harmons, xFit, polySigmas, harmonSigmas] = fittimeseries(__)
+%   [__] = fittimeseries(__, "Name", Value)
 %
 % Input arguments
 %   t - Shared observation times
@@ -140,7 +140,7 @@
 %   2026/09/27, En-Chi Lee (williameclee@arizona.edu)
 
 function [polys, harmons, xFit, polySigmas, harmonSigmas] = ...
-        periodictimeseries(t, x, sigma, p, periods, options)
+        fittimeseries(t, x, sigma, p, periods, options)
 
     arguments (Input)
         t {mustBeA(t, {'numeric', 'datetime', 'duration'}), mustBeVector, mustBeNonempty}
@@ -183,12 +183,12 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas] = ...
         if size(sigma, 2) == 1
             sigma = repmat(sigma, 1, nSeries);
         elseif size(sigma, 2) ~= nSeries
-            error('ULMO:periodictimeseries:SizeMismatch', ...
+            error('ULMO:fittimeseries:SizeMismatch', ...
             'sigma must have the same size as x.');
         end
 
         if any(isinf(sigma) | sigma <= 0, 'all')
-            error('ULMO:periodictimeseries:InvalidSigma', ...
+            error('ULMO:fittimeseries:InvalidSigma', ...
             'Nonmissing sigma values must be finite and positive.');
         end
 
@@ -203,7 +203,7 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas] = ...
         firstValid = find(~isnat(t), 1);
 
         if isempty(firstValid)
-            error('periodictimeseries:InvalidTime', 'At least one valid time is required.');
+            error('fittimeseries:InvalidTime', 'At least one valid time is required.');
         end
 
         tRef = dateshift(t(firstValid), 'start', 'year');
@@ -217,7 +217,7 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas] = ...
     else
 
         if ~isreal(t)
-            error('periodictimeseries:InvalidTime', 'Times must be real.');
+            error('fittimeseries:InvalidTime', 'Times must be real.');
         end
 
         t = double(t);
@@ -232,7 +232,7 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas] = ...
     periods = double(periods(:).');
 
     if ~isreal(periods) || any(~isfinite(periods) | periods <= 0)
-        error('periodictimeseries:InvalidPeriods', 'Periods must be finite, real, and positive.');
+        error('fittimeseries:InvalidPeriods', 'Periods must be finite, real, and positive.');
     end
 
     polyTransform = [];
@@ -240,7 +240,7 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas] = ...
     if options.PolynomialFormat == "average-derivatives"
 
         if any(~isfinite(averageRange)) || averageRange(2) <= averageRange(1)
-            error('ULMO:periodictimeseries:InvalidAverageRange', ...
+            error('ULMO:fittimeseries:InvalidAverageRange', ...
             'AverageRange must have finite endpoints and positive length.');
         end
 
@@ -267,7 +267,7 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas] = ...
         nMinValids = p + 1 + 2 * numel(periods);
 
         if nnz(isValid) <= nMinValids
-            error('ULMO:periodictimeseries:InsufficientData', ...
+            error('ULMO:fittimeseries:InsufficientData', ...
                 ['Series %d needs more valid observations than fitted parameters.', ...
              '%d observations is needed, but only got %d valid ones.'], ...
                 iSeries, nMinValids, nnz(isValid));
@@ -296,7 +296,7 @@ function [data, transposed] = normalisedata(data, nTimes, name)
         data = data.';
         transposed = true;
     else
-        error('ULMO:periodictimeseries:SizeMismatch', ...
+        error('ULMO:fittimeseries:SizeMismatch', ...
             '%s must have a dimension matching the shared time axis (%d).', name, nTimes);
     end
 
@@ -418,7 +418,7 @@ end
 function mustBeVectorOrEmpty(value)
 
     if ~isempty(value) && ~isvector(value)
-        error('periodictimeseries:InvalidShape', 'Input must be a vector or empty.');
+        error('fittimeseries:InvalidShape', 'Input must be a vector or empty.');
     end
 
 end
@@ -430,12 +430,12 @@ function mustBeCompatibleRange(value, t)
         || (isduration(t) && isduration(value));
 
     if ~sameType || (isnumeric(value) && ~isreal(value)) || any(ismissing(value), 'all')
-        error('ULMO:periodictimeseries:InvalidRange', ...
+        error('ULMO:fittimeseries:InvalidRange', ...
         'Ranges must contain real, nonmissing endpoints of the same time type as t.');
     end
 
     if value(1) > value(2)
-        error('ULMO:periodictimeseries:InvalidRange', ...
+        error('ULMO:fittimeseries:InvalidRange', ...
         'Range endpoints must be in ascending order.');
     end
 
