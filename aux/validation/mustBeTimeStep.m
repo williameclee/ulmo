@@ -7,8 +7,8 @@ function mustBeTimeStep(timeStep)
 
     if (ischar(timeStep) || isstring(timeStep))
 
-        if ~ismember(timeStep, {'midmonth'})
-            error(eid, 'Time step string must be ''midmonth''. Got "%s".', timeStep);
+        if ~ismember(timeStep, {'midmonth', 'GRACE'})
+            error(eid, 'Time step string must be ''midmonth'' or ''GRACE''. Got "%s".', timeStep);
         end
 
     elseif ~isnumeric(timeStep) || isduration(timeStep)
