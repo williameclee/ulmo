@@ -1,10 +1,10 @@
 %% PERIODICTIMESERIES
 %
 % Created by
-%   2025/06/03, williameclee@arizona.edu (@williameclee)
+%   2025/06/03, En-Chi Lee (williameclee@arizona.edu)
 %
 % Last modified by
-%   2026/09/27, williameclee@arizona.edu (@williameclee)
+%   2026/09/27, En-Chi Lee (williameclee@arizona.edu)
 
 function [polyCoeffs, periodicCoeffs, xFit, polyCoeffSigmas, periodicCoeffSigmas] = ...
         periodictimeseries(t, x, sigma, p, periods, options)
@@ -59,7 +59,7 @@ function [polyCoeffs, periodicCoeffs, xFit, polyCoeffSigmas, periodicCoeffSigmas
 
     end
 
-    fitRange = options.fitRange(:);
+    fitRange = options.FitRange(:);
 
     isTime = isdatetime(t);
 
@@ -72,7 +72,7 @@ function [polyCoeffs, periodicCoeffs, xFit, polyCoeffSigmas, periodicCoeffSigmas
 
         tRef = dateshift(t(firstValid), 'start', 'year');
         t = years(t - tRef);
-        fitRange = fitRange - tRef;
+        fitRange = years(fitRange - tRef);
     elseif isduration(t)
         t = years(t);
         fitRange = years(fitRange);
@@ -83,7 +83,7 @@ function [polyCoeffs, periodicCoeffs, xFit, polyCoeffSigmas, periodicCoeffSigmas
         end
 
         t = double(t);
-        fitRange = double(t);
+        fitRange = double(fitRange);
     end
 
     if isduration(periods)
@@ -122,7 +122,7 @@ function [polyCoeffs, periodicCoeffs, xFit, polyCoeffSigmas, periodicCoeffSigmas
                 iSeries, nMinValids, nnz(isValid));
         end
 
-        [polyCoeffs(:, iSeries), periodicCoeffs(:, :, iSeries), xFit(isValid, iSeries), ...
+        [polyCoeffs(:, iSeries), periodicCoeffs(:, :, iSeries), xFit(:, iSeries), ...
              polyCoeffSigmas(:, iSeries), periodicCoeffSigmas(:, :, iSeries)] = ...
             fitsingleseries( ...
             t(isValid), x(isValid, iSeries), sigma_tofit, p, periods, ...
@@ -180,10 +180,13 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas] = ...
     end
 
     polys = coeffs(1:p + 1);
-    harmons = coeffs(p + 2:end);
-
     polySigmas = coeffSigmas(1:p + 1);
+
+    harmons = coeffs(p + 2:end);
     harmonSigmas = coeffSigmas(p + 2:end);
+
+    harmons = reshape(harmons, [2, numel(periods)]);
+    harmonSigmas = reshape(harmonSigmas, [2, numel(periods)]);
 
     %% Post-processing coefficients
     if strcmpi(harmonFmt, "sin-cos")
@@ -197,24 +200,46 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas] = ...
         harmonSigmas(1:2:end) = sinCoeffs;
         harmonSigmas(2:2:end) = cosCoeffs;
     elseif strcmp(harmonFmt, "amp-phase")
-        harmons = reshape(harmons, [2, numel(periods)]);
-        harmons = ...
-            [sqrt(sum(harmons .^ 2, 1)); ...
-             wrapTo2Pi(atan2(harmons(2, :), harmons(1, :)))];
-        harmons = harmons';
+        nPeriods = numel(periods);
+        harmons = nan(nPeriods, 2);
+        harmonSigmas = nan(nPeriods, 2);
 
-        if isTime
-            harmons(:, 2) = harmons(:, 2) / (2 * pi) * days(years(1));
-        end
+        for k = 1:nPeriods
+            % Indices in the original coefficient vector and full covariance.
+            idx = p + 1 + 2 * (k - 1) + [1, 2];
+            c = coeffs(idx(1));
+            s = coeffs(idx(2));
+            Ccs = cov_matrix(idx, idx);
 
-        harmonSigmas = reshape(harmonSigmas, [2, numel(periods)]);
-        harmonSigmas = ...
-            [sqrt(sum(harmonSigmas .^ 2, 1)); ...
-             wrapTo2Pi(atan2(harmonSigmas(2, :), harmonSigmas(1, :)))];
-        harmonSigmas = harmonSigmas';
+            A = hypot(c, s);
+            harmons(k, 1) = A;
 
-        if isTime
-            harmonSigmas(:, 2) = harmonSigmas(:, 2) / (2 * pi) * days(years(1));
+            % At zero amplitude, phase and this linearisation are undefined.
+            if A == 0
+                continue
+            end
+
+            phi = mod(atan2(s, c), 2 * pi);
+
+            J = [c / A, s / A;
+                 -s / A ^ 2, c / A ^ 2];
+
+            Cap = J * Ccs * J.';
+            Cap = (Cap + Cap.') / 2; % Remove roundoff asymmetry
+
+            % Phase in days for datetime input, otherwise in radians.
+            if isTime
+                phaseScale = days(years(periods(k))) / (2 * pi);
+                phi = phi * phaseScale;
+
+                D = diag([1, phaseScale]);
+                Cap = D * Cap * D.';
+            end
+
+            harmons(k, :) = [A, phi];
+
+            % Clamp tiny negative variances caused by roundoff.
+            harmonSigmas(k, :) = sqrt(max(diag(Cap), 0)).';
         end
 
     end
