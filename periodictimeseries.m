@@ -6,7 +6,7 @@
 % Last modified by
 %   2026/09/27, En-Chi Lee (williameclee@arizona.edu)
 
-function [polyCoeffs, periodicCoeffs, xFit, polyCoeffSigmas, periodicCoeffSigmas] = ...
+function [polys, harmons, xFit, polySigmas, harmonSigmas] = ...
         periodictimeseries(t, x, sigma, p, periods, options)
 
     arguments (Input)
@@ -26,14 +26,16 @@ function [polyCoeffs, periodicCoeffs, xFit, polyCoeffSigmas, periodicCoeffSigmas
             = "includeharmonics"
         options.FitRange (1, 2) {mustBeCompatibleRange(options.FitRange, t)} = ...
             [min(t(:), [], 'omitmissing'), max(t(:), [], 'omitmissing')]
+        options.AverageRange (1, 2) {mustBeCompatibleRange(options.AverageRange, t)} = ...
+            [min(t(:), [], 'omitmissing'), max(t(:), [], 'omitmissing')]
     end
 
     arguments (Output)
-        polyCoeffs (:, :) {mustBeNumeric}
-        periodicCoeffs {mustBeNumeric}
+        polys (:, :) {mustBeNumeric}
+        harmons {mustBeNumeric}
         xFit (:, :) {mustBeNumeric}
-        polyCoeffSigmas (:, :) {mustBeNumeric}
-        periodicCoeffSigmas {mustBeNumeric}
+        polySigmas (:, :) {mustBeNumeric}
+        harmonSigmas {mustBeNumeric}
     end
 
     %% Input sanitisation
@@ -60,6 +62,7 @@ function [polyCoeffs, periodicCoeffs, xFit, polyCoeffSigmas, periodicCoeffSigmas
     end
 
     fitRange = options.FitRange(:);
+    averageRange = options.AverageRange(:);
 
     isTime = isdatetime(t);
 
@@ -73,9 +76,11 @@ function [polyCoeffs, periodicCoeffs, xFit, polyCoeffSigmas, periodicCoeffSigmas
         tRef = dateshift(t(firstValid), 'start', 'year');
         t = years(t - tRef);
         fitRange = years(fitRange - tRef);
+        averageRange = years(averageRange - tRef);
     elseif isduration(t)
         t = years(t);
         fitRange = years(fitRange);
+        averageRange = years(averageRange);
     else
 
         if ~isreal(t)
@@ -84,6 +89,7 @@ function [polyCoeffs, periodicCoeffs, xFit, polyCoeffSigmas, periodicCoeffSigmas
 
         t = double(t);
         fitRange = double(fitRange);
+        averageRange = double(averageRange);
     end
 
     if isduration(periods)
@@ -96,11 +102,23 @@ function [polyCoeffs, periodicCoeffs, xFit, polyCoeffSigmas, periodicCoeffSigmas
         error('periodictimeseries:InvalidPeriods', 'Periods must be finite, real, and positive.');
     end
 
-    polyCoeffs = nan(p + 1, nSeries);
-    polyCoeffSigmas = nan(p + 1, nSeries);
+    polyTransform = [];
 
-    periodicCoeffs = nan(numel(periods), 2, nSeries);
-    periodicCoeffSigmas = periodicCoeffs;
+    if options.PolynomialFormat == "average-derivatives"
+
+        if any(~isfinite(averageRange)) || averageRange(2) <= averageRange(1)
+            error('ULMO:periodictimeseries:InvalidAverageRange', ...
+            'AverageRange must have finite endpoints and positive length.');
+        end
+
+        polyTransform = averagederivativematrix(p, averageRange);
+    end
+
+    polys = nan(p + 1, nSeries);
+    polySigmas = nan(p + 1, nSeries);
+
+    harmons = nan(numel(periods), 2, nSeries);
+    harmonSigmas = harmons;
     xFit = nan(size(x));
 
     %% Fitting
@@ -122,11 +140,11 @@ function [polyCoeffs, periodicCoeffs, xFit, polyCoeffSigmas, periodicCoeffSigmas
                 iSeries, nMinValids, nnz(isValid));
         end
 
-        [polyCoeffs(:, iSeries), periodicCoeffs(:, :, iSeries), xFit(:, iSeries), ...
-             polyCoeffSigmas(:, iSeries), periodicCoeffSigmas(:, :, iSeries)] = ...
+        [polys(:, iSeries), harmons(:, :, iSeries), xFit(:, iSeries), ...
+             polySigmas(:, iSeries), harmonSigmas(:, :, iSeries)] = ...
             fitsingleseries( ...
             t(isValid), x(isValid, iSeries), sigma_tofit, p, periods, ...
-            options.PeriodicFormat, isTime, t, options.Reconstruction);
+            options.PeriodicFormat, isTime, t, options.Reconstruction, polyTransform);
     end
 
     if isTrans
@@ -152,7 +170,7 @@ function [data, transposed] = normalisedata(data, nTimes, name)
 end
 
 function [polys, harmons, xFit, polySigmas, harmonSigmas] = ...
-        fitsingleseries(t, x, sigma, p, periods, harmonFmt, isTime, tFit, fitMethod)
+        fitsingleseries(t, x, sigma, p, periods, harmonFmt, isTime, tFit, fitMethod, polyTransform)
     %% Fitting
     N = numel(t);
     X = zeros([N, p + 1 + 2 * numel(periods)]);
@@ -182,11 +200,18 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas] = ...
     polys = coeffs(1:p + 1);
     polySigmas = coeffSigmas(1:p + 1);
 
+    if ~isempty(polyTransform)
+        polys = polyTransform * polys;
+        polyCov = polyTransform * cov_matrix(1:p + 1, 1:p + 1) * polyTransform.';
+        polyCov = (polyCov + polyCov.') / 2;
+        polySigmas = sqrt(max(diag(polyCov), 0));
+    end
+
     harmons = coeffs(p + 2:end);
     harmonSigmas = coeffSigmas(p + 2:end);
 
-    harmons = reshape(harmons, [2, numel(periods)]);
-    harmonSigmas = reshape(harmonSigmas, [2, numel(periods)]);
+    harmons = reshape(harmons, [2, numel(periods)])';
+    harmonSigmas = reshape(harmonSigmas, [2, numel(periods)])';
 
     %% Post-processing coefficients
     if strcmpi(harmonFmt, "sin-cos")
@@ -286,6 +311,26 @@ function mustBeCompatibleRange(value, t)
     if value(1) > value(2)
         error('ULMO:periodictimeseries:InvalidRange', ...
         'Range endpoints must be in ascending order.');
+    end
+
+end
+
+function A = averagederivativematrix(p, interval)
+    % A(k+1,j+1) is the interval average of d^k(t^j)/dt^k.
+    a = interval(1);
+    b = interval(2);
+    A = zeros(p + 1);
+
+    for k = 0:p
+
+        for j = k:p
+            n = j - k;
+            % Divided difference of t^(n+1), evaluated without subtracting
+            % nearby endpoint powers or dividing by a small interval length.
+            meanPower = sum(a .^ (0:n) .* b .^ (n:-1:0)) / (n + 1);
+            A(k + 1, j + 1) = prod((j - k + 1):j) * meanPower;
+        end
+
     end
 
 end
