@@ -1,54 +1,35 @@
 %% PERIODICTIMESERIES
 %
-% Authored by:
+% Created by
 %   2025/06/03, williameclee@arizona.edu (@williameclee)
 %
-% Last modified by:
-%   2025/11/03, williameclee@arizona.edu (@williameclee)
+% Last modified by
+%   2026/09/27, williameclee@arizona.edu (@williameclee)
 
-function varargout = periodictimeseries(t, varargin)
-    ip = inputParser;
-    ip.addRequired('t', ...
-        @(x) (isnumeric(x) && (isvector(x) || ismatrix(x))) || ...
-        ((isdatetime(x) || isduration(x)) && isvector(x)));
-    ip.addOptional('x', [], @(x) isnumeric(x) && isvector(x));
-    ip.addOptional('sigma', [], @(x) (isnumeric(x) && isvector(x)) | isempty(x));
-    ip.addOptional('p', 2, @(x) isnumeric(x) && isscalar(x));
-    ip.addOptional('periods', [], @(x) isnumeric(x) || isduration(x));
-    ip.addParameter('PeriodicFormat', 'cos-sin', @(x) ischar(validatestring(x, {'sin-cos', 'cos-sin', 'amp-phase'})));
-    ip.parse(t, varargin{:});
+function [polyCoeffs, periodicCoeffs, dataFit, polyCoeffSigmas, periodicCoeffSigmas] = ...
+        periodictimeseries(t, x, sigma, p, periods, options)
 
-    t = ip.Results.t;
-    x = ip.Results.x;
-    sigma = ip.Results.sigma;
-    p = ip.Results.p;
-    periods = ip.Results.periods;
-    periodicFormat = ip.Results.PeriodicFormat;
+    arguments (Input)
+        t {mustBeA(t, {'numeric', 'datetime', 'duration'}), mustBeVector, mustBeNonempty}
+        x {mustBeNumeric, mustBeVector, mustBeNonempty}
+        sigma {mustBeNumeric, mustBeVectorOrEmpty} = []
+        p (1, 1) double {mustBeInteger, mustBeNonnegative} = 2
+        periods {mustBeA(periods, {'numeric', 'duration'}), mustBeVectorOrEmpty} = []
+        options.PeriodicFormat (1, 1) string ...
+            {mustBeMember(options.PeriodicFormat, ["sin-cos", "cos-sin", "amp-phase"])} ...
+            = "cos-sin"
+        options.PolynomialFormat (1, 1) string ...
+            {mustBeMember(options.PolynomialFormat, ["coefficients", "average-derivatives"])} ...
+            = "coefficients"
+    end
 
-    if (isempty(x) || isempty(sigma)) && isnumeric(t) && any((size(t) == 2 | size(t) == 3))
+    arguments (Output)
+        polyCoeffs (:, 1) {mustBeNumeric}
+        periodicCoeffs (:, :) {mustBeNumeric}
+        dataFit (:, 1) {mustBeNumeric}
+        polyCoeffSigmas (:, 1) {mustBeNumeric}
+        periodicCoeffSigmas (:, :) {mustBeNumeric}
 
-        if (size(t, 2) == 2 || size(t, 2) == 3)
-            x = t(:, 2);
-            t = t(:, 1);
-
-            if size(t, 2) == 3
-                sigma = t(:, 3);
-            end
-
-        elseif (size(t, 1) == 2 || size(t, 1) == 3)
-            x = t(2, :);
-            t = t(1, :);
-
-            if size(t, 1) == 3
-                sigma = t(3, :);
-            end
-
-        else
-            error('Invalid input dimensions');
-        end
-
-    elseif isempty(x)
-        error('No data provided');
     end
 
     N = numel(t);
@@ -93,7 +74,7 @@ function varargout = periodictimeseries(t, varargin)
 
     for i = 1:numel(periods)
 
-        switch periodicFormat
+        switch options.PeriodicFormat
             case "sin-cos"
                 X(:, p + 1 + (i - 1) * 2 + [1, 2]) = ...
                     [sin(2 * pi * t_tofit / periods(i)), cos(2 * pi * t_tofit / periods(i))];
@@ -128,7 +109,7 @@ function varargout = periodictimeseries(t, varargin)
     polyCoeffSigmas = coeffSigmas(1:p + 1);
     periodicCoeffSigmas = coeffSigmas(p + 2:end);
 
-    if strcmp(periodicFormat, "amp-phase")
+    if strcmp(options.PeriodicFormat, "amp-phase")
         periodicCoeffs = reshape(periodicCoeffs, [2, numel(periods)]);
         periodicCoeffs = ...
             [sqrt(sum(periodicCoeffs .^ 2, 1)); ...
@@ -138,10 +119,6 @@ function varargout = periodictimeseries(t, varargin)
         if isTime
             periodicCoeffs(:, 2) = periodicCoeffs(:, 2) / (2 * pi) * days(years(1));
         end
-
-    end
-
-    if strcmp(periodicFormat, "amp-phase")
 
         periodicCoeffSigmas = reshape(periodicCoeffSigmas, [2, numel(periods)]);
         periodicCoeffSigmas = ...
@@ -155,6 +132,29 @@ function varargout = periodictimeseries(t, varargin)
 
     end
 
-    varargout = {polyCoeffs, periodicCoeffs, dataFit, polyCoeffSigmas, periodicCoeffSigmas};
+end
+
+function mustBeVectorOrEmpty(value)
+
+    if ~isempty(value) && ~isvector(value)
+        error('periodictimeseries:InvalidShape', 'Input must be a vector or empty.');
+    end
+
+end
+
+function mustBeCompatibleRange(value, t)
+    sameType = (isnumeric(t) && isnumeric(value)) ...
+        || (isdatetime(t) && isdatetime(value)) ...
+        || (isduration(t) && isduration(value));
+
+    if ~sameType || (isnumeric(value) && ~isreal(value)) || any(ismissing(value), 'all')
+        error('periodictimeseries:InvalidRange', ...
+        'Ranges must contain real, nonmissing endpoints of the same time type as t.');
+    end
+
+    if value(1) > value(2)
+        error('periodictimeseries:InvalidRange', ...
+        'Range endpoints must be in ascending order.');
+    end
 
 end
