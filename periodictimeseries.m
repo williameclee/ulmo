@@ -21,6 +21,11 @@ function [polyCoeffs, periodicCoeffs, xFit, polyCoeffSigmas, periodicCoeffSigmas
         options.PolynomialFormat (1, 1) string ...
             {mustBeMember(options.PolynomialFormat, ["coefficients", "average-derivatives"])} ...
             = "coefficients"
+        options.Reconstruction (1, 1) string ...
+            {mustBeMember(options.Reconstruction, ["includeharmonics", "omitharmonics"])} ...
+            = "includeharmonics"
+        options.FitRange (1, 2) {mustBeCompatibleRange(options.FitRange, t)} = ...
+            [min(t(:), [], 'omitmissing'), max(t(:), [], 'omitmissing')]
     end
 
     arguments (Output)
@@ -54,6 +59,8 @@ function [polyCoeffs, periodicCoeffs, xFit, polyCoeffSigmas, periodicCoeffSigmas
 
     end
 
+    fitRange = options.fitRange(:);
+
     isTime = isdatetime(t);
 
     if isTime
@@ -63,9 +70,12 @@ function [polyCoeffs, periodicCoeffs, xFit, polyCoeffSigmas, periodicCoeffSigmas
             error('periodictimeseries:InvalidTime', 'At least one valid time is required.');
         end
 
-        t = years(t - dateshift(t(firstValid), 'start', 'year'));
+        tRef = dateshift(t(firstValid), 'start', 'year');
+        t = years(t - tRef);
+        fitRange = fitRange - tRef;
     elseif isduration(t)
         t = years(t);
+        fitRange = years(fitRange);
     else
 
         if ~isreal(t)
@@ -73,6 +83,7 @@ function [polyCoeffs, periodicCoeffs, xFit, polyCoeffSigmas, periodicCoeffSigmas
         end
 
         t = double(t);
+        fitRange = double(t);
     end
 
     if isduration(periods)
@@ -94,7 +105,7 @@ function [polyCoeffs, periodicCoeffs, xFit, polyCoeffSigmas, periodicCoeffSigmas
 
     %% Fitting
     for iSeries = 1:nSeries
-        isValid = isfinite(t) & isfinite(x(:, iSeries));
+        isValid = isfinite(t) & isfinite(x(:, iSeries)) & (t >= fitRange(1) & t <= fitRange(2));
         sigma_tofit = [];
 
         if ~isempty(sigma)
@@ -115,7 +126,7 @@ function [polyCoeffs, periodicCoeffs, xFit, polyCoeffSigmas, periodicCoeffSigmas
              polyCoeffSigmas(:, iSeries), periodicCoeffSigmas(:, :, iSeries)] = ...
             fitsingleseries( ...
             t(isValid), x(isValid, iSeries), sigma_tofit, p, periods, ...
-            options.PeriodicFormat, isTime);
+            options.PeriodicFormat, isTime, t, options.Reconstruction);
     end
 
     if isTrans
@@ -141,9 +152,9 @@ function [data, transposed] = normalisedata(data, nTimes, name)
 end
 
 function [polys, harmons, xFit, polySigmas, harmonSigmas] = ...
-        fitsingleseries(t, x, sigma, p, periods, harmonFmt, isTime)
-    N = numel(t);
+        fitsingleseries(t, x, sigma, p, periods, harmonFmt, isTime, tFit, fitMethod)
     %% Fitting
+    N = numel(t);
     X = zeros([N, p + 1 + 2 * numel(periods)]);
     X(:, 1:p + 1) = t .^ (0:p);
 
@@ -168,14 +179,13 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas] = ...
         coeffSigmas = sqrt(diag(cov_matrix));
     end
 
-    xFit = X * coeffs;
-
     polys = coeffs(1:p + 1);
     harmons = coeffs(p + 2:end);
 
     polySigmas = coeffSigmas(1:p + 1);
     harmonSigmas = coeffSigmas(p + 2:end);
 
+    %% Post-processing coefficients
     if strcmpi(harmonFmt, "sin-cos")
         cosCoeffs = harmons(1:2:end);
         sinCoeffs = harmons(2:2:end);
@@ -209,6 +219,24 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas] = ...
 
     end
 
+    %% Reconstruction
+    N = numel(tFit);
+
+    if strcmpi(fitMethod, "omitharmonics")
+        X = zeros([N, p + 1]);
+        X(:, 1:p + 1) = tFit .^ (0:p);
+    else
+        X = zeros([N, p + 1 + 2 * numel(periods)]);
+        X(:, 1:p + 1) = tFit .^ (0:p);
+
+        for i = 1:numel(periods)
+            X(:, p + 1 + (i - 1) * 2 + [1, 2]) = ...
+                [cos(2 * pi * tFit / periods(i)), sin(2 * pi * tFit / periods(i))];
+        end
+
+    end
+
+    xFit = X * coeffs(1:size(X, 2));
 end
 
 function mustBeVectorOrEmpty(value)
@@ -219,18 +247,19 @@ function mustBeVectorOrEmpty(value)
 
 end
 
+% Make sure the input time range is valid
 function mustBeCompatibleRange(value, t)
     sameType = (isnumeric(t) && isnumeric(value)) ...
         || (isdatetime(t) && isdatetime(value)) ...
         || (isduration(t) && isduration(value));
 
     if ~sameType || (isnumeric(value) && ~isreal(value)) || any(ismissing(value), 'all')
-        error('periodictimeseries:InvalidRange', ...
+        error('ULMO:periodictimeseries:InvalidRange', ...
         'Ranges must contain real, nonmissing endpoints of the same time type as t.');
     end
 
     if value(1) > value(2)
-        error('periodictimeseries:InvalidRange', ...
+        error('ULMO:periodictimeseries:InvalidRange', ...
         'Range endpoints must be in ascending order.');
     end
 
