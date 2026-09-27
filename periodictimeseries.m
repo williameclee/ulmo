@@ -6,13 +6,13 @@
 % Last modified by
 %   2026/09/27, williameclee@arizona.edu (@williameclee)
 
-function [polyCoeffs, periodicCoeffs, dataFit, polyCoeffSigmas, periodicCoeffSigmas] = ...
+function [polyCoeffs, periodicCoeffs, xFit, polyCoeffSigmas, periodicCoeffSigmas] = ...
         periodictimeseries(t, x, sigma, p, periods, options)
 
     arguments (Input)
         t {mustBeA(t, {'numeric', 'datetime', 'duration'}), mustBeVector, mustBeNonempty}
-        x {mustBeNumeric, mustBeVector, mustBeNonempty}
-        sigma {mustBeNumeric, mustBeVectorOrEmpty} = []
+        x {mustBeNumeric, mustBeReal, mustBeMatrix, mustBeNonempty}
+        sigma {mustBeNumeric, mustBeReal, mustBeMatrix} = []
         p (1, 1) double {mustBeInteger, mustBeNonnegative} = 2
         periods {mustBeA(periods, {'numeric', 'duration'}), mustBeVectorOrEmpty} = []
         options.PeriodicFormat (1, 1) string ...
@@ -24,57 +24,132 @@ function [polyCoeffs, periodicCoeffs, dataFit, polyCoeffSigmas, periodicCoeffSig
     end
 
     arguments (Output)
-        polyCoeffs (:, 1) {mustBeNumeric}
-        periodicCoeffs (:, :) {mustBeNumeric}
-        dataFit (:, 1) {mustBeNumeric}
-        polyCoeffSigmas (:, 1) {mustBeNumeric}
-        periodicCoeffSigmas (:, :) {mustBeNumeric}
-
+        polyCoeffs (:, :) {mustBeNumeric}
+        periodicCoeffs {mustBeNumeric}
+        xFit (:, :) {mustBeNumeric}
+        polyCoeffSigmas (:, :) {mustBeNumeric}
+        periodicCoeffSigmas {mustBeNumeric}
     end
 
-    N = numel(t);
-
-    if N ~= numel(x)
-        error('dates and data must have the same number of elements');
-    end
-
+    %% Input sanitisation
     t = t(:);
-    x = x(:);
-    sigma = sigma(:);
-
-    if ~isempty(sigma) && any(sigma <= 0)
-        error('sigma must be positive');
-    end
-
-    isTime = false;
-
-    if isdatetime(t)
-        isTime = true;
-        t = years(t - datetime(year(t(1)), 1, 1));
-    end
-
-    isValid = ~isnan(t) & ~isnan(x);
-    t_tofit = t(isValid);
-    x_tofit = x(isValid);
+    nTime = numel(t);
+    [x, isTrans] = normalisedata(double(x), nTime, 'x');
+    nSeries = size(x, 2);
 
     if ~isempty(sigma)
-        sigma_tofit = sigma(isValid);
-    else
-        sigma_tofit = [];
+        sigma = normalisedata(double(sigma), nTime, 'sigma');
+
+        if size(sigma, 2) == 1
+            sigma = repmat(sigma, 1, nSeries);
+        elseif size(sigma, 2) ~= nSeries
+            error('ULMO:periodictimeseries:SizeMismatch', ...
+            'sigma must have the same size as x.');
+        end
+
+        if any(isinf(sigma) | sigma <= 0, 'all')
+            error('ULMO:periodictimeseries:InvalidSigma', ...
+            'Nonmissing sigma values must be finite and positive.');
+        end
+
     end
 
-    N = numel(t_tofit);
+    isTime = isdatetime(t);
 
-    if ~isempty(periods) && isduration(periods)
+    if isTime
+        firstValid = find(~isnat(t), 1);
+
+        if isempty(firstValid)
+            error('periodictimeseries:InvalidTime', 'At least one valid time is required.');
+        end
+
+        t = years(t - dateshift(t(firstValid), 'start', 'year'));
+    elseif isduration(t)
+        t = years(t);
+    else
+
+        if ~isreal(t)
+            error('periodictimeseries:InvalidTime', 'Times must be real.');
+        end
+
+        t = double(t);
+    end
+
+    if isduration(periods)
         periods = years(periods);
     end
 
+    periods = double(periods(:).');
+
+    if ~isreal(periods) || any(~isfinite(periods) | periods <= 0)
+        error('periodictimeseries:InvalidPeriods', 'Periods must be finite, real, and positive.');
+    end
+
+    polyCoeffs = nan(p + 1, nSeries);
+    polyCoeffSigmas = nan(p + 1, nSeries);
+
+    periodicCoeffs = nan(numel(periods), 2, nSeries);
+    periodicCoeffSigmas = periodicCoeffs;
+    xFit = nan(size(x));
+
+    %% Fitting
+    for iSeries = 1:nSeries
+        isValid = isfinite(t) & isfinite(x(:, iSeries));
+        sigma_tofit = [];
+
+        if ~isempty(sigma)
+            isValid = isValid & isfinite(sigma(:, iSeries));
+            sigma_tofit = sigma(isValid, iSeries);
+        end
+
+        nMinValids = p + 1 + 2 * numel(periods);
+
+        if nnz(isValid) <= nMinValids
+            error('ULMO:periodictimeseries:InsufficientData', ...
+                ['Series %d needs more valid observations than fitted parameters.', ...
+             '%d observations is needed, but only got %d valid ones.'], ...
+                iSeries, nMinValids, nnz(isValid));
+        end
+
+        [polyCoeffs(:, iSeries), periodicCoeffs(:, :, iSeries), xFit(isValid, iSeries), ...
+             polyCoeffSigmas(:, iSeries), periodicCoeffSigmas(:, :, iSeries)] = ...
+            fitsingleseries( ...
+            t(isValid), x(isValid, iSeries), sigma_tofit, p, periods, ...
+            options.PeriodicFormat, isTime);
+    end
+
+    if isTrans
+        xFit = xFit.';
+    end
+
+end
+
+%% Subfunctions
+function [data, transposed] = normalisedata(data, nTimes, name)
+    transposed = false;
+
+    if size(data, 1) == nTimes
+        return
+    elseif size(data, 2) == nTimes
+        data = data.';
+        transposed = true;
+    else
+        error('ULMO:periodictimeseries:SizeMismatch', ...
+            '%s must have a dimension matching the shared time axis (%d).', name, nTimes);
+    end
+
+end
+
+function [polyCoeffs, periodicCoeffs, dataFit, polyCoeffSigmas, periodicCoeffSigmas] = ...
+        fitsingleseries(t_tofit, x_tofit, sigma_tofit, p, periods, periodicFormat, isTime)
+    N = numel(t_tofit);
+    %% Fitting
     X = zeros([N, p + 1 + 2 * numel(periods)]);
     X(:, 1:p + 1) = t_tofit .^ (0:p);
 
     for i = 1:numel(periods)
 
-        switch options.PeriodicFormat
+        switch periodicFormat
             case "sin-cos"
                 X(:, p + 1 + (i - 1) * 2 + [1, 2]) = ...
                     [sin(2 * pi * t_tofit / periods(i)), cos(2 * pi * t_tofit / periods(i))];
@@ -109,7 +184,7 @@ function [polyCoeffs, periodicCoeffs, dataFit, polyCoeffSigmas, periodicCoeffSig
     polyCoeffSigmas = coeffSigmas(1:p + 1);
     periodicCoeffSigmas = coeffSigmas(p + 2:end);
 
-    if strcmp(options.PeriodicFormat, "amp-phase")
+    if strcmp(periodicFormat, "amp-phase")
         periodicCoeffs = reshape(periodicCoeffs, [2, numel(periods)]);
         periodicCoeffs = ...
             [sqrt(sum(periodicCoeffs .^ 2, 1)); ...
