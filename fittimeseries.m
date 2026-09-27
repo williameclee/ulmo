@@ -61,7 +61,10 @@
 %   Reconstruction (name-value) - Components included in xFit
 %       - "includeharmonics": polynomial and periodic terms (default).
 %       - "omitharmonics": polynomial component only.
-%       Harmonics are still included in the fit when omitted from xFit.
+%       - "onlyharmonics": periodic terms only; zero at valid times when
+%           periods is empty, and NaN at nonfinite times.
+%       All components are still included in the fit regardless of which
+%       components are reconstructed in xFit.
 %       Data type: STRING | CHAR
 %   FitRange (name-value) - Inclusive time interval selecting observations for fitting
 %       Endpoints must be nonmissing and in ascending order, with the same
@@ -155,7 +158,7 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas] = ...
             {mustBeMember(options.PolynomialFormat, ["coefficients", "average-derivatives"])} ...
             = "coefficients"
         options.Reconstruction (1, 1) string ...
-            {mustBeMember(options.Reconstruction, ["includeharmonics", "omitharmonics"])} ...
+            {mustBeMember(options.Reconstruction, ["includeharmonics", "omitharmonics", "onlyharmonics"])} ...
             = "includeharmonics"
         options.FitRange (1, 2) {mustBeCompatibleRange(options.FitRange, t)} = ...
             [min(t(:), [], 'omitmissing'), max(t(:), [], 'omitmissing')]
@@ -398,7 +401,18 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas] = ...
     %% Reconstruction
     N = numel(tFit);
 
-    if strcmpi(fitMethod, "omitharmonics")
+    if strcmpi(fitMethod, "onlyharmonics")
+        X = zeros(N, 2 * numel(periods));
+
+        for i = 1:numel(periods)
+            X(:, (i - 1) * 2 + [1, 2]) = ...
+                [cos(2 * pi * tFit / periods(i)), sin(2 * pi * tFit / periods(i))];
+        end
+
+        xFit = X * coeffs(p + 2:end);
+        xFit(~isfinite(tFit)) = NaN;
+        return
+    elseif strcmpi(fitMethod, "omitharmonics")
         X = zeros([N, p + 1]);
         X(:, 1:p + 1) = tFit .^ (0:p);
     else

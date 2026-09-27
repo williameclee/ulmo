@@ -41,6 +41,45 @@ classdef fittimeseriesTest < matlab.unittest.TestCase
 
     methods (Test)
 
+        function onlyHarmonics(testCase, format, transposeData, uncertaintyMode)
+            t = testCase.T;
+            periodic = [cos(2 * pi * t) + 2 * sin(pi * t), ...
+                3 * sin(2 * pi * t) - cos(pi * t)];
+            x = [2 + 3 * t + 0.2 * t .^ 2, -1 + 0.5 * t] + periodic;
+            sigma = [];
+            if strcmp(uncertaintyMode, 'column'), sigma = testCase.Sigma(:, 1); end
+            if strcmp(uncertaintyMode, 'row'), sigma = testCase.Sigma(:, 1).'; end
+            x(20, 1) = NaN;
+            if transposeData, x = x.'; periodic = periodic.'; end
+            args = {sigma, 2, [1, 2], 'PeriodicFormat', format, ...
+                'PolynomialFormat', 'average-derivatives', 'FitRange', [1, 5]};
+            [a, b, full, d, e] = fittimeseries(t, x, args{:});
+            [aa, bb, fitted, dd, ee] = fittimeseries(t, x, args{:}, ...
+                Reconstruction = 'onlyharmonics');
+            [~, ~, polynomial] = fittimeseries(t, x, args{:}, ...
+                Reconstruction = 'omitharmonics');
+            testCase.verifyEqual(fitted, periodic, AbsTol = 1e-9);
+            testCase.verifyEqual(full, polynomial + fitted, AbsTol = 1e-9);
+            testCase.verifyEqual(aa, a);
+            testCase.verifyEqual(bb, b);
+            testCase.verifyEqual(dd, d);
+            testCase.verifyEqual(ee, e);
+        end
+
+        function onlyHarmonicsInvalidTimes(testCase)
+            t = testCase.T;
+            t([8, 12, 15]) = [NaN, Inf, -Inf];
+            for periods = {[], 1}
+                [~, ~, fitted] = fittimeseries(t, testCase.X, [], 2, periods{1}, ...
+                    Reconstruction = "onlyharmonics");
+                testCase.verifyTrue(all(isnan(fitted(~isfinite(t), :)), 'all'));
+                testCase.verifyTrue(all(isfinite(fitted(isfinite(t), :)), 'all'));
+                if isempty(periods{1})
+                    testCase.verifyEqual(fitted(isfinite(t), :), zeros(nnz(isfinite(t)), 2));
+                end
+            end
+        end
+
         function multiplePeriodSinCos(testCase, harmonicPeriods, uncertaintyMode)
             t = testCase.T;
             % Build the reference model directly in sine/cosine order.
