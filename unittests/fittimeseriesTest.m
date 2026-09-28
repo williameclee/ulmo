@@ -1,3 +1,8 @@
+%% fittimeseriesTest
+%
+% Last modified by
+%   2026/09/28, En-Chi Lee (williameclee@arizona.edu)
+
 classdef fittimeseriesTest < matlab.unittest.TestCase
     % Run with runtests('fittimeseriesTest').
     properties (TestParameter)
@@ -41,10 +46,39 @@ classdef fittimeseriesTest < matlab.unittest.TestCase
 
     methods (Test)
 
+        function averageRangeDefaultsToFitRange(testCase, timeType)
+            u = testCase.T;
+            x = 2 + 3 * u + 0.2 * u .^ 2;
+            convert = @(v) v;
+
+            if strcmp(timeType, 'duration')
+                convert = @(v) years(v);
+            elseif strcmp(timeType, 'datetime')
+                convert = @(v) datetime(2005, 1, 1) + years(v);
+            end
+
+            t = convert(u);
+            % Asymmetric intervals distinguish their mean derivatives from
+            % the input-time mean, including when FitRange exceeds coverage.
+            for limits = {[1, 4], [-1, 9]}
+                range = limits{1};
+                actual = fittimeseries(t, x, [], 2, [], ...
+                    FitRange = convert(range), PolynomialFormat = 'average-derivatives');
+                testCase.verifyEqual(actual(2), 3 + 0.2 * sum(range), AbsTol = 1e-9);
+                explicit = fittimeseries(t, x, [], 2, [], ...
+                    FitRange = convert(range), AverageRange = convert([2, 3]), ...
+                    PolynomialFormat = 'average-derivatives');
+                testCase.verifyEqual(explicit(2), 4, AbsTol = 1e-9);
+            end
+
+            default = fittimeseries(t, x, [], 2, [], PolynomialFormat = 'average-derivatives');
+            testCase.verifyEqual(default(2), 4.2, AbsTol = 1e-9);
+        end
+
         function onlyHarmonics(testCase, format, transposeData, uncertaintyMode)
             t = testCase.T;
             periodic = [cos(2 * pi * t) + 2 * sin(pi * t), ...
-                3 * sin(2 * pi * t) - cos(pi * t)];
+                            3 * sin(2 * pi * t) - cos(pi * t)];
             x = [2 + 3 * t + 0.2 * t .^ 2, -1 + 0.5 * t] + periodic;
             sigma = [];
             if strcmp(uncertaintyMode, 'column'), sigma = testCase.Sigma(:, 1); end
@@ -52,7 +86,7 @@ classdef fittimeseriesTest < matlab.unittest.TestCase
             x(20, 1) = NaN;
             if transposeData, x = x.'; periodic = periodic.'; end
             args = {sigma, 2, [1, 2], 'PeriodicFormat', format, ...
-                'PolynomialFormat', 'average-derivatives', 'FitRange', [1, 5]};
+                        'PolynomialFormat', 'average-derivatives', 'FitRange', [1, 5]};
             [a, b, full, d, e] = fittimeseries(t, x, args{:});
             [aa, bb, fitted, dd, ee] = fittimeseries(t, x, args{:}, ...
                 Reconstruction = 'onlyharmonics');
@@ -69,25 +103,31 @@ classdef fittimeseriesTest < matlab.unittest.TestCase
         function onlyHarmonicsInvalidTimes(testCase)
             t = testCase.T;
             t([8, 12, 15]) = [NaN, Inf, -Inf];
+
             for periods = {[], 1}
                 [~, ~, fitted] = fittimeseries(t, testCase.X, [], 2, periods{1}, ...
                     Reconstruction = "onlyharmonics");
                 testCase.verifyTrue(all(isnan(fitted(~isfinite(t), :)), 'all'));
                 testCase.verifyTrue(all(isfinite(fitted(isfinite(t), :)), 'all'));
+
                 if isempty(periods{1})
                     testCase.verifyEqual(fitted(isfinite(t), :), zeros(nnz(isfinite(t)), 2));
                 end
+
             end
+
         end
 
         function multiplePeriodSinCos(testCase, harmonicPeriods, uncertaintyMode)
             t = testCase.T;
             % Build the reference model directly in sine/cosine order.
             G = [ones(size(t)), t];
+
             for period = harmonicPeriods
                 G = [G, sin(2 * pi * t / period), cos(2 * pi * t / period)]; %#ok<AGROW>
             end
-            beta = [(1:size(G, 2))', -(size(G, 2):-1:1)'];
+
+            beta = [(1:size(G, 2))', - (size(G, 2):-1:1)'];
             x = G * beta + [0.02 * sin(5 * t), 0.03 * cos(3 * t)];
             sigma = [];
             if strcmp(uncertaintyMode, 'column'), sigma = testCase.Sigma(:, 1); end
@@ -99,10 +139,12 @@ classdef fittimeseriesTest < matlab.unittest.TestCase
             for j = 1:size(x, 2)
                 design = G;
                 data = x(:, j);
+
                 if ~isempty(sigma)
                     design = design ./ sigma(:);
                     data = data ./ sigma(:);
                 end
+
                 [Q, R] = qr(design, 0);
                 expected = R \ (Q' * data);
                 inverseR = R \ eye(size(R));
@@ -115,6 +157,7 @@ classdef fittimeseriesTest < matlab.unittest.TestCase
                     reshape(se(3:end), 2, []).', AbsTol = 1e-9);
                 testCase.verifyEqual(fitted(:, j), G * expected, AbsTol = 1e-9);
             end
+
         end
 
         function matrixOrientations(testCase, format, transposeTime, transposeData, transposeSigma)

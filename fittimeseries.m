@@ -76,8 +76,8 @@
 %       Endpoints use the same time type and units as t. In
 %       "average-derivatives" mode, endpoints must be finite and the
 %       interval must have positive length. This does not select fit data.
-%       The default interval is [min(t), max(t)], omitting missing times,
-%       independently of FitRange and missing observations in x or sigma.
+%       The default interval is FitRange, independently of missing
+%       observations in x or sigma or shorter input-time coverage.
 %       The interval may extend beyond FitRange, implying extrapolation.
 %       This option has no effect in "coefficients" mode.
 %       Data type: NUMERIC | DATETIME | DURATION (matching t)
@@ -140,7 +140,7 @@
 %   2025/06/03, En-Chi Lee (williameclee@arizona.edu)
 %
 % Last modified by
-%   2026/09/27, En-Chi Lee (williameclee@arizona.edu)
+%   2026/09/28, En-Chi Lee (williameclee@arizona.edu)
 
 function [polys, harmons, xFit, polySigmas, harmonSigmas] = ...
         fittimeseries(t, x, sigma, p, periods, options)
@@ -162,8 +162,7 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas] = ...
             = "includeharmonics"
         options.FitRange (1, 2) {mustBeCompatibleRange(options.FitRange, t)} = ...
             [min(t(:), [], 'omitmissing'), max(t(:), [], 'omitmissing')]
-        options.AverageRange (1, 2) {mustBeCompatibleRange(options.AverageRange, t)} = ...
-            [min(t(:), [], 'omitmissing'), max(t(:), [], 'omitmissing')]
+        options.AverageRange (1, 2) {mustBeCompatibleRange(options.AverageRange, t)}
     end
 
     arguments (Output)
@@ -175,6 +174,10 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas] = ...
     end
 
     %% Input sanitisation
+    if ~isfield(options, 'AverageRange')
+        options.AverageRange = options.FitRange;
+    end
+
     t = t(:);
     nTime = numel(t);
     [x, isTrans] = normalisedata(double(x), nTime, 'x');
