@@ -40,6 +40,14 @@ their caching.
 
 ### 1. Define the DT2024 correction recipe
 
+Status: source contract and temporal processing are specified in
+[the step 1 recipe](jason3-ssh-correction-recipe.md). The scientific checkpoint
+remains open: the local pass file cannot reproduce the published spatial
+reduction, and CMEMS-specific mission/datum transfer has not been established.
+Independent helper work can proceed within the documented source support;
+DT2024 integration must wait for the listed evidence or an explicitly reviewed
+approximation. The existing text file alone is not yet an approved L4 recipe.
+
 - Document the JPL file's four columns, centimeter units, release date and valid
   time coverage. Define positive output as a correction subtracted from SSH;
   convert centimeters to meters by multiplying by 0.01.

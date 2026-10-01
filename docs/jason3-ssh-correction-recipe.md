@@ -130,12 +130,17 @@ weights or CMEMS mission-combination weights. Therefore:
   has been identified or downloaded in this step.
 - Even a global series remains a uniform approximation for CMEMS all-satellite
   L4. It cannot recover the spatially varying effect of rerunning cross-calibration
-  and mapping with corrected Jason-3 observations. Results outside Jason-3's
+and mapping with corrected Jason-3 observations. Results outside Jason-3's
   approximately 66-degree latitude coverage need the same explicit qualification.
 
 Leclercq et al. apply the radiometer adjustment to DT2024 GMSL and C3S Pacific
 grids [6, Methods/Data]. That is evidence of scientific use, but those methods
 do not supply the missing all-satellite CMEMS transfer recipe.
+
+The DT2024 reprocessing description itself reports regional bias adjustments
+between reference missions and changes to multi-mission cross-calibration and
+mapping [7]. This is a product-specific reason to avoid treating its calibration
+as a single undocumented switch date.
 
 ## Mission transitions and coverage: no automatic transfer yet
 
@@ -202,6 +207,7 @@ cell noise in `sshSigma`.
 [4]: https://duacs.cls.fr/duacs-system-description/operational-news/duacs-nrt-system-impacting-version-changes/apr-2022-duacs-19-1-0/
 [5]: https://duacs.cls.fr/duacs-system-description/operational-news/duacs-nrt-system-impacting-version-changes/may-2022-duacs-19-2-0/
 [6]: https://www.nature.com/articles/s43247-025-03149-5
+[7]: https://duacs.cls.fr/duacs-system-description/operational-news/duacs-my-system-impacting-version-changes/nov-2024-duacs-dt-2024/
 
 - [1 — JPL dataset catalog and downloaded file header][1].
 - [2 — ESA SLBC ATBD, issue 2.0, internal date 2025-03-31][2].
@@ -211,3 +217,4 @@ cell noise in `sshSigma`.
 - [4 — DUACS NRT Sentinel-6 introduction][4].
 - [5 — DUACS Jason-3 orbit change and reintroduction][5].
 - [6 — Leclercq et al. (2026), Methods/Data][6].
+- [7 — DUACS MY DT2024 reprocessing, calibration and mapping changes][7].
