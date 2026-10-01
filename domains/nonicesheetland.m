@@ -41,46 +41,12 @@ function varargout = nonicesheetland(varargin)
         varargout = {false};
         return
     end
-    % Adapt the legacy positional domain interface to validated named options.
-    names = {'Upscale', 'Buffer', 'Latlim', 'MoreBuffers', 'LonOrigin', 'RotateBack'};
-    positional = {};
-    while ~isempty(varargin) && ~ischar(varargin{1}) && ~isstring(varargin{1})
-        if numel(positional) / 2 == numel(names)
-            error('ULMO:nonicesheetland:TooManyInputs', 'Too many positional inputs.');
-        end
-        positional = [positional, names(numel(positional) / 2 + 1), varargin(1)];
-        varargin(1) = [];
-    end
-    [xy, polygon] = landpolygon(positional{:}, varargin{:});
-    varargout = returncoastoutputs(nargout, xy, polygon);
-end
-
-function [xy, polygon] = landpolygon(options)
-    arguments (Input)
-        options.Upscale {mustBeNumeric, mustBeScalarOrEmpty, mustBeFinite, mustBeNonnegative} = 0
-        options.Buffer {mustBeNumeric, mustBeScalarOrEmpty, mustBeFinite} = 0
-        options.Latlim {mustBeNumeric, mustBeReal, mustBeValidLatlim} = [-90,90]
-        options.MoreBuffers cell = {}
-        options.LonOrigin {mustBeNumeric, mustBeScalarOrEmpty, mustBeFinite} = 180
-        options.ForceNew (1,1) logical = false
-        options.SaveData (1,1) logical = true
-        options.BeQuiet (1,1) logical = false
-        % GeoDomain passes these common options; this domain is unrotated.
-        options.RotateBack (1,1) logical = false
-        options.NearBy = []
-    end
-    upscale = options.Upscale;
-    if isempty(upscale) || upscale == 1, upscale = 0; end
-    buf = options.Buffer;
-    if isempty(buf), buf = 0; end
-    latlim = options.Latlim;
-    if isempty(latlim) || any(isnan(latlim)), latlim = [-90,90]; end
-    lonOrigin = options.LonOrigin;
-    if isempty(lonOrigin), lonOrigin = 180; end
+    [upscale, latlim, buf, moreBuffers, lonOrigin, ~, forceNew, saveData, quiet] = ...
+        parseoceaninputs(varargin, 'DefaultLonOrigin', 180, 'DefaultLatlim', [-90,90], 'DefaultMoreBuffers', {});
     world = polyshape(lonOrigin + [-180,180,180,-180], [-90,-90,90,90]);
     [~, ocean] = alloceans('Upscale', upscale, 'Buffer', buf, ...
-        'Latlim', [-90,90], 'MoreBuffers', options.MoreBuffers, 'LonOrigin', lonOrigin, ...
-        'ForceNew', options.ForceNew, 'SaveData', options.SaveData, 'BeQuiet', options.BeQuiet);
+        'Latlim', [-90,90], 'MoreBuffers', moreBuffers, 'LonOrigin', lonOrigin, ...
+        'ForceNew', forceNew, 'SaveData', saveData, 'BeQuiet', quiet > 0);
     polygon = subtract(world, ocean);
     greenlandDomain = GeoDomain('greenland', 'Buffer', buf, 'Upscale', upscale);
     xy = greenlandDomain.Lonlat([]);
@@ -91,7 +57,7 @@ function [xy, polygon] = landpolygon(options)
     clip = polyshape(lonOrigin + [-180,180,180,-180], latlim([1,1,2,2]));
     polygon = intersect(polygon, clip);
     [lon,lat] = boundary(polygon);
-    xy = [lon,lat];
+    varargout = returncoastoutputs(nargout, [lon,lat], polygon);
 end
 
 function polygon = geographicpolygon(xy, world)
@@ -105,15 +71,4 @@ function polygon = geographicpolygon(xy, world)
     polygon = union(base,translate(base,[-360,0]));
     polygon = union(polygon,translate(base,[360,0]));
     polygon = intersect(polygon,world);
-end
-
-function mustBeValidLatlim(value)
-    if isempty(value) || any(isnan(value)), return; end
-    mustBeVector(value);
-    mustBeFinite(value);
-    mustBeInRange(value, -90, 90);
-    if numel(value) > 2 || (numel(value) == 2 && value(1) > value(2))
-        error('ULMO:nonicesheetland:InvalidLatlim', ...
-            'Latlim must be a scalar or an increasing pair of latitudes.');
-    end
 end

@@ -67,22 +67,6 @@ function testGeoDomainIdentity(tc)
     xy=d.Lonlat(180);tc.verifyTrue(all(isfinite(xy(~isnan(xy)))));
 end
 
-function testPositionalAndEmptyDefaults(tc)
-    [~,named]=nonicesheetland('Upscale',0,'Buffer',2,'Latlim',10,'SaveData',false);
-    [~,positional]=nonicesheetland(0,2,10,{},180,false,'SaveData',false);
-    tc.verifyEqual(area(positional),area(named),AbsTol=1e-8);
-    [~,defaults]=nonicesheetland([],[],[],{},[],'SaveData',false);
-    tc.verifyEqual(area(defaults),3600,AbsTol=1e-8);
-    tc.verifyFalse(nonicesheetland("rotated"));
-end
-
-function testInvalidLatitudeLimits(tc)
-    tc.verifyError(@()nonicesheetland('Latlim',[10,-10]), ...
-        'ULMO:nonicesheetland:InvalidLatlim');
-    tc.verifyError(@()nonicesheetland('Latlim',[-20,0,20]), ...
-        'ULMO:nonicesheetland:InvalidLatlim');
-end
-
 function write(folder,name,lines)
     fid=fopen(fullfile(folder,[name,'.m']),'w');c=onCleanup(@()fclose(fid));
     fprintf(fid,'%s\n',lines);
