@@ -7,6 +7,7 @@
 %   polys = fittimeseries(t, x)
 %   [polys, harmons, xFit] = fittimeseries(t, x, sigma, p, periods)
 %   [polys, harmons, xFit, polySigmas, harmonSigmas] = fittimeseries(__)
+%   [polys, harmons, xFit, polySigmas, harmonSigmas, polyCovariances] = fittimeseries(__)
 %   [__] = fittimeseries(__, "Name", Value)
 %
 % Input arguments
@@ -122,6 +123,11 @@
 %       The units and dimensions are the same as harmons.
 %       Data type: DOUBLE
 %
+%   polyCovariances - Raw polynomial coefficient covariance for each series
+%       Always in ascending coefficient order, independent of PolynomialFormat.
+%       Dimension: [p+1 x p+1 x M]; scaled by residual variance like polySigmas.
+%       Data type: DOUBLE
+%
 % Notes
 %   N is the number of input times, M the number of series, and K the number
 %   of harmonic periods. Invalid times and nonfinite observations are
@@ -140,9 +146,9 @@
 %   2025/06/03, En-Chi Lee (williameclee@arizona.edu)
 %
 % Last modified by
-%   2026/09/28, En-Chi Lee (williameclee@arizona.edu)
+%   2026/10/02, En-Chi Lee (williameclee@arizona.edu)
 
-function [polys, harmons, xFit, polySigmas, harmonSigmas] = ...
+function [polys, harmons, xFit, polySigmas, harmonSigmas, polyCovs] = ...
         fittimeseries(t, x, sigma, p, periods, options)
 
     arguments (Input)
@@ -171,6 +177,7 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas] = ...
         xFit (:, :) {mustBeNumeric}
         polySigmas (:, :) {mustBeNumeric}
         harmonSigmas {mustBeNumeric}
+        polyCovs {mustBeNumeric}
     end
 
     %% Input sanitisation
@@ -201,7 +208,7 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas] = ...
     end
 
     fitRange = options.FitRange(:);
-    averageRange = options.AverageRange(:);
+    avgRange = options.AverageRange(:);
 
     isTime = isdatetime(t);
 
@@ -215,11 +222,11 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas] = ...
         tRef = dateshift(t(firstValid), 'start', 'year');
         t = years(t - tRef);
         fitRange = years(fitRange - tRef);
-        averageRange = years(averageRange - tRef);
+        avgRange = years(avgRange - tRef);
     elseif isduration(t)
         t = years(t);
         fitRange = years(fitRange);
-        averageRange = years(averageRange);
+        avgRange = years(avgRange);
     else
 
         if ~isreal(t)
@@ -228,7 +235,7 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas] = ...
 
         t = double(t);
         fitRange = double(fitRange);
-        averageRange = double(averageRange);
+        avgRange = double(avgRange);
     end
 
     if isduration(periods)
@@ -241,20 +248,21 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas] = ...
         error('fittimeseries:InvalidPeriods', 'Periods must be finite, real, and positive.');
     end
 
-    polyTransform = [];
+    polyTrans = [];
 
     if options.PolynomialFormat == "average-derivatives"
 
-        if any(~isfinite(averageRange)) || averageRange(2) <= averageRange(1)
+        if any(~isfinite(avgRange)) || avgRange(2) <= avgRange(1)
             error('ULMO:fittimeseries:InvalidAverageRange', ...
             'AverageRange must have finite endpoints and positive length.');
         end
 
-        polyTransform = averagederivativematrix(p, averageRange);
+        polyTrans = averagederivativematrix(p, avgRange);
     end
 
     polys = nan(p + 1, nSeries);
     polySigmas = nan(p + 1, nSeries);
+    polyCovs = nan(p + 1, p + 1, nSeries);
 
     harmons = nan(numel(periods), 2, nSeries);
     harmonSigmas = harmons;
@@ -280,10 +288,10 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas] = ...
         end
 
         [polys(:, iSeries), harmons(:, :, iSeries), xFit(:, iSeries), ...
-             polySigmas(:, iSeries), harmonSigmas(:, :, iSeries)] = ...
+             polySigmas(:, iSeries), harmonSigmas(:, :, iSeries), polyCovs(:, :, iSeries)] = ...
             fitsingleseries( ...
             t(isValid), x(isValid, iSeries), sigma_tofit, p, periods, ...
-            options.PeriodicFormat, isTime, t, options.Reconstruction, polyTransform);
+            options.PeriodicFormat, isTime, t, options.Reconstruction, polyTrans);
     end
 
     if isTrans
@@ -308,8 +316,8 @@ function [data, transposed] = normalisedata(data, nTimes, name)
 
 end
 
-function [polys, harmons, xFit, polySigmas, harmonSigmas] = ...
-        fitsingleseries(t, x, sigma, p, periods, harmonFmt, isTime, tFit, fitMethod, polyTransform)
+function [polys, harmons, xFit, polySigmas, harmonSigmas, polyCov] = ...
+        fitsingleseries(t, x, sigma, p, periods, harmonFmt, isTime, tFit, fitMethod, polyTrans)
     %% Fitting
     N = numel(t);
     X = zeros([N, p + 1 + 2 * numel(periods)]);
@@ -336,12 +344,13 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas] = ...
         coeffSigmas = sqrt(diag(cov_matrix));
     end
 
+    polyCov = cov_matrix(1:p + 1, 1:p + 1);
     polys = coeffs(1:p + 1);
     polySigmas = coeffSigmas(1:p + 1);
 
-    if ~isempty(polyTransform)
-        polys = polyTransform * polys;
-        polyCov = polyTransform * cov_matrix(1:p + 1, 1:p + 1) * polyTransform.';
+    if ~isempty(polyTrans)
+        polys = polyTrans * polys;
+        polyCov = polyTrans * polyCov * polyTrans.';
         polyCov = (polyCov + polyCov.') / 2;
         polySigmas = sqrt(max(diag(polyCov), 0));
     end
@@ -454,26 +463,6 @@ function mustBeCompatibleRange(value, t)
     if value(1) > value(2)
         error('ULMO:fittimeseries:InvalidRange', ...
         'Range endpoints must be in ascending order.');
-    end
-
-end
-
-function A = averagederivativematrix(p, interval)
-    % A(k+1,j+1) is the interval average of d^k(t^j)/dt^k.
-    a = interval(1);
-    b = interval(2);
-    A = zeros(p + 1);
-
-    for k = 0:p
-
-        for j = k:p
-            n = j - k;
-            % Divided difference of t^(n+1), evaluated without subtracting
-            % nearby endpoint powers or dividing by a small interval length.
-            meanPower = sum(a .^ (0:n) .* b .^ (n:-1:0)) / (n + 1);
-            A(k + 1, j + 1) = prod((j - k + 1):j) * meanPower;
-        end
-
     end
 
 end
