@@ -146,9 +146,9 @@
 %   2025/06/03, En-Chi Lee (williameclee@arizona.edu)
 %
 % Last modified by
-%   2026/09/28, En-Chi Lee (williameclee@arizona.edu)
+%   2026/10/02, En-Chi Lee (williameclee@arizona.edu)
 
-function [polys, harmons, xFit, polySigmas, harmonSigmas, polyCovariances] = ...
+function [polys, harmons, xFit, polySigmas, harmonSigmas, polyCovs] = ...
         fittimeseries(t, x, sigma, p, periods, options)
 
     arguments (Input)
@@ -177,7 +177,7 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas, polyCovariances] = ...
         xFit (:, :) {mustBeNumeric}
         polySigmas (:, :) {mustBeNumeric}
         harmonSigmas {mustBeNumeric}
-        polyCovariances {mustBeNumeric}
+        polyCovs {mustBeNumeric}
     end
 
     %% Input sanitisation
@@ -208,7 +208,7 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas, polyCovariances] = ...
     end
 
     fitRange = options.FitRange(:);
-    averageRange = options.AverageRange(:);
+    avgRange = options.AverageRange(:);
 
     isTime = isdatetime(t);
 
@@ -222,11 +222,11 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas, polyCovariances] = ...
         tRef = dateshift(t(firstValid), 'start', 'year');
         t = years(t - tRef);
         fitRange = years(fitRange - tRef);
-        averageRange = years(averageRange - tRef);
+        avgRange = years(avgRange - tRef);
     elseif isduration(t)
         t = years(t);
         fitRange = years(fitRange);
-        averageRange = years(averageRange);
+        avgRange = years(avgRange);
     else
 
         if ~isreal(t)
@@ -235,7 +235,7 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas, polyCovariances] = ...
 
         t = double(t);
         fitRange = double(fitRange);
-        averageRange = double(averageRange);
+        avgRange = double(avgRange);
     end
 
     if isduration(periods)
@@ -248,21 +248,21 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas, polyCovariances] = ...
         error('fittimeseries:InvalidPeriods', 'Periods must be finite, real, and positive.');
     end
 
-    polyTransform = [];
+    polyTrans = [];
 
     if options.PolynomialFormat == "average-derivatives"
 
-        if any(~isfinite(averageRange)) || averageRange(2) <= averageRange(1)
+        if any(~isfinite(avgRange)) || avgRange(2) <= avgRange(1)
             error('ULMO:fittimeseries:InvalidAverageRange', ...
             'AverageRange must have finite endpoints and positive length.');
         end
 
-        polyTransform = averagederivativematrix(p, averageRange);
+        polyTrans = averagederivativematrix(p, avgRange);
     end
 
     polys = nan(p + 1, nSeries);
     polySigmas = nan(p + 1, nSeries);
-    polyCovariances = nan(p + 1, p + 1, nSeries);
+    polyCovs = nan(p + 1, p + 1, nSeries);
 
     harmons = nan(numel(periods), 2, nSeries);
     harmonSigmas = harmons;
@@ -288,10 +288,10 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas, polyCovariances] = ...
         end
 
         [polys(:, iSeries), harmons(:, :, iSeries), xFit(:, iSeries), ...
-             polySigmas(:, iSeries), harmonSigmas(:, :, iSeries), polyCovariances(:, :, iSeries)] = ...
+             polySigmas(:, iSeries), harmonSigmas(:, :, iSeries), polyCovs(:, :, iSeries)] = ...
             fitsingleseries( ...
             t(isValid), x(isValid, iSeries), sigma_tofit, p, periods, ...
-            options.PeriodicFormat, isTime, t, options.Reconstruction, polyTransform);
+            options.PeriodicFormat, isTime, t, options.Reconstruction, polyTrans);
     end
 
     if isTrans
@@ -316,8 +316,8 @@ function [data, transposed] = normalisedata(data, nTimes, name)
 
 end
 
-function [polys, harmons, xFit, polySigmas, harmonSigmas, polyCovariance] = ...
-        fitsingleseries(t, x, sigma, p, periods, harmonFmt, isTime, tFit, fitMethod, polyTransform)
+function [polys, harmons, xFit, polySigmas, harmonSigmas, polyCov] = ...
+        fitsingleseries(t, x, sigma, p, periods, harmonFmt, isTime, tFit, fitMethod, polyTrans)
     %% Fitting
     N = numel(t);
     X = zeros([N, p + 1 + 2 * numel(periods)]);
@@ -344,13 +344,13 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas, polyCovariance] = ...
         coeffSigmas = sqrt(diag(cov_matrix));
     end
 
-    polyCovariance = cov_matrix(1:p + 1, 1:p + 1);
+    polyCov = cov_matrix(1:p + 1, 1:p + 1);
     polys = coeffs(1:p + 1);
     polySigmas = coeffSigmas(1:p + 1);
 
-    if ~isempty(polyTransform)
-        polys = polyTransform * polys;
-        polyCov = polyTransform * polyCovariance * polyTransform.';
+    if ~isempty(polyTrans)
+        polys = polyTrans * polys;
+        polyCov = polyTrans * polyCov * polyTrans.';
         polyCov = (polyCov + polyCov.') / 2;
         polySigmas = sqrt(max(diag(polyCov), 0));
     end
