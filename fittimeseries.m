@@ -7,6 +7,7 @@
 %   polys = fittimeseries(t, x)
 %   [polys, harmons, xFit] = fittimeseries(t, x, sigma, p, periods)
 %   [polys, harmons, xFit, polySigmas, harmonSigmas] = fittimeseries(__)
+%   [polys, harmons, xFit, polySigmas, harmonSigmas, polyCovariances] = fittimeseries(__)
 %   [__] = fittimeseries(__, "Name", Value)
 %
 % Input arguments
@@ -122,6 +123,11 @@
 %       The units and dimensions are the same as harmons.
 %       Data type: DOUBLE
 %
+%   polyCovariances - Raw polynomial coefficient covariance for each series
+%       Always in ascending coefficient order, independent of PolynomialFormat.
+%       Dimension: [p+1 x p+1 x M]; scaled by residual variance like polySigmas.
+%       Data type: DOUBLE
+%
 % Notes
 %   N is the number of input times, M the number of series, and K the number
 %   of harmonic periods. Invalid times and nonfinite observations are
@@ -142,7 +148,7 @@
 % Last modified by
 %   2026/09/28, En-Chi Lee (williameclee@arizona.edu)
 
-function [polys, harmons, xFit, polySigmas, harmonSigmas] = ...
+function [polys, harmons, xFit, polySigmas, harmonSigmas, polyCovariances] = ...
         fittimeseries(t, x, sigma, p, periods, options)
 
     arguments (Input)
@@ -171,6 +177,7 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas] = ...
         xFit (:, :) {mustBeNumeric}
         polySigmas (:, :) {mustBeNumeric}
         harmonSigmas {mustBeNumeric}
+        polyCovariances {mustBeNumeric}
     end
 
     %% Input sanitisation
@@ -255,6 +262,7 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas] = ...
 
     polys = nan(p + 1, nSeries);
     polySigmas = nan(p + 1, nSeries);
+    polyCovariances = nan(p + 1, p + 1, nSeries);
 
     harmons = nan(numel(periods), 2, nSeries);
     harmonSigmas = harmons;
@@ -280,7 +288,7 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas] = ...
         end
 
         [polys(:, iSeries), harmons(:, :, iSeries), xFit(:, iSeries), ...
-             polySigmas(:, iSeries), harmonSigmas(:, :, iSeries)] = ...
+             polySigmas(:, iSeries), harmonSigmas(:, :, iSeries), polyCovariances(:, :, iSeries)] = ...
             fitsingleseries( ...
             t(isValid), x(isValid, iSeries), sigma_tofit, p, periods, ...
             options.PeriodicFormat, isTime, t, options.Reconstruction, polyTransform);
@@ -308,7 +316,7 @@ function [data, transposed] = normalisedata(data, nTimes, name)
 
 end
 
-function [polys, harmons, xFit, polySigmas, harmonSigmas] = ...
+function [polys, harmons, xFit, polySigmas, harmonSigmas, polyCovariance] = ...
         fitsingleseries(t, x, sigma, p, periods, harmonFmt, isTime, tFit, fitMethod, polyTransform)
     %% Fitting
     N = numel(t);
@@ -336,12 +344,13 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas] = ...
         coeffSigmas = sqrt(diag(cov_matrix));
     end
 
+    polyCovariance = cov_matrix(1:p + 1, 1:p + 1);
     polys = coeffs(1:p + 1);
     polySigmas = coeffSigmas(1:p + 1);
 
     if ~isempty(polyTransform)
         polys = polyTransform * polys;
-        polyCov = polyTransform * cov_matrix(1:p + 1, 1:p + 1) * polyTransform.';
+        polyCov = polyTransform * polyCovariance * polyTransform.';
         polyCov = (polyCov + polyCov.') / 2;
         polySigmas = sqrt(max(diag(polyCov), 0));
     end
@@ -454,26 +463,6 @@ function mustBeCompatibleRange(value, t)
     if value(1) > value(2)
         error('ULMO:fittimeseries:InvalidRange', ...
         'Range endpoints must be in ascending order.');
-    end
-
-end
-
-function A = averagederivativematrix(p, interval)
-    % A(k+1,j+1) is the interval average of d^k(t^j)/dt^k.
-    a = interval(1);
-    b = interval(2);
-    A = zeros(p + 1);
-
-    for k = 0:p
-
-        for j = k:p
-            n = j - k;
-            % Divided difference of t^(n+1), evaluated without subtracting
-            % nearby endpoint powers or dividing by a small interval length.
-            meanPower = sum(a .^ (0:n) .* b .^ (n:-1:0)) / (n + 1);
-            A(k + 1, j + 1) = prod((j - k + 1):j) * meanPower;
-        end
-
     end
 
 end
