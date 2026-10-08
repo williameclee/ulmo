@@ -31,11 +31,11 @@
 %       Same length and units as the original vals; mutually exclusive with
 %       dataCovariance.
 %   dataCovariance (name-value) - Optional positive-definite real covariance.
-%       Observation-by-observation matrix in squared field units. All entries 
+%       Observation-by-observation matrix in squared field units. All entries
 %       must be finite, including omitted observations.
 %       The full supplied matrix must be positive definite.
 %   estimateNoiseVariance (name-value) - Whether to estimate an iid residual variance.
-%       Requires nObs > J and no supplied uncertainty. 
+%       Requires nObs > J and no supplied uncertainty.
 %       Uses sum(resids .^ 2) / (nObs - J); this can include model mismatch.
 %       Default: false.
 %
@@ -121,7 +121,7 @@ function [coeffs, V, N, J, nObs, validIdxs, rnk, SVs, condNum, fitVals, resids, 
     if J > nObs
         error('ULMO:xyzs2slep:InvalidTruncation', ...
             ['The default truncation exceeds the observation count. ', ...
-             'The Shannon number of the domain is %d, but there are only %d data points available.'
+             'The Shannon number of the domain is %d, but there are only %d data points available. ', ...
          'Specify a smaller truncation.'], ...
             J, nObs);
     end
@@ -196,8 +196,8 @@ function [coeffs, V, N, J, nObs, validIdxs, rnk, SVs, condNum, fitVals, resids, 
     if condNum > 1 / sqrt(eps)
         warning('ULMO:xyzs2slep:IllConditioned', ...
             ['Sampled basis condition number is large (%.3g); ', ...
-         'coefficients may be poorly constrained.'] ...
-            , condNum);
+         'coefficients may be poorly constrained.'], ...
+            condNum);
     end
 
     coeffs = Q * ((U.' * wghtedVals) ./ SVs);
