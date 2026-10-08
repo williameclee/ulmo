@@ -1,6 +1,6 @@
 # Fitting scattered observations
 
-`xyzs2slep` fits a scalar field observed at paired longitude/latitude points directly to a truncated regional Slepian basis. The `s` means **scattered**. No gridding is performed, and each observation receives equal weight.
+`xyzs2slep` fits a scalar field observed at paired longitude/latitude points directly to a truncated regional Slepian basis. No gridding is performed, and each observation receives equal weight.
 
 ```matlab
 % Inputs are vectors of equal length. Coordinates use degrees.
@@ -38,11 +38,11 @@ values = grid(sub2ind(size(grid), 91-lat, lon+1));
 maxCoefficientError = max(abs(falpha-truth))
 ```
 
-The example selects irregular paired samples from a synthesized grid only to create independently verifiable test data. ULMO's current `plm2xyz` input parser rejects vector coordinates despite its documented scattered mode. The new fitter does not call `plm2xyz` or grid observations: real inputs may have arbitrary noninteger coordinates.
+The example selects irregular paired samples from a synthesised grid only to create independently verifiable test data. ULMO's current `plm2xyz` input parser rejects vector coordinates despite its documented scattered mode. The new fitter does not call `plm2xyz` or grid observations: real inputs may have arbitrary noninteger coordinates.
 
-## Outputs and numerical behavior
+## Outputs and numerical behaviour
 
-Outputs are separate positional arguments, beginning with coefficients, concentration eigenvalues, and Shannon number, following the Slepian transform convention. `help xyzs2slep` lists all twelve. The coefficients match ULMO's 4π-normalized harmonic transforms; the implementation explicitly corrects `ylm` phase and normalization. They should not be compared directly to Bravo's unit-normalized cap coefficients without converting conventions and ensuring the same basis.
+Outputs are separate positional arguments, beginning with coefficients, concentration eigenvalues, and Shannon number, following the Slepian transform convention. `help xyzs2slep` lists all twelve. The coefficients match ULMO's $4\pi$-normalised harmonic transforms; the implementation explicitly corrects `ylm` phase and normalisation. They should not be compared directly to Bravo's unit-normalised cap coefficients without converting conventions and ensuring the same basis.
 
 The default truncation is `max(1, round(N))`, limited to the basis dimension. Specify `truncation` to choose it explicitly. The sampled design matrix must have full numerical column rank, with at least as many observations as retained coefficients. Invalid truncations and rank-deficient fits raise errors instead of silently discarding modes. Exactly determined full-rank fits are supported.
 
@@ -50,4 +50,4 @@ An economy SVD solves ordinary least squares without normal equations. `rankTole
 
 Basis construction requests the full basis before sorting by concentration. Harmonic evaluation uses point blocks controlled by `blockSize` (default 1024), but the dense observation-by-truncation design matrix and its SVD still consume memory. The full basis itself scales as `(L+1)^4` elements. Existing basis/kernel routines may read and write their normal caches under `IFILES`.
 
-This version has no uncertainty propagation, weighted fitting, area weighting, or regularization. Those belong to the next implementation stage. Equal observation weights give densely sampled regions more influence. `xyz2slep` is not changed or shadowed: with Bravo installed it still resolves to Bravo's scattered-cap routine; a future gridded ULMO interface is separate work.
+This version has no uncertainty propagation, weighted fitting, area weighting, or regularisation. Those belong to the next implementation stage. Equal observation weights give densely sampled regions more influence. `xyz2slep` is not changed or shadowed: with Bravo installed it still resolves to Bravo's scattered-cap routine; a future gridded ULMO interface is separate work.
