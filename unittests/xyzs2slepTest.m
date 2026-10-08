@@ -156,6 +156,213 @@ classdef xyzs2slepTest < matlab.unittest.TestCase
             testCase.verifyEqual(actualN, outerN - holeN + islandN, 'AbsTol', 2e-3);
         end
 
+        function uncertaintyAbsentPreservesOutputs(testCase)
+            data = cos((1:80)');
+            original = cell(1, 12);
+            extended = cell(1, 15);
+            [original{:}] = xyzs2slep(data, testCase.Lon, testCase.Lat, testCase.Polygon, 3, truncation = 4);
+            [extended{:}] = xyzs2slep(data, testCase.Lon, testCase.Lat, testCase.Polygon, 3, truncation = 4);
+            testCase.verifyEqual(extended(1:12), original);
+            testCase.verifyEmpty(extended{13});
+            testCase.verifyEmpty(extended{14});
+            testCase.verifyEqual(extended{15}, "none");
+        end
+
+        function standardDeviationAndDiagonalCovariance(testCase)
+            J = 4;
+            A = testCase.designMatrix(J);
+            data = A * (1:J)' + 0.1 * sin((1:80)');
+            sigma = linspace(0.2, 0.8, 80)';
+            [Q, R] = qr(A ./ sigma, 0);
+            expected = R \ (Q.' * (data ./ sigma));
+            inverseR = R \ eye(J);
+            expectedCov = inverseR * inverseR.';
+            [actual, covariance, se, source, fitted, residual] = ...
+                testCase.fitUncertainty(data, J, dataStd = sigma');
+            testCase.verifyEqual(actual, expected, 'AbsTol', 2e-11);
+            testCase.verifyEqual(covariance, expectedCov, 'AbsTol', 2e-12);
+            testCase.verifyEqual(se, sqrt(diag(covariance)), 'AbsTol', 1e-14);
+            testCase.verifyEqual(source, "dataStd");
+            [scaledFit, scaledCov] = testCase.fitUncertainty(data, J, dataStd = 3 * sigma);
+            testCase.verifyEqual(scaledFit, actual, 'AbsTol', 2e-11);
+            testCase.verifyEqual(scaledCov, 9 * covariance, 'AbsTol', 2e-12);
+            [scaledFit, scaledCov] = testCase.fitUncertainty(3 * data, J, dataStd = 3 * sigma);
+            testCase.verifyEqual(scaledFit, 3 * actual, 'AbsTol', 2e-11);
+            testCase.verifyEqual(scaledCov, 9 * covariance, 'AbsTol', 2e-12);
+            testCase.verifyEqual(fitted, A * actual, 'AbsTol', 2e-11);
+            testCase.verifyEqual(residual, data - fitted, 'AbsTol', 1e-14);
+            [diagonalFit, diagonalCov, ~, diagonalSource] = ...
+                testCase.fitUncertainty(data, J, dataCovariance = diag(sigma .^ 2));
+            testCase.verifyEqual(diagonalFit, actual, 'AbsTol', 2e-11);
+            testCase.verifyEqual(diagonalCov, covariance, 'AbsTol', 2e-12);
+            testCase.verifyEqual(diagonalSource, "dataCovariance");
+            uniform = testCase.fitUncertainty(data, J, dataStd = 0.4 * ones(80, 1));
+            testCase.verifyEqual(uniform, A \ data, 'AbsTol', 2e-11);
+        end
+
+        function correlatedCovarianceAndScaling(testCase)
+            J = 5;
+            A = testCase.designMatrix(J);
+            data = A * (1:J)' + sin((1:80)');
+            covarianceData = toeplitz(0.6 .^ (0:79));
+            factor = chol(covarianceData, 'lower');
+            B = factor \ A;
+            [Q, R] = qr(B, 0);
+            expected = R \ (Q.' * (factor \ data));
+            inverseR = R \ eye(J);
+            [actual, covariance] = testCase.fitUncertainty(data, J, dataCovariance = covarianceData);
+            testCase.verifyEqual(actual, expected, 'AbsTol', 2e-11);
+            testCase.verifyEqual(covariance, inverseR * inverseR.', 'AbsTol', 2e-12);
+            [~, ~, ~, ~, ~, ~, rankA, s, condition] = xyzs2slep(data, testCase.Lon, ...
+                testCase.Lat, testCase.Polygon, 3, truncation = J, dataCovariance = covarianceData);
+            testCase.verifyEqual(rankA, J);
+            testCase.verifyEqual(s, svd(B), 'AbsTol', 2e-11);
+            testCase.verifyEqual(condition, cond(B), 'AbsTol', 2e-11);
+            [scaledFit, scaledCov] = testCase.fitUncertainty(data, J, dataCovariance = 9 * covarianceData);
+            testCase.verifyEqual(scaledFit, actual, 'AbsTol', 2e-11);
+            testCase.verifyEqual(scaledCov, 9 * covariance, 'AbsTol', 2e-12);
+            [scaledFit, scaledCov] = testCase.fitUncertainty(3 * data, J, dataCovariance = 9 * covarianceData);
+            testCase.verifyEqual(scaledFit, 3 * actual, 'AbsTol', 2e-11);
+            testCase.verifyEqual(scaledCov, 9 * covariance, 'AbsTol', 2e-12);
+            % Roundoff-level asymmetry is explicitly averaged, not treated
+            % as a request to use just one triangular half.
+            nearlySymmetric = covarianceData;
+            nearlySymmetric(1, 2) = nearlySymmetric(1, 2) + eps;
+            [roundoffFit, roundoffCov] = testCase.fitUncertainty(data, J, dataCovariance = nearlySymmetric);
+            testCase.verifyEqual(roundoffFit, actual, 'AbsTol', 2e-11);
+            testCase.verifyEqual(roundoffCov, covariance, 'AbsTol', 2e-12);
+        end
+
+        function residualVarianceIsExplicit(testCase)
+            J = 3;
+            A = testCase.designMatrix(J);
+            data = A * (1:J)' + 0.2 * cos((1:80)');
+            [actual, covariance, ~, source, ~, residual] = ...
+                testCase.fitUncertainty(data, J, estimateNoiseVariance = true);
+            [~, R] = qr(A, 0);
+            inverseR = R \ eye(J);
+            expected = sum(residual .^ 2) / (80 - J) * (inverseR * inverseR.');
+            testCase.verifyEqual(actual, A \ data, 'AbsTol', 2e-11);
+            testCase.verifyEqual(covariance, expected, 'AbsTol', 2e-12);
+            testCase.verifyEqual(source, "estimatedIid");
+            [~, knownCov] = testCase.fitUncertainty(data, J, dataStd = ones(80, 1));
+            [~, differentResidualCov] = testCase.fitUncertainty(20 * data, J, dataStd = ones(80, 1));
+            testCase.verifyEqual(knownCov, differentResidualCov);
+            testCase.verifyEqual(knownCov, inverseR * inverseR.', 'AbsTol', 2e-12);
+        end
+
+        function correlatedMissingSubset(testCase)
+            J = 3;
+            A = testCase.designMatrix(J);
+            data = A * (1:J)' + 0.1 * sin((1:80)');
+            data([2 8]) = NaN;
+            C = toeplitz(0.7 .^ (0:79));
+            kept = setdiff((1:80)', [2; 8]);
+            [actual, covariance] = testCase.fitUncertainty(data, J, ...
+                dataCovariance = C, missingPolicy = "omit");
+            factor = chol(C(kept, kept), 'lower');
+            [Q, R] = qr(factor \ A(kept, :), 0);
+            inverseR = R \ eye(J);
+            testCase.verifyEqual(actual, R \ (Q.' * (factor \ data(kept))), 'AbsTol', 2e-11);
+            testCase.verifyEqual(covariance, inverseR * inverseR.', 'AbsTol', 2e-12);
+            sigma = linspace(1, 2, 80)';
+            [actual, covariance] = testCase.fitUncertainty(data, J, ...
+                dataStd = sigma, missingPolicy = "omit");
+            [Q, R] = qr(A(kept, :) ./ sigma(kept), 0);
+            inverseR = R \ eye(J);
+            testCase.verifyEqual(actual, R \ (Q.' * (data(kept) ./ sigma(kept))), 'AbsTol', 2e-11);
+            testCase.verifyEqual(covariance, inverseR * inverseR.', 'AbsTol', 2e-12);
+        end
+
+        function analyticConstantFieldUncertainty(testCase)
+            % Degree zero is a constant, so its weighted-mean covariance can
+            % be checked by hand without another matrix factorization.
+            [c, ~, ~, ~, ~, ~, ~, ~, ~, ~, ~, ~, covariance] = ...
+                xyzs2slep([2 4], [0 50], [-20 10], 60, 0, dataStd = [1 2]);
+            testCase.verifyEqual(c, 2.4, 'AbsTol', 1e-13);
+            testCase.verifyEqual(covariance, 0.8, 'AbsTol', 1e-13);
+            [c, ~, ~, ~, ~, ~, ~, ~, ~, ~, ~, ~, covariance] = ...
+                xyzs2slep([2 4], [0 50], [-20 10], 60, 0, dataCovariance = [1 .5; .5 4]);
+            testCase.verifyEqual(c, 2.25, 'AbsTol', 1e-13);
+            testCase.verifyEqual(covariance, 0.9375, 'AbsTol', 1e-13);
+        end
+
+        function uncertaintyValidation(testCase)
+            base = {ones(80, 1), testCase.Lon, testCase.Lat, testCase.Polygon, 3, 'truncation', 3};
+            testCase.verifyError(@() xyzs2slep(base{:}, dataStd = ones(80, 1), dataCovariance = eye(80)), ...
+                'ULMO:xyzs2slep:ConflictingUncertainty');
+            testCase.verifyError(@() xyzs2slep(base{:}, dataStd = ones(80, 1), estimateNoiseVariance = true), ...
+                'ULMO:xyzs2slep:ConflictingUncertainty');
+            testCase.verifyError(@() xyzs2slep(base{:}, dataCovariance = eye(80), estimateNoiseVariance = true), ...
+                'ULMO:xyzs2slep:ConflictingUncertainty');
+            for bad = {1, zeros(80, 1), -ones(80, 1), nan(80, 1), inf(80, 1), ones(8, 10)}
+                testCase.verifyError(@() xyzs2slep(base{:}, dataStd = bad{1}), ...
+                    'ULMO:xyzs2slep:InvalidDataStd');
+            end
+            for bad = {eye(79), nan(80), inf(80), ones(80, 80, 2)}
+                testCase.verifyError(@() xyzs2slep(base{:}, dataCovariance = bad{1}), ...
+                    'ULMO:xyzs2slep:InvalidDataCovariance');
+            end
+            for bad = {zeros(80), ones(80), -eye(80)}
+                testCase.verifyError(@() xyzs2slep(base{:}, dataCovariance = bad{1}), ...
+                    'ULMO:xyzs2slep:NonPositiveCovariance');
+            end
+            asymmetric = eye(80); asymmetric(1, 2) = 0.01;
+            testCase.verifyError(@() xyzs2slep(base{:}, dataCovariance = asymmetric), ...
+                'ULMO:xyzs2slep:AsymmetricCovariance');
+            % Invalid errors remain invalid even on rows omitted from data.
+            base{1}(1) = NaN;
+            badStd = ones(80, 1); badStd(1) = 0;
+            testCase.verifyError(@() xyzs2slep(base{:}, missingPolicy = "omit", dataStd = badStd), ...
+                'ULMO:xyzs2slep:InvalidDataStd');
+            badCov = eye(80); badCov(1, 1) = NaN;
+            testCase.verifyError(@() xyzs2slep(base{:}, missingPolicy = "omit", dataCovariance = badCov), ...
+                'ULMO:xyzs2slep:InvalidDataCovariance');
+            badCov(1, 1) = -1;
+            testCase.verifyError(@() xyzs2slep(base{:}, missingPolicy = "omit", dataCovariance = badCov), ...
+                'ULMO:xyzs2slep:NonPositiveCovariance');
+        end
+
+        function exactlyDeterminedUncertainty(testCase)
+            J = 4;
+            A = testCase.designMatrix(J);
+            A = A(1:J, :);
+            data = A * (1:J)';
+            base = {data, testCase.Lon(1:J), testCase.Lat(1:J), testCase.Polygon, 3, 'truncation', J};
+            [actual, ~, ~, ~, ~, ~, ~, ~, ~, ~, ~, dof, covariance] = ...
+                xyzs2slep(base{:}, dataStd = ones(J, 1));
+            inverseA = A \ eye(J);
+            testCase.verifyEqual(actual, (1:J)', 'AbsTol', 2e-10);
+            testCase.verifyEqual(covariance, inverseA * inverseA.', 'AbsTol', 2e-10);
+            testCase.verifyEqual(dof, 0);
+            testCase.verifyError(@() xyzs2slep(base{:}, estimateNoiseVariance = true), ...
+                'ULMO:xyzs2slep:NoiseDegreesOfFreedom');
+        end
+
+        function monteCarloCorrelatedPropagation(testCase)
+            rng(7123);
+            J = 3;
+            A = testCase.designMatrix(J);
+            C = 0.04 * toeplitz(0.5 .^ (0:79));
+            factor = chol(C, 'lower');
+            truth = (1:J)' / 10;
+            [~, predicted] = testCase.fitUncertainty(A * truth, J, dataCovariance = C);
+            draws = 600;
+            noise = factor * randn(80, draws);
+            recovered = zeros(J, draws);
+            for draw = 1:draws
+                recovered(:, draw) = xyzs2slep(A * truth + noise(:, draw), ...
+                    testCase.Lon, testCase.Lat, testCase.Polygon, 3, ...
+                    truncation = J, dataCovariance = C);
+            end
+            empirical = cov(recovered.');
+            % Gaussian sample covariance has this elementwise variance.
+            tolerance = 6 * sqrt((predicted .^ 2 + diag(predicted) * diag(predicted).') / (draws - 1));
+            testCase.verifyLessThanOrEqual(abs(empirical - predicted), tolerance);
+            testCase.verifyLessThanOrEqual(abs(mean(recovered, 2) - truth), ...
+                6 * sqrt(diag(predicted) / draws));
+        end
+
         function capAndDegreeZero(testCase)
             [G, V] = glmalpha(40, 3);
             [~, order] = sort(V(:), 'descend');
@@ -180,6 +387,19 @@ classdef xyzs2slepTest < matlab.unittest.TestCase
     end
 
     methods (Access = private)
+
+        function A = designMatrix(testCase, J)
+            A = zeros(numel(testCase.Lon), J);
+            for j = 1:J
+                A(:, j) = testCase.synthesize(testCase.Basis(:, j));
+            end
+        end
+
+        function [c, covariance, se, source, fitted, residual] = fitUncertainty(testCase, data, J, varargin)
+            [c, ~, ~, ~, ~, ~, ~, ~, ~, fitted, residual, ~, covariance, se, source] = ...
+                xyzs2slep(data, testCase.Lon, testCase.Lat, testCase.Polygon, 3, ...
+                'truncation', J, varargin{:});
+        end
 
         function data = synthesize(testCase, coefficients)
             % Independently synthesize a grid and select irregular paired
