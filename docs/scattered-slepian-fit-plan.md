@@ -1,6 +1,8 @@
 # Scattered observations to regional Slepian coefficients
 
-Status: approved design. Standalone fitting and validation were merged in PR #54. The parent branch is now `feature/xyzs2slep` (PR #55, replacing #53 after the branch rename). The uncertainty implementation is the next sub-PR for review.
+Status: implementation and validation complete on `feature/xyzs2slep`. Standalone fitting merged in [PR #54](https://github.com/williameclee/ulmo/pull/54); uncertainty propagation and weighted fitting merged in [PR #56](https://github.com/williameclee/ulmo/pull/56). [Parent PR #55](https://github.com/williameclee/ulmo/pull/55) remains draft, awaiting final review and integration into `main`. The original design review is preserved in [PR #53](https://github.com/williameclee/ulmo/pull/53).
+
+Validation recorded before the Stage 2 merge: all 17 tests in `unittests/xyzs2slepTest.m` passed, including analytic uncertainty checks, correlated-error Monte Carlo coverage, and unweighted regression checks. MATLAB Code Analyzer reported no diagnostics for the fitter, test class, or fixture. See [the usage guide](scattered-slepian-fitting.md) for the implemented interface and examples.
 
 ## Purpose and naming
 
@@ -10,7 +12,7 @@ Recommend interpreting the `s` as **scattered**, not sparse: it describes the sa
 
 Reserve `xyz2slep` for a future ULMO gridded-data interface. ULMO currently has no such wrapper: Slepian Bravo's existing `xyz2slep` handles scattered cap data. This change will not rename or shadow that dependency, so a bare `xyz2slep` call can still resolve to Bravo. Document that distinction; implementing or changing the gridded interface is a separate task.
 
-## Proposed public contract
+## Approved public contract
 
 Stage 1 delivers ordinary least-squares fitting without uncertainty inputs or propagation:
 
@@ -105,15 +107,15 @@ For rank-deficient geometry, fail with an informative identifier and suggest few
 
 This uncertainty is conditional on the selected basis, truncation, and observation error model. It excludes truncation bias, leakage, coordinate uncertainty, and uncertainty in the region/basis. Irregular sampling alone does not supply area weights: equal-error observations receive equal weight, and densely sampled areas have more influence. Area weighting and robust fitting are deferred.
 
-## Implementation sequence after review
+## Completed implementation sequence
 
-1. Finalize the function name and public contract in this plan.
-2. **Implement standalone fitting (Stage 1).** Add `xyzs2slep.m` with an `arguments (Input)` block, camelCase name-value options, and ULMO-style documentation. Implement basis evaluation, ordinary least squares, validation, and the twelve individual fitting outputs. Add a narrowly scoped `aux/` helper only if reusable paired-point evaluation needs it. No uncertainty calculation is part of this step.
-3. **Validate and review Stage 1 independently.** Add native MATLAB tests in `unittests/xyzs2slepTest.m`, a reproducible no-uncertainty example, and a `docs/functions.md` entry. Run fitting tests and relevant basis/transform tests. Deliver this as a self-contained implementation PR before Stage 2; it must be usable without uncertainty support.
-4. **Add uncertainty support (Stage 2, separate follow-up PR).** Extend the established fit with diagonal/full-covariance whitening, coefficient covariance propagation, optional residual-variance estimation, and the three appended uncertainty outputs. Do not reorder the existing outputs.
-5. **Validate Stage 2 separately.** Add uncertainty-specific analytic and Monte Carlo tests, uncertainty documentation/examples, and regression checks proving that calls without uncertainty still match Stage 1. Record validation and dependency limitations in the follow-up PR.
+1. **Complete (#53).** Finalize the function name and public contract in this plan.
+2. **Complete (#54).** **Implement standalone fitting (Stage 1).** Add `xyzs2slep.m` with an `arguments (Input)` block, camelCase name-value options, and ULMO-style documentation. Implement basis evaluation, ordinary least squares, validation, and the twelve individual fitting outputs. Add a narrowly scoped `aux/` helper only if reusable paired-point evaluation needs it. No uncertainty calculation is part of this step.
+3. **Complete (#54).** **Validate and review Stage 1 independently.** Add native MATLAB tests in `unittests/xyzs2slepTest.m`, a reproducible no-uncertainty example, and a `docs/functions.md` entry. Run fitting tests and relevant basis/transform tests. Deliver this as a self-contained implementation PR before Stage 2; it must be usable without uncertainty support.
+4. **Complete (#56).** **Add uncertainty support (Stage 2, separate follow-up PR).** Extend the established fit with diagonal/full-covariance whitening, coefficient covariance propagation, optional residual-variance estimation, and the three appended uncertainty outputs. Do not reorder the existing outputs.
+5. **Complete (#56).** **Validate Stage 2 separately.** Add uncertainty-specific analytic and Monte Carlo tests, uncertainty documentation/examples, and regression checks proving that calls without uncertainty still match Stage 1. Record validation and dependency limitations in the follow-up PR.
 
-Use temporary cache fixtures and synthetic data in both stages. Keep production data untouched and machine-specific paths out of the repository. The original planning review is preserved in PR #53; implementation proceeds through sub-PRs to #55.
+Use temporary cache fixtures and synthetic data in both stages. Keep production data untouched and machine-specific paths out of the repository. Both implementation stages are merged into the parent feature branch. No further implementation sub-PR is planned; final parent review and integration into `main` remain.
 
 ## Acceptance tests
 
@@ -137,6 +139,6 @@ Use temporary cache fixtures and synthetic data in both stages. Keep production 
 
 ## Review decisions
 
-The proposed defaults are `xyzs2slep` (s = scattered), degree-based lon/lat inputs, full covariance support, strict rank checking, and no inferred uncertainty unless explicitly requested. The plan now uses individual outputs and independently deliverable fitting and uncertainty stages. The API, truncation default, and missing/out-of-domain behavior were approved before implementation.
+The approved defaults are `xyzs2slep` (s = scattered), degree-based lon/lat inputs, full covariance support, strict rank checking, and no inferred uncertainty unless explicitly requested. The plan now uses individual outputs and independently deliverable fitting and uncertainty stages. The API, truncation default, and missing/out-of-domain behavior were approved before implementation.
 
 Implementation uses isolated synthetic tests and does not require production data processing or additional package installation.
