@@ -73,25 +73,15 @@ function [falpha, V, N, J, nObs, validIdxs, rnk, SVs, condNum, fitVals, resids, 
         options.blockSize (1, 1) double {mustBeFinite, mustBeInteger, mustBePositive} = 1024
     end
 
-    [vals, lon, lat, nObs, validIdxs, J, Jmax] = ...
-        preprocessInputs(vals, lon, lat, L, options.truncation, options.missingPolicy);
+    [vals, lon, lat, nObs, validIdxs, J, Jmax, isCap] = ...
+        preprocessInputs(vals, lon, lat, L, domain, options.truncation, options.missingPolicy);
 
-    isCap = isnumeric(domain) && isscalar(domain);
-
+    %% Computing the Slepian functions evaluated at each data point
     if isCap
         validateattributes(domain, {'numeric'}, {'real', 'finite', '>', 0, '<=', 180});
         % ULMO's extracted axisymmetric helper is incomplete; use Alpha.
         [G, V, ~, ~, N] = glmalpha(domain, L);
     else
-
-        if ~((isa(domain, 'GeoDomain') && isscalar(domain)) || ...
-                ischar(domain) || (isstring(domain) && isscalar(domain)) || ...
-                iscell(domain) || (isnumeric(domain) && ismatrix(domain) && size(domain, 2) == 2))
-            error('ULMO:xyzs2slep:InvalidDomain', ...
-                ['Use a GeoDomain, region name/cell, [lon, lat] polygon, or scalar cap radius.', ...
-             'The input domain format of type %s is not supported.'], class(domain));
-        end
-
         [G, V, ~, ~, N] = glmalpha_new(domain, L, 'BeQuiet', true);
     end
 
@@ -116,23 +106,24 @@ function [falpha, V, N, J, nObs, validIdxs, rnk, SVs, condNum, fitVals, resids, 
     % coefficient transforms use 4*pi normalisation and omit that phase.
     orders = addmout(L);
     scale = sqrt(4 * pi) * (-1) .^ orders(:);
-    A = zeros(nObs, J);
+    slepVals = zeros(nObs, J); % Slepian functions evaluated at each data point
 
     for first = 1:options.blockSize:nObs
         points = first:min(first + options.blockSize - 1, nObs);
 
         if L == 0
-            A(points, :) = repmat(G, numel(points), 1);
+            slepVals(points, :) = repmat(G, numel(points), 1);
         else
             Y = ylm([0 L], [], deg2rad(90 - lat(points)), ...
                 deg2rad(lon(points)), [], [], 0, 1);
-            A(points, :) = (Y .* scale).' * G;
+            slepVals(points, :) = (Y .* scale).' * G;
         end
 
     end
 
+    %% Inverting for the Slepian coefficients
     % The svd(A, 0) syntax in datafit (slepian_bravo) is not recommended per MathWork's documentation
-    [U, S, Q] = svd(A, 'econ');
+    [U, S, Q] = svd(slepVals, 'econ');
     SVs = diag(S);
     tol = options.rankTolerance;
 
@@ -163,7 +154,7 @@ function [falpha, V, N, J, nObs, validIdxs, rnk, SVs, condNum, fitVals, resids, 
     resids = [];
 
     if nargout >= 10
-        fitVals = A * falpha;
+        fitVals = slepVals * falpha;
     end
 
     if nargout >= 11
@@ -175,8 +166,8 @@ end
 
 %% Subfunctions
 
-function [vals, lon, lat, nObs, validIdxs, J, Jmax] = ...
-        preprocessInputs(vals, lon, lat, L, J, missingPolicy)
+function [vals, lon, lat, nObs, validIdxs, J, Jmax, domainIsCap] = ...
+        preprocessInputs(vals, lon, lat, L, domain, J, missingPolicy)
     vals = double(vals(:));
     lon = double(lon(:));
     lat = double(lat(:));
@@ -236,6 +227,16 @@ function [vals, lon, lat, nObs, validIdxs, J, Jmax] = ...
                 nObs, J);
         end
 
+    end
+
+    domainIsCap = isnumeric(domain) && isscalar(domain);
+
+    if ~domainIsCap && ~((isa(domain, 'GeoDomain') && isscalar(domain)) || ...
+            ischar(domain) || (isstring(domain) && isscalar(domain)) || ...
+            iscell(domain) || (isnumeric(domain) && ismatrix(domain) && size(domain, 2) == 2))
+        error('ULMO:xyzs2slep:InvalidDomain', ...
+            ['Use a GeoDomain, region name/cell, [lon, lat] polygon, or scalar cap radius.', ...
+         'The input domain format of type %s is not supported.'], class(domain));
     end
 
 end
