@@ -14,8 +14,12 @@
 %	product - Name of the SSH product to load
 %		- 'MEaSUREs': The MEaSUREs Gridded Sea Surface Height Anomalies
 %           Version 2205 product.
-%		The default product is 'MEaSUREs', which is the only option
-%       available as of right now.
+%       - 'NASASSH': NASA-SSH reference-mission simple grid, version 1.
+%         Prepare with processSSHDataNasa. No uncertainty field is supplied.
+%       - 'NASASSHMonthly': Calendar-month means of native NASA-SSH maps.
+%         Prepare with processSSHMonthlyNasa.
+%       Other products: 'ORAS5', 'DT2024', 'CMEMS'.
+%       The default product is 'MEaSUREs'.
 %   timestep - Temporal interpolation time step
 %       - Numeric or duration scalar, in units of days.
 %       - Character vector, 'midmonth' (at the middle of each month).
