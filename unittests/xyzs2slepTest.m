@@ -290,37 +290,41 @@ classdef xyzs2slepTest < matlab.unittest.TestCase
         function uncertaintyValidation(testCase)
             base = {ones(80, 1), testCase.Lon, testCase.Lat, testCase.Polygon, 3, 'truncation', 3};
             testCase.verifyError(@() xyzs2slep(base{:}, dataStd = ones(80, 1), dataCovariance = eye(80)), ...
-                'ULMO:xyzs2slep:ConflictingUncertainty');
+            'ULMO:xyzs2slep:ConflictingUncertainty');
             testCase.verifyError(@() xyzs2slep(base{:}, dataStd = ones(80, 1), estimateNoiseVariance = true), ...
-                'ULMO:xyzs2slep:ConflictingUncertainty');
+            'ULMO:xyzs2slep:ConflictingUncertainty');
             testCase.verifyError(@() xyzs2slep(base{:}, dataCovariance = eye(80), estimateNoiseVariance = true), ...
-                'ULMO:xyzs2slep:ConflictingUncertainty');
+            'ULMO:xyzs2slep:ConflictingUncertainty');
+
             for bad = {1, zeros(80, 1), -ones(80, 1), nan(80, 1), inf(80, 1), ones(8, 10)}
                 testCase.verifyError(@() xyzs2slep(base{:}, dataStd = bad{1}), ...
-                    'ULMO:xyzs2slep:InvalidDataStd');
+                'ULMO:xyzs2slep:InvalidDataStd');
             end
+
             for bad = {eye(79), nan(80), inf(80), ones(80, 80, 2)}
                 testCase.verifyError(@() xyzs2slep(base{:}, dataCovariance = bad{1}), ...
-                    'ULMO:xyzs2slep:InvalidDataCovariance');
+                'ULMO:xyzs2slep:InvalidDataCovariance');
             end
+
             for bad = {zeros(80), ones(80), -eye(80)}
                 testCase.verifyError(@() xyzs2slep(base{:}, dataCovariance = bad{1}), ...
-                    'ULMO:xyzs2slep:NonPositiveCovariance');
+                'ULMO:xyzs2slep:NonPositiveCovariance');
             end
+
             asymmetric = eye(80); asymmetric(1, 2) = 0.01;
             testCase.verifyError(@() xyzs2slep(base{:}, dataCovariance = asymmetric), ...
-                'ULMO:xyzs2slep:AsymmetricCovariance');
+            'ULMO:xyzs2slep:AsymmetricCovariance');
             % Invalid errors remain invalid even on rows omitted from data.
             base{1}(1) = NaN;
             badStd = ones(80, 1); badStd(1) = 0;
             testCase.verifyError(@() xyzs2slep(base{:}, missingPolicy = "omit", dataStd = badStd), ...
-                'ULMO:xyzs2slep:InvalidDataStd');
+            'ULMO:xyzs2slep:InvalidDataStd');
             badCov = eye(80); badCov(1, 1) = NaN;
             testCase.verifyError(@() xyzs2slep(base{:}, missingPolicy = "omit", dataCovariance = badCov), ...
-                'ULMO:xyzs2slep:InvalidDataCovariance');
+            'ULMO:xyzs2slep:InvalidDataCovariance');
             badCov(1, 1) = -1;
             testCase.verifyError(@() xyzs2slep(base{:}, missingPolicy = "omit", dataCovariance = badCov), ...
-                'ULMO:xyzs2slep:NonPositiveCovariance');
+            'ULMO:xyzs2slep:NonPositiveCovariance');
         end
 
         function exactlyDeterminedUncertainty(testCase)
@@ -336,7 +340,7 @@ classdef xyzs2slepTest < matlab.unittest.TestCase
             testCase.verifyEqual(covariance, inverseA * inverseA.', 'AbsTol', 2e-10);
             testCase.verifyEqual(dof, 0);
             testCase.verifyError(@() xyzs2slep(base{:}, estimateNoiseVariance = true), ...
-                'ULMO:xyzs2slep:NoiseDegreesOfFreedom');
+            'ULMO:xyzs2slep:NoiseDegreesOfFreedom');
         end
 
         function monteCarloCorrelatedPropagation(testCase)
@@ -350,11 +354,13 @@ classdef xyzs2slepTest < matlab.unittest.TestCase
             draws = 600;
             noise = factor * randn(80, draws);
             recovered = zeros(J, draws);
+
             for draw = 1:draws
                 recovered(:, draw) = xyzs2slep(A * truth + noise(:, draw), ...
                     testCase.Lon, testCase.Lat, testCase.Polygon, 3, ...
                     truncation = J, dataCovariance = C);
             end
+
             empirical = cov(recovered.');
             % Gaussian sample covariance has this elementwise variance.
             tolerance = 6 * sqrt((predicted .^ 2 + diag(predicted) * diag(predicted).') / (draws - 1));
@@ -390,9 +396,11 @@ classdef xyzs2slepTest < matlab.unittest.TestCase
 
         function A = designMatrix(testCase, J)
             A = zeros(numel(testCase.Lon), J);
+
             for j = 1:J
                 A(:, j) = testCase.synthesize(testCase.Basis(:, j));
             end
+
         end
 
         function [c, covariance, se, source, fitted, residual] = fitUncertainty(testCase, data, J, varargin)
