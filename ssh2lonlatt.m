@@ -19,6 +19,11 @@
 %   timestep - Temporal interpolation time step
 %       - Numeric or duration scalar, in units of days.
 %       - Character vector, 'midmonth' (at the middle of each month).
+%       - 'GRACE': mean within CSR RL06 degree-60 GRACE solution windows.
+%         Missing months use calendar boundaries inside the gap, with outer
+%         bounds aligned to adjacent real solutions. Dates are window midpoints.
+%         Monthly inputs are averaged by native timestamps, not reconstructed
+%         at daily resolution. Epoch means are not cached.
 %       When not specified, no temporal interpolation is performed.
 %   meshsize - Spatial interpolation grid size in degrees
 %       - Real scalar, in units of degrees.
@@ -81,7 +86,7 @@
 %	2025/05/19, williameclee@arizona.edu (@williameclee)
 %
 % Last modified by
-%	2025/11/03, williameclee@arizona.edu (@williameclee)
+%	2026/09/25, williameclee@arizona.edu (@williameclee)
 
 function [ssh, sshSigma, dates, lon, lat] = ssh2lonlatt(product, timestep, meshsize, timelim, options)
 
@@ -108,6 +113,49 @@ function [ssh, sshSigma, dates, lon, lat] = ssh2lonlatt(product, timestep, meshs
         dates (:, 1) {mustBeVector}
         lon (:, :) {mustBeReal, mustBeVector}
         lat (:, :) {mustBeReal, mustBeVector}
+    end
+
+    % Average native temporal samples; reuse only the existing spatial cache.
+    if (ischar(timestep) || isstring(timestep)) && strcmpi(timestep, 'grace')
+        epochOptions = options;
+        epochOptions.TimeFormat = 'datetime';
+        epochArgs = namedargs2cell(epochOptions);
+        [ssh, sshSigma, nativeDates, lon, lat] = ...
+            ssh2lonlatt(product, [], meshsize, [], epochArgs{:});
+        epochRange = timelim;
+        if isempty(epochRange), epochRange = [min(nativeDates), max(nativeDates)]; end
+        epochs = graceepochs({'CSR', 'RL06', 60}, epochRange);
+        [ssh, dates] = averageepochs(nativeDates, ssh, epochs);
+        % Root-mean-square input uncertainty (no independence assumption).
+        if ~isempty(sshSigma)
+            sshSigma = sqrt(averageepochs(nativeDates, sshSigma .^ 2, epochs));
+        end
+
+        if ~isempty(timelim)
+
+            if isnumeric(timelim)
+                timelim = datetime(timelim, 'ConvertFrom', 'datenum');
+            end
+
+            keep = dates >= min(timelim) & dates <= max(timelim);
+            ssh = ssh(:, :, keep);
+
+            if ~isempty(sshSigma)
+                sshSigma = sshSigma(:, :, keep);
+            end
+
+            dates = dates(keep);
+        end
+
+        if strcmpi(options.TimeFormat, 'datenum')
+            dates = datenum(dates); %#ok<DATNM>
+        end
+
+        if nargout == 0
+            plotsealeveltseries(dates, ssh, lon, lat, product, options.Unit, 'Epoch mean sea level');
+        end
+
+        return
     end
 
     lonOrigin = options.LonOrigin;
@@ -212,12 +260,13 @@ function [ssh, sshSigma, dates, lon, lat] = ssh2lonlatt(product, timestep, meshs
     end
 
     if ~isempty(timestep)
+        nativeDates = data.dates;
         [data.sshs, data.dates] = interptemporal( ...
-            data.dates, data.sshs, timestep, intpMthd, BeQuiet = beQuiet, CallChain = callChain);
+            data.dates, data.sshs, timestep, intpMthd, BeQuiet = (beQuiet == 2), CallChain = callChain);
 
         if ~isempty(data.sshErrors)
             data.sshErrors = interptemporal( ...
-                data.dates, data.sshErrors, timestep, intpMthd, beQuiet, BeQuiet = beQuiet, CallChain = callChain);
+                nativeDates, data.sshErrors, timestep, intpMthd, BeQuiet = (beQuiet == 2), CallChain = callChain);
         end
 
     end
@@ -232,12 +281,14 @@ function [ssh, sshSigma, dates, lon, lat] = ssh2lonlatt(product, timestep, meshs
             lonOrigin = 180;
         end
 
+        nativeLon = data.lon;
+        nativeLat = data.lat;
         [data.sshs, data.lon, data.lat] = interpspatial( ...
             data.lon, data.lat, data.sshs, meshsize, lonOrigin, intpMthd, beQuiet, callChain);
 
         if ~isempty(data.sshErrors)
             data.sshErrors = interpspatial( ...
-                data.lon, data.lat, data.sshErrors, meshsize, lonOrigin, intpMthd, beQuiet, callChain);
+                nativeLon, nativeLat, data.sshErrors, meshsize, lonOrigin, intpMthd, beQuiet, callChain);
         end
 
     end

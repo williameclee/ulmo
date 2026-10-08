@@ -24,6 +24,11 @@
 %   timestep - Temporal interpolation time step
 %       - Numeric or duration scalar, in units of days.
 %       - Character vector, 'midmonth' (at the middle of each month).
+%       - 'GRACE': mean within CSR RL06 degree-60 GRACE solution windows.
+%         Missing months use calendar boundaries inside the gap, with outer
+%         bounds aligned to adjacent real solutions. Dates are window midpoints.
+%         Monthly inputs are averaged by native timestamps, not reconstructed
+%         at daily resolution. Epoch means are not cached.
 %       When not specified, no temporal interpolation is performed.
 %   meshsize - Spatial interpolation grid size in degrees
 %       - Real scalar, in units of degrees.
@@ -84,9 +89,7 @@
 %	2025/07/22, En-Chi Lee (williameclee@arizona.edu)
 %
 % Last modified by
-%	2026/04/08, En-Chi Lee (williameclee@arizona.edu)
-%     - Added option to truncate data before interpolation to save time
-%	2025/11/03, En-Chi Lee (williameclee@arizona.edu)
+%	2026/09/25, En-Chi Lee (williameclee@arizona.edu)
 
 function [steric, stericSigma, dates, lon, lat] = steric2lonlatt(product, timestep, meshsize, timelim, options)
     %% Initialisation
@@ -118,6 +121,46 @@ function [steric, stericSigma, dates, lon, lat] = steric2lonlatt(product, timest
         dates (:, 1) {mustBeVector}
         lon (:, :)
         lat (:, :)
+    end
+
+    % Average native temporal samples; reuse only the existing spatial cache.
+    if (ischar(timestep) || isstring(timestep)) && strcmpi(timestep, 'GRACE')
+        epochOptions = options;
+        epochOptions.TimeFormat = 'datetime';
+        epochArgs = namedargs2cell(epochOptions);
+        [steric, ~, nativeDates, lon, lat] = ...
+            steric2lonlatt(product, [], meshsize, [], epochArgs{:});
+        epochRange = timelim;
+        if isempty(epochRange), epochRange = [min(nativeDates), max(nativeDates)]; end
+        epochs = graceepochs({'CSR', 'RL06', 60}, epochRange);
+        [steric, dates] = averageepochs(nativeDates, steric, epochs);
+        stericSigma = nan(size(steric), "like", steric);
+
+        if ~isempty(timelim)
+
+            if isnumeric(timelim)
+                timelim = datetime(timelim, 'ConvertFrom', 'datenum');
+            end
+
+            keep = dates >= min(timelim) & dates <= max(timelim);
+            steric = steric(:, :, keep);
+
+            if ~isempty(stericSigma)
+                stericSigma = stericSigma(:, :, keep);
+            end
+
+            dates = dates(keep);
+        end
+
+        if strcmpi(options.TimeFormat, 'datenum')
+            dates = datenum(dates); %#ok<DATNM>
+        end
+
+        if nargout == 0
+            plotsealeveltseries(dates, steric, lon, lat, product, options.Unit, 'Epoch mean sea level');
+        end
+
+        return
     end
 
     lonOrigin = options.LonOrigin;
