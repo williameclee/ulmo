@@ -1,12 +1,12 @@
 # Scattered observations to regional Slepian coefficients
 
-Status: proposed implementation plan, awaiting review. This PR adds documentation only; implementation starts after approval.
+Status: approved design. Standalone fitting and validation were merged in PR #54. The parent branch is now `feature/xyzs2slep` (PR #55, replacing #53 after the branch rename). The uncertainty implementation is the next sub-PR for review.
 
 ## Purpose and naming
 
 Add `xyzs2slep` to fit scalar observations at paired, irregular longitude–latitude locations directly to a truncated regional Slepian basis, without gridding. Support arbitrary geographic concentration regions through ULMO's existing domain machinery and propagate observation uncertainty to coefficient covariance.
 
-Recommend interpreting the `s` as **scattered**, not sparse: it describes the sampling and avoids confusion with MATLAB sparse matrix storage. `points2slep` is a clearer alternative but is less consistent with the existing `xyz` transform family. Use `xyzs2slep` provisionally for this plan, subject to review.
+Recommend interpreting the `s` as **scattered**, not sparse: it describes the sampling and avoids confusion with MATLAB sparse matrix storage. `points2slep` is a clearer alternative but is less consistent with the existing `xyz` transform family. The approved function name is `xyzs2slep`.
 
 Reserve `xyz2slep` for a future ULMO gridded-data interface. ULMO currently has no such wrapper: Slepian Bravo's existing `xyz2slep` handles scattered cap data. This change will not rename or shadow that dependency, so a bare `xyz2slep` call can still resolve to Bravo. Document that distinction; implementing or changing the gridded interface is a separate task.
 
@@ -113,7 +113,7 @@ This uncertainty is conditional on the selected basis, truncation, and observati
 4. **Add uncertainty support (Stage 2, separate follow-up PR).** Extend the established fit with diagonal/full-covariance whitening, coefficient covariance propagation, optional residual-variance estimation, and the three appended uncertainty outputs. Do not reorder the existing outputs.
 5. **Validate Stage 2 separately.** Add uncertainty-specific analytic and Monte Carlo tests, uncertainty documentation/examples, and regression checks proving that calls without uncertainty still match Stage 1. Record validation and dependency limitations in the follow-up PR.
 
-Use temporary cache fixtures and synthetic data in both stages. Keep production data untouched and machine-specific paths out of the repository. This planning PR remains documentation-only and awaiting approval.
+Use temporary cache fixtures and synthetic data in both stages. Keep production data untouched and machine-specific paths out of the repository. The original planning review is preserved in PR #53; implementation proceeds through sub-PRs to #55.
 
 ## Acceptance tests
 
@@ -137,6 +137,6 @@ Use temporary cache fixtures and synthetic data in both stages. Keep production 
 
 ## Review decisions
 
-The proposed defaults are `xyzs2slep` (s = scattered), degree-based lon/lat inputs, full covariance support, strict rank checking, and no inferred uncertainty unless explicitly requested. The plan now uses individual outputs and independently deliverable fitting and uncertainty stages. Please review the revised API, truncation default, and missing/out-of-domain behavior before implementation.
+The proposed defaults are `xyzs2slep` (s = scattered), degree-based lon/lat inputs, full covariance support, strict rank checking, and no inferred uncertainty unless explicitly requested. The plan now uses individual outputs and independently deliverable fitting and uncertainty stages. The API, truncation default, and missing/out-of-domain behavior were approved before implementation.
 
-No executable MATLAB changes, package installation, or production data processing are included in this planning PR.
+Implementation uses isolated synthetic tests and does not require production data processing or additional package installation.
