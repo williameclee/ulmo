@@ -22,6 +22,12 @@ function date = extractStericMonthDate(name)
 
     assert(~isempty(parts), 'ULMO:extractStericMonthDate:InvalidFileName', ...
         'Cannot identify month from file name %s.', name);
-    start = datetime(str2double(parts{1}), str2double(parts{2}), 1);
+    year = str2double(parts{1});
+    month = str2double(parts{2});
+    assert (month >= 1 && month <= 12, 'ULMO:extractStericMonthDate:InvalidFileName', ...
+        ['Expected month to be between 1 and 12. ', ...
+     'But extracted month %.0f from file name %s.'], ...
+        month, name);
+    start = datetime(year, month, 1);
     date = start + (start + calmonths(1) - start) / 2;
 end

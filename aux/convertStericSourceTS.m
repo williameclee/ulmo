@@ -1,4 +1,13 @@
 %% convertStericSourceTS - Converts T/S units to standard conservative T and absolute salinity.
+% By the end of the function, the saved .mat file will contain:
+%   T - Conservative temperature [°C].
+%       The corresponding 'ttype' is 'CT'.
+%   S - Absolute salinity [g/kg].
+%       The corresponding 'stype' is 'SA'.
+%   z - Depth [m] at each layer that increases downwards.
+%       The corresponding 'ztype' is 'z'.
+%   p - Pressure [dbar] at each layer.
+%   bottom - Bottom layer depth [m].
 %
 % Last modified
 %   2026/10/09, En-Chi Lee (williameclee@gmail.com)
@@ -13,7 +22,7 @@ function convertStericSourceTS(path, options)
     end
 
     if ~options.ForceNew && ...
-            matFileHasVariables(path, {'salinity', 'consTemp', 'pres', 'depth', 'bottom'})
+            matFileHasVariables(path, {'S', 'T', 'p', 'z', 'bottom'})
         return
     end
 
@@ -23,31 +32,30 @@ function convertStericSourceTS(path, options)
         data.stype = 'SP'; % Assumes practical salinity
     end
 
-    [T, S, p] = computeStandardTSVars(data.T, data.S, ...
-        data.z, data.lon, data.lat, data.stype, data.stype, data.ztype);
+    [T, S, p, z] = computeStandardTSVars(data.T, data.S, ...
+        data.z, data.lon, data.lat, data.ttype, data.stype, data.ztype);
     T = single(T);
     S = single(S);
 
-    if strcmp(data.ztype, 'p')
-        z = -gsw_z_from_p(repmat(data.z(:)', numel(data.lat), 1), data.lat(:));
-        bottom = z(:, end);
-    else
-        z = data.z(:);
-        bottom = z(end);
-    end
+    bottom = z(:, end);
 
-    save(path, 'T', 'S', 'p', 'z', 'bottom', '-append');
+    % Update field types
+    ttype = 'CT';
+    stype = 'SA';
+    ztype = 'z';
+
+    save(path, 'T', 'S', 'p', 'z', 'bottom', 'ttype', 'stype', 'ztype', '-append');
 end
 
 %% Subfunctions
-function [CT, SA, p] = computeStandardTSVars(T, S, z, lon, lat, ttype, stype, ztype)
+function [CT, SA, p, z] = computeStandardTSVars(T, S, z, lon, lat, ttype, stype, ztype)
 
     arguments (Input)
         T (:, :, :) {mustBeNumeric}
         S (:, :, :) {mustBeNumeric}
-        z {mustBeVector}
-        lon {mustBeVector}
-        lat {mustBeVector}
+        z (:, :) {mustBeNumeric, mustBeReal, mustBeFinite, mustBeNonnegative}
+        lon {mustBeVector, mustBeNumeric}
+        lat {mustBeVector, mustBeNumeric}
         ttype {mustBeTextScalar, mustBeMember(ttype, {'T', 'CT', 'PT'})}
         stype {mustBeTextScalar, mustBeMember(stype, {'SP', 'SA'})}
         ztype {mustBeTextScalar, mustBeMember(ztype, {'z', 'p'})} = 'z'
@@ -57,9 +65,10 @@ function [CT, SA, p] = computeStandardTSVars(T, S, z, lon, lat, ttype, stype, zt
         CT (:, :, :) {mustBeNumeric}
         SA (:, :, :) {mustBeNumeric}
         p {mustBeNumeric}
+        z (:, :) {mustBeNumeric, mustBeReal, mustBeFinite, mustBeNonnegative}
     end
 
-    %% Validation
+    %% Validation and array pre-processing
     assert(isequal(size(T), size(S)), 'ULMO:convertStericSourceTS:InvalidInputSize', ...
         ['Temperature and salinity arrays must have the same sizes. ', ...
      'Got (%d, %d, %d) for T and (%d, %d, %d) for salinity instead.'], ...
@@ -68,12 +77,25 @@ function [CT, SA, p] = computeStandardTSVars(T, S, z, lon, lat, ttype, stype, zt
     lon = lon(:)';
     lat = lat(:);
 
-    if size(T, 3) ~= numel(z)
+    nLvls = size(T, 3);
+
+    if isequal(size(z), [numel(lat), nLvls])
+        % Already latitude by level, including a single-level column.
+    elseif isvector(z) && numel(z) == nLvls
+        z = repmat(z(:)', numel(lat), 1);
+    else
         error('ULMO:convertStericSourceTS:InvalidInputSize', ...
-            ['Third dimension of T and S arrays must match the layers of depth. ', ...
-         'Got %d and %d.'], ...
-            size(T, 3), numel(z));
-    elseif size(T, 1) == numel(lat) && size(T, 2) == numel(lon)
+            ['Expected z to contain %d shared levels or have size (%d, %d). ', ...
+         'Got (%d, %d) instead.'], ...
+            nLvls, numel(lat), nLvls, size(z, 1), size(z, 2));
+    end
+
+    assert(all(diff(z, 1, 2) > 0, 'all'), ...
+        'ULMO:convertStericSourceTS:InvalidVerticalCoordinate', ...
+    'Vertical levels must increase strictly at each latitude.');
+    z = double(z);
+
+    if size(T, 1) == numel(lat) && size(T, 2) == numel(lon)
         % Correct dimensions, do nothing
     elseif size(T, 2) == numel(lat) && size(T, 1) == numel(lon)
         T = permute(T, [2, 1, 3]);
@@ -92,9 +114,10 @@ function [CT, SA, p] = computeStandardTSVars(T, S, z, lon, lat, ttype, stype, zt
 
     switch ztype
         case 'z'
-            p = gsw_p_from_z(repmat(-z(:)', [numel(lat), 1]), lat);
+            p = gsw_p_from_z(-z, lat);
         case 'p'
-            p = repmat(z(:)', numel(lat), 1);
+            p = z;
+            z = -gsw_z_from_p(p, lat);
     end
 
     switch stype
@@ -103,7 +126,7 @@ function [CT, SA, p] = computeStandardTSVars(T, S, z, lon, lat, ttype, stype, zt
         case 'SP'
             SA = nan(size(S), "like", S);
 
-            for k = 1:numel(z)
+            for k = 1:nLvls
                 SA(:, :, k) = gsw_SA_from_SP(squeeze(S(:, :, k)), p(:, k), mod(lon, 360), lat);
             end
 
@@ -117,11 +140,26 @@ function [CT, SA, p] = computeStandardTSVars(T, S, z, lon, lat, ttype, stype, zt
         case 'T'
             CT = nan(size(T), "like", T);
 
-            for k = 1:numel(z)
+            for k = 1:nLvls
                 CT(:, :, k) = gsw_CT_from_t( ...
                     squeeze(SA(:, :, k)), squeeze(T(:, :, k)), p(:, k));
             end
 
+    end
+
+    % Simple validation
+    if any(T < -10, "all")
+        warning('ULMO:convertStericSourceTS:NonphysicalData', ...
+        'Non-physical temperature below -10°C is detected. Check the input data.')
+    elseif any(T > 50, "all")
+        warning('ULMO:convertStericSourceTS:NonphysicalData', ...
+        'Non-physical temperature above 50°C is detected. Check the input data.')
+    elseif any(S < 0, "all")
+        warning('ULMO:convertStericSourceTS:NonphysicalData', ...
+        'Non-physical negative salinity is detected. Check the input data.')
+    elseif any(S > 50, "all")
+        warning('ULMO:convertStericSourceTS:NonphysicalData', ...
+        'Non-physical salinity above 50 is detected. Check the input data.')
     end
 
 end
