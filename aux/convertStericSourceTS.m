@@ -148,18 +148,24 @@ function [CT, SA, p, z] = computeStandardTSVars(T, S, z, lon, lat, ttype, stype,
     end
 
     % Simple validation
-    if any(T < -10, "all")
+    if any(CT < -10, "all")
         warning('ULMO:convertStericSourceTS:NonphysicalData', ...
-        'Non-physical temperature below -10°C is detected. Check the input data.')
-    elseif any(T > 50, "all")
+            ['Non-physical temperature below -10°C is detected and will be masked. ', ...
+         'Check the input data.'])
+    elseif any(CT > 50, "all")
         warning('ULMO:convertStericSourceTS:NonphysicalData', ...
-        'Non-physical temperature above 50°C is detected. Check the input data.')
-    elseif any(S < 0, "all")
+            ['Non-physical temperature above 50°C is detected and will be masked. ', ...
+         'Check the input data.'])
+    elseif any(SA < 0, "all")
         warning('ULMO:convertStericSourceTS:NonphysicalData', ...
-        'Non-physical negative salinity is detected. Check the input data.')
-    elseif any(S > 50, "all")
+            ['Non-physical negative salinity is detected and will be masked. ', ...
+         'Check the input data.'])
+    elseif any(SA > 50, "all")
         warning('ULMO:convertStericSourceTS:NonphysicalData', ...
-        'Non-physical salinity above 50 is detected. Check the input data.')
+            ['Non-physical salinity above 50 is detected and will be masked. ', ...
+         'Check the input data.'])
     end
 
+    CT(CT < -10 | CT > 50) = NaN;
+    SA(SA < 0 | SA > 50) = NaN;
 end
