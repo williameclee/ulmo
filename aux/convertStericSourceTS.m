@@ -1,13 +1,64 @@
-%% convertStericSourceTS - Converts T/S units to standard conservative T and absolute salinity.
-% By the end of the function, the saved .mat file will contain:
-%   T - Conservative temperature [°C].
-%       The corresponding 'ttype' is 'CT'.
-%   S - Absolute salinity [g/kg].
-%       The corresponding 'stype' is 'SA'.
-%   z - Depth [m] at each layer that increases downwards.
-%       The corresponding 'ztype' is 'z'.
-%   p - Pressure [dbar] at each layer.
-%   bottom - Bottom layer depth [m].
+%% CONVERTSTERICSOURCETS - Converts stored native T/S to CT, SA, pressure, and depth.
+% Updates a monthly MAT file in place using the GSW toolbox. Coordinates
+% are normalised to latitude-by-level matrices and field type tags are
+% updated to describe the converted values.
+%
+% Syntax
+%   convertStericSourceTS(path)
+%   convertStericSourceTS(path, ForceNew = true)
+%
+% Input arguments
+%   path - Existing monthly MAT-file path as a character row vector.
+%   ForceNew (name-value) - Whether to recompute when converted variables exist.
+%       Default value: false.
+%
+% Input file content
+%   T - Temperature field interpreted according to ttype.
+%       Size: (nLat, nLon, nLevels), matching S.
+%       Unit: °C or K.
+%       If the maximum non-NaN value exceeds 200, the whole array is treated as kelvin.
+%   S - Salinity field interpreted according to stype.
+%       Size: same as T.
+%       Unit: psu or g/kg.
+%   lon - Longitude vector.
+%       Size: (nLon).
+%       Unit: °E.
+%   lat - Latitude vector.
+%       Size: (nLat).
+%       Unit: °N.
+%   z - Shared level vector or latitude-dependent vertical coordinates.
+%       Size: (nLevels) or (nLat, nLevels).
+%       Unit: m or dbar.
+%   ttype - Temperature interpretation as a text scalar.
+%       'T': in-situ; 'PT': potential; 'CT': Conservative Temperature.
+%   stype (optional) - Salinity interpretation as a text scalar.
+%       'SP': Practical Salinity; 'SA': Absolute Salinity.
+%       Default value: 'SP'.
+%   ztype - Vertical coordinate interpretation as a text scalar.
+%       'p': sea pressure; 'z': positive depth.
+%
+% Output file content
+%   T - Conservative Temperature, stored as single.
+%       Size: (nLat, nLon, nLevels).
+%       Unit: °C.
+%   S - Absolute Salinity, stored as single.
+%       Size: same as T.
+%       Unit: g/kg.
+%   z - Positive depth at each latitude and level, stored as double.
+%       Size: (nLat, nLevels).
+%       Unit: m.
+%   p - Sea pressure at each latitude and level, stored as double.
+%       Size: (nLat, nLevels).
+%       Unit: dbar.
+%   bottom - Deepest supplied level at each latitude, equal to z(:, end).
+%       Size: (nLat, 1).
+%       Unit: m.
+%   ttype - Character row vector set to 'CT'.
+%   stype - Character row vector set to 'SA'.
+%   ztype - Character row vector set to 'z'.
+%
+% See also
+%   saveSourceStericMonth, matFileHasVariables
 %
 % Last modified
 %   2026/10/09, En-Chi Lee (williameclee@gmail.com)
@@ -17,8 +68,6 @@ function convertStericSourceTS(path, options)
     arguments (Input)
         path (1, :) char
         options.ForceNew (1, 1) logical = false
-        options.BeQuiet (1, 1) logical = false
-        options.CallChain (1, :) cell = {}
     end
 
     if ~options.ForceNew && ...

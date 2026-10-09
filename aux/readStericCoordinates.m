@@ -1,4 +1,34 @@
-%% readStericCoordinates - Extracts lat/lon/z coordinates from .nc files by matching potential variable names
+%% READSTERICCOORDINATES - Reads native longitude, latitude, and vertical axes.
+% Finds coordinate variables in a NetCDF file using supported name aliases
+% and returns consistently oriented double vectors.
+%
+% Syntax
+%   [lon, lat, z] = readStericCoordinates(path)
+%
+% Input arguments
+%   path - Path to an existing NetCDF file.
+%
+% Output arguments
+%   lon - Longitude vector.
+%       Size: (1, nLon).
+%       Unit: °E.
+%   lat - Latitude vector.
+%       Size: (nLat, 1).
+%       Unit: °N.
+%   z - Vertical coordinate vector.
+%       Size: (nLevels, 1).
+%       Unit: m for depth or dbar for sea pressure.
+%
+% Notes
+%   Supported variable names are case-sensitive:
+%   - lon: lon, LONGITUDE, longitude.
+%   - lat: lat, LATITUDE, latitude.
+%   - z: depth_std, LEVEL, PRES, DEPH, depth, DEPTH, lev.
+%   If multiple aliases exist, the first matching variable in ncinfo order
+%   is selected.
+%
+% See also
+%   readStericSourceField, convertStericSourceTS
 %
 % Last modified
 %   2026/10/09, En-Chi Lee (williameclee@gmail.com)

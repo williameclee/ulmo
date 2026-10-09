@@ -1,4 +1,34 @@
-%% readStericSourceField - Reads native NetCDF dimensions into (lat, lon, depth) order.
+%% READSTERICSOURCEFIELD - Reads a NetCDF field in latitude/longitude/level order.
+% Selects one time index, identifies spatial axes by dimension names,
+% and removes other singleton dimensions.
+%
+% Syntax
+%   val = readStericSourceField(path, name)
+%   val = readStericSourceField(path, name, tstart)
+%
+% Input arguments
+%   path - Path to an existing NetCDF file.
+%   name - NetCDF variable name.
+%   tstart (optional) - 1-based time index. 
+%       Ignored if there is no recognised time dimension.
+%       Default value: 1.
+%
+% Output arguments
+%   val - Numeric field with 
+%       Size: (nLat, nLon, nLevels).
+%
+% Notes
+%   Spatial dimension names are case-sensitive:
+%   - latitude: lat, LATITUDE, latitude.
+%   - longitude: lon, LONGITUDE, longitude.
+%   - vertical: depth_std, LEVEL, PRES, DEPH, depth, DEPTH, lev.
+%   Exactly one dimension must match each spatial axis. 
+%   Time dimensions match time or t case-insensitively.
+%   Each recognised time dimension is sliced at tstart. All remaining 
+%   dimensions must have length one.
+%
+% See also
+%   readStericCoordinates, saveSourceStericMonth
 %
 % Last modified
 %   2026/10/09, En-Chi Lee (williameclee@gmail.com)
@@ -35,7 +65,7 @@ function val = readStericSourceField(path, name, tstart)
         assert(isscalar(axisLoc), 'ULMO:readStericSourceField:VariableNotFound', ...
             'Could not find the coordinate %s, or found multiple potentially matching fields in file %s.', ...
             coordNames{k}, path);
-        order(k) = axisLoc; % Order the fields in the [lon, lat, z] dimension
+        order(k) = axisLoc; % Order fields as [lat, lon, level].
     end
 
     other = setdiff(1:numel(names), order, 'stable');

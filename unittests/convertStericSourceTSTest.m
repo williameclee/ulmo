@@ -1,10 +1,13 @@
 %% CONVERTSTERICSOURCETSTEST - Tests native T/S conversion and forced reprocessing.
-% Compares saved CT, SA, pressure, and depth with direct GSW calculations
-% for shared level vectors and latitude-dependent coordinate matrices.
+% Compares stored CT, SA, pressure, depth, and bottom values with direct
+% GSW calculations using synthetic monthly MAT files.
 %
 % Syntax
 %   results = runtests(fullfile('unittests', 'convertStericSourceTSTest.m'));
 %   assertSuccess(results);
+%
+% Output arguments
+%   results - Array of TestResult objects containing the outcome of each test method.
 %
 % See also
 %   convertStericSourceTS
