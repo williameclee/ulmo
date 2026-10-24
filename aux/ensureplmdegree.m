@@ -45,13 +45,18 @@ function plm = ensureplmdegree(plm, L, fmt)
 
     end
 
+    % Preserve the original array without permuting when no resizing is needed.
+    harmonicDim = 1 + strcmpi(fmt, 'timefirst');
+
+    if size(plm, harmonicDim) == addmup(L)
+        return
+    end
+
     if strcmpi(fmt, 'timefirst')
         plm = permute(plm, [2, 3, 1]); % timefirst -> traditional
     end
 
-    if size(plm, 1) == addmup(L)
-        % Do nothing, correct size
-    elseif size(plm, 1) > addmup(L)
+    if size(plm, 1) > addmup(L)
         % Truncate
         plm = plm(1:addmup(L), :, :);
     else
