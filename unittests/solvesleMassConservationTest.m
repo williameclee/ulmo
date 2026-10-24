@@ -121,8 +121,10 @@ classdef solvesleMassConservationTest < matlab.unittest.TestCase
             K = hemisphereKernel(); f = (1:9)';
             reference = solve(f, [], K, 5, false, zeros(size(f)));
             p = unflatten(f); wrongOcean = ones(6, 2) * 0.9;
+            % Hold initialization fixed while varying the ocean expansion.
             r = solvesle(p, [], 2, GeoDomain('alloceans'), ...
                 "OceanKernel", K, "OceanFunction", wrongOcean, ...
+                "InitialRSL", zeros(size(p)), ...
                 "RotationFeedback", false, "MaxIter", 5, "BeQuiet", true);
             testCase.verifyEqual(flatten(r), reference, 'AbsTol', 1e-12);
         end

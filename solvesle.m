@@ -159,14 +159,17 @@ function varargout = solvesle(varargin)
     % Flatten the SH arrays to 2D
     forcingLoadPlm = ensureplmdegree(forcingLoadPlm, L, 'traditional');
     forcingLoadStdPlm = ensureplmdegree(forcingLoadStdPlm, L, 'traditional');
-    initRslPlm = ensureplmdegree(initRslPlm, L, 'traditional');
 
     forcingLoadPlm = reshape(forcingLoadPlm, [], size(forcingLoadPlm, 3));
     forcingLoadStdPlm = reshape(forcingLoadStdPlm, [], size(forcingLoadStdPlm, 3));
-    initRslPlm = reshape(initRslPlm, [], size(initRslPlm, 3));
     forcingLoadPlms = forcingLoadPlm(kernelOrder, :);
     forcingLoadStdPlms = forcingLoadStdPlm(kernelOrder, :);
-    initRslPlms = initRslPlm(kernelOrder, :);
+
+    if ~isempty(initRslPlm)
+        initRslPlm = ensureplmdegree(initRslPlm, L, 'traditional');
+        initRslPlm = reshape(initRslPlm, [], size(initRslPlm, 3));
+        initRslPlms = initRslPlm(kernelOrder, :);
+    end
 
     %% Constants
     % Define constants and precompute SLE kernel
@@ -393,8 +396,7 @@ function varargout = parseinputs(varargin)
     % Check input sizes
     includesDO = size(forcingPlm, 2) == 4;
 
-    if isempty(forcingStdPlm) || ...
-            all(forcingStdPlm(:, end - 1:end) == 0, "all")
+    if isempty(forcingStdPlm)
         forcingStdPlm = zeros(size(forcingPlm));
         computeError = false;
     else
@@ -411,19 +413,12 @@ function varargout = parseinputs(varargin)
 
     end
 
-    if isempty(initRslPlm) || ...
-            all(initRslPlm(:, end - 1:end) == 0, "all")
-        initRslPlm = zeros(size(forcingPlm));
-    else
-
-        if ~isequal(size(initRslPlm), size(forcingPlm))
-            error( ...
-                sprintf('%s:InvalidInput:InputSizeNotMatch', upper(mfilename)), ...
-                'Input size of INITIAL RSL ([%s]) does not match FORCINGPLM ([%s])', ...
-                strjoin(string(size(initRslPlm)), ', '), ...
-                strjoin(string(size(forcingPlm)), ', '));
-        end
-
+    if ~isempty(initRslPlm) && ~isequal(size(initRslPlm), size(forcingPlm))
+        error( ...
+            sprintf('%s:InvalidInput:InputSizeNotMatch', upper(mfilename)), ...
+            'Input size of INITIAL RSL ([%s]) does not match FORCINGPLM ([%s])', ...
+            strjoin(string(size(initRslPlm)), ', '), ...
+            strjoin(string(size(forcingPlm)), ', '));
     end
 
     % Find the degree of the spherical harmonic coefficients
