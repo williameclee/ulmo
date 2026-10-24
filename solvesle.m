@@ -86,9 +86,6 @@
 %   Uncertainties use diagonal propagation: correlations between the forcing
 %   and iterated ocean load, and between provisional response harmonics, are
 %   neglected, as is covariance of the target mass with that response.
-%   The instantaneous whole-ocean mass adjustment is propagated
-%   before taking marginal standard deviations. Returned marginal errors
-%   alone do not encode the covariance required to localize them exactly.
 %
 % References
 %   Adhikari, S. et al. (2019). Sea-level fingerprints emergent from GRACE
