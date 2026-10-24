@@ -149,7 +149,7 @@ function varargout = solvesle(varargin)
         cstredOceanKernel = oceanKernel - oceanWghts * oceanKernel(1, :);
         cstredOceanKernel(:, 1) = 0;
         cstredOceanKernelSq = cstredOceanKernel .^ 2;
-        clear constrainedOceanKernel
+        clear cstredOceanKernel
     end
 
     % Load the permutation order from cosi -> flat
@@ -228,7 +228,8 @@ function varargout = solvesle(varargin)
 
     % Construct the SLE kernel
     % Gravitational potential
-    sleKernel = sparse(diag(3 / EARTH_DENSITY * llnFactors ./ (2 * degrees + 1)));
+    sleKernel = spdiags(3 / EARTH_DENSITY * llnFactors ./ (2 * degrees + 1), 0, ...
+        numel(degrees), numel(degrees));
 
     if doRotationFeedback
         % Rotation potential
