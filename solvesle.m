@@ -265,8 +265,13 @@ function varargout = solvesle(varargin)
     rslOceanPlms = rslPlms;
 
     if computeError
-        gmslStd = forcingLoadStdPlms(1, :) / oceanArea / WATER_DENSITY;
-        rslOceanStdPlms = abs(oceanFunPlms) * gmslStd;
+        % Carry variances through the iteration (to avoid taking square roots repeatedly); convert to STD only at output.
+        forcingVarPlms = forcingLoadStdPlms .^ 2;
+        targetOceanVar = forcingVarPlms(1, :) / WATER_DENSITY ^ 2;
+        sleKernelSq = sleKernel .^ 2;
+        oceanWghtsSq = oceanWghts .^ 2;
+        oceanMeanWghtsSq = oceanKernel(1, 2:end) .^ 2;
+        rslOceanVarPlms = oceanWghtsSq * targetOceanVar;
     end
 
     for iIter = 1:maxIter
@@ -298,16 +303,13 @@ function varargout = solvesle(varargin)
             continue
         end
 
-        loadStdPlms = sqrt( ...
-            forcingLoadStdPlms .^ 2 + (rslOceanStdPlms * WATER_DENSITY) .^ 2);
-        rslVarPlms = (sleKernel .^ 2) * (loadStdPlms .^ 2);
-        rslOceanVarPlms = (forcingLoadStdPlms(1, :) / WATER_DENSITY) .^ 2;
-        rslOceanStdPlms = sqrt(cstredOceanKernelSq * rslVarPlms ...
-            + (oceanWghts .^ 2) * rslOceanVarPlms);
-        rslOceanStdPlms(1, :) = sqrt(rslOceanVarPlms);
-        rslVarPlms(1, :) = (rslOceanVarPlms ...
-            + (oceanKernel(1, 2:end) .^ 2) * rslVarPlms(2:end, :)) / oceanArea ^ 2;
-        rslStdPlms = sqrt(rslVarPlms);
+        loadVarPlms = forcingVarPlms + WATER_DENSITY ^ 2 * rslOceanVarPlms;
+        rslVarPlms = sleKernelSq * loadVarPlms;
+        rslOceanVarPlms = cstredOceanKernelSq * rslVarPlms ...
+            + oceanWghtsSq * targetOceanVar;
+        rslOceanVarPlms(1, :) = targetOceanVar;
+        rslVarPlms(1, :) = (targetOceanVar ...
+            + oceanMeanWghtsSq * rslVarPlms(2:end, :)) / oceanArea ^ 2;
     end
 
     %% Post-processing
@@ -347,8 +349,8 @@ function varargout = solvesle(varargin)
     end
 
     % Post-process the standard deviation
-    rslLoadStdPlms = rslStdPlms * WATER_DENSITY;
-    gmslStd = rslOceanStdPlms(1, :) ./ oceanFunPlms(1, :) * 1e3; % m -> mm
+    rslLoadStdPlms = sqrt(rslVarPlms) * WATER_DENSITY;
+    gmslStd = sqrt(targetOceanVar) / oceanArea * 1e3; % m -> mm
 
     if isvector(rslLoadStdPlms)
         rslLoadStdPlm = zeros([addmup(L), 2]);
