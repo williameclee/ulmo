@@ -4,10 +4,7 @@
 % resizing, default format, format recovery and malformed input shapes.
 %
 % Syntax
-%   results = runtests('unittests/ensureplmdegreeTest.m');
-%
-% Notes
-%   Add slepian_alpha to the MATLAB path when it is not beside this checkout.
+%   results = runtests('unittests/ensureplmdegreeTest.m')
 %
 % Created by
 %   2026/10/24, En-Chi Lee (williameclee@gmail.com)
@@ -16,7 +13,8 @@ classdef ensureplmdegreeTest < matlab.unittest.TestCase
 
     properties (TestParameter)
         format = {'traditional', 'timefirst'}
-        epochCount = {1, 3}
+        epochCount = {1, 2, 3, 4}
+        columnCount = {2, 4}
         targetDegree = {0, 1, 2, 4}
     end
 
@@ -32,9 +30,9 @@ classdef ensureplmdegreeTest < matlab.unittest.TestCase
             end
 
             testCase.assertNotEmpty(which('addmon'), ...
-                'Add slepian_alpha to the MATLAB path before running these tests.');
+            'Add slepian_alpha to the MATLAB path before running these tests.');
             testCase.assertNotEmpty(which('addmup'), ...
-                'Add slepian_alpha to the MATLAB path before running these tests.');
+            'Add slepian_alpha to the MATLAB path before running these tests.');
             testCase.applyFixture(PathFixture(fullfile(repo, 'aux')));
             % Guard against the experiment-local helper shadowing production.
             testCase.assertEqual(which('ensureplmdegree'), ...
@@ -45,12 +43,17 @@ classdef ensureplmdegreeTest < matlab.unittest.TestCase
 
     methods (Test)
 
-        function resizePreservesValuesAndFormat(testCase, format, epochCount, targetDegree)
+        function resizePreservesValuesAndFormat(testCase, format, epochCount, targetDegree, columnCount)
             input = makeCoefficients(2, epochCount);
             expected = makeCoefficients(targetDegree, epochCount);
 
             if targetDegree > 2
                 expected(7:end, 3:4, :) = 0;
+            end
+
+            if columnCount == 2
+                input = input(:, 3:4, :);
+                expected = expected(:, 3:4, :);
             end
 
             input = formatCoefficients(input, format);
@@ -62,21 +65,45 @@ classdef ensureplmdegreeTest < matlab.unittest.TestCase
             testCase.verifyEqual(actual, expected);
         end
 
-        function truncateGraceDegree60To45(testCase, format)
-            input = formatCoefficients(makeCoefficients(60, 3), format);
-            expected = formatCoefficients(makeCoefficients(45, 3), format);
+        function truncateGraceDegree60To45(testCase, format, columnCount)
+            input = makeCoefficients(60, 3);
+            expected = makeCoefficients(45, 3);
+
+            if columnCount == 2
+                input = input(:, 3:4, :);
+                expected = expected(:, 3:4, :);
+            end
+
+            input = formatCoefficients(input, format);
+            expected = formatCoefficients(expected, format);
             testCase.verifyEqual(ensureplmdegree(input, 45, format), expected);
         end
 
-        function defaultFormatPreservesSingleEpoch(testCase)
-            input = formatCoefficients(makeCoefficients(2, 1), 'timefirst');
-            expected = formatCoefficients(makeCoefficients(1, 1), 'timefirst');
+        function defaultFormatPreservesEpochs(testCase, columnCount, epochCount)
+            input = makeCoefficients(2, epochCount);
+            expected = makeCoefficients(1, epochCount);
+
+            if columnCount == 2
+                input = input(:, 3:4, :);
+                expected = expected(:, 3:4, :);
+            end
+
+            input = formatCoefficients(input, 'timefirst');
+            expected = formatCoefficients(expected, 'timefirst');
             testCase.verifyEqual(ensureplmdegree(input, 1), expected);
         end
 
-        function recoverMislabeledFormat(testCase, format)
-            input = formatCoefficients(makeCoefficients(2, 3), format);
-            expected = formatCoefficients(makeCoefficients(1, 3), format);
+        function recoverMislabeledFormat(testCase, format, columnCount, epochCount)
+            input = makeCoefficients(2, epochCount);
+            expected = makeCoefficients(1, epochCount);
+
+            if columnCount == 2
+                input = input(:, 3:4, :);
+                expected = expected(:, 3:4, :);
+            end
+
+            input = formatCoefficients(input, format);
+            expected = formatCoefficients(expected, format);
 
             if strcmp(format, 'traditional')
                 requestedFormat = 'timefirst';
