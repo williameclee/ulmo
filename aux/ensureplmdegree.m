@@ -1,15 +1,13 @@
-%% ENSUREPLMDEGREE
-% Pad or truncate a plm matrix to ensure it has the correct degree.
-% The input format is assumed to be strictly timefirst (t, lmcosi).
-%
-% See also
-%	SOLVESLE, SOLVEDEGREE1
+%% ENSUREPLMDEGREE - Pads or truncates a Plm matrix to ensure it has the correct degree.
 %
 % Notes
-%	This is a helper function with limited documentation.%
+%	This is a helper function with limited documentation.
 %
-% Authored by
-%	2025/08/14, williameclee@arizona.edu (@williameclee)
+% Created by
+%	2025/08/14, williameclee@arizona.edu
+%
+% Last modified
+%	2026/10/24, williameclee@gmail.com
 
 function plm = ensureplmdegree(plm, L, fmt)
 
@@ -47,22 +45,27 @@ function plm = ensureplmdegree(plm, L, fmt)
 
     end
 
-    if ndims(plm) == 3 & strcmpi(fmt, 'timefirst')
+    % Preserve the original array without permuting when no resizing is needed.
+    harmonicDim = 1 + strcmpi(fmt, 'timefirst');
+
+    if size(plm, harmonicDim) == addmup(L)
+        return
+    end
+
+    if strcmpi(fmt, 'timefirst')
         plm = permute(plm, [2, 3, 1]); % timefirst -> traditional
     end
 
-    if size(plm, 1) == addmup(L)
-        % Do nothing, correct size
-    elseif size(plm, 1) > addmup(L)
+    if size(plm, 1) > addmup(L)
         % Truncate
-        plm = plm(:, 1:addmup(L), :);
+        plm = plm(1:addmup(L), :, :);
     else
         [order, degree] = addmon(L);
         plm(1:addmup(L), 1, :) = repmat(degree(:), [1, 1, size(plm, 3)]);
         plm(1:addmup(L), 2, :) = repmat(order(:), [1, 1, size(plm, 3)]);
     end
 
-    if ndims(plm) == 3 & strcmpi(fmt, 'timefirst')
+    if strcmpi(fmt, 'timefirst')
         plm = permute(plm, [3, 1, 2]); % traditional -> timefirst
     end
 
