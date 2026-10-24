@@ -52,6 +52,10 @@
 %   OceanKernel/OceanFunction - Precomputed ocean kernel or ocean function
 %       If this function is to be called recursively, providing these
 %       variables prevents having to read these from the disk.
+%   InitialRSL - Initial guess of the relative sea level.
+%       Supplies a starting point for the SLE iteration so that an
+%       available prior estimate can accelerate convergence.
+%       Unit: m
 %
 % Output arguments
 %   rslLoad - SH coefficients of the mass load from the forcing
@@ -99,7 +103,7 @@ function varargout = solvesle(varargin)
     % Parse input arguments
     [forcingLoadPlm, forcingLoadStdPlm, includesDO, computeError, ...
          L, ocean, frame, loveNumSrc, doRotationFeedback, maxIter, ...
-         oceanKernel, oceanFunPlm, kernelOrder, initialPlm, beQuiet] = ...
+         oceanKernel, oceanFunPlm, kernelOrder, initRslPlm, beQuiet] = ...
         parseinputs(varargin{:});
 
     % Create progress bar
@@ -150,37 +154,37 @@ function varargout = solvesle(varargin)
         if size(forcingLoadPlm, 1) < addmup(L)
             forcingLoadPlm(addmup(L), 2) = 0;
             forcingLoadStdPlm(addmup(L), 2) = 0;
-            initialPlm(addmup(L), 2) = 0;
+            initRslPlm(addmup(L), 2) = 0;
         elseif size(forcingLoadPlm, 1) > addmup(L)
             forcingLoadPlm = forcingLoadPlm(1:addmup(L), :);
             forcingLoadStdPlm = forcingLoadStdPlm(1:addmup(L), :);
-            initialPlm = initialPlm(1:addmup(L), :);
+            initRslPlm = initRslPlm(1:addmup(L), :);
         end
 
         forcingLoadPlms = forcingLoadPlm(kernelOrder);
         forcingLoadStdPlms = forcingLoadStdPlm(kernelOrder);
-        initialPlms = initialPlm(kernelOrder);
+        initRslPlms = initRslPlm(kernelOrder);
     else
 
         if size(forcingLoadPlm, 1) < addmup(L)
             forcingLoadPlm(addmup(L), 2, 1) = 0;
             forcingLoadStdPlm(addmup(L), 2, 1) = 0;
-            initialPlm(addmup(L), 2, 1) = 0;
+            initRslPlm(addmup(L), 2, 1) = 0;
         elseif size(forcingLoadPlm, 1) > addmup(L)
             forcingLoadPlm = forcingLoadPlm(1:addmup(L), :, 1);
             forcingLoadStdPlm = forcingLoadStdPlm(1:addmup(L), :, 1);
-            initialPlm = initialPlm(1:addmup(L), :, 1);
+            initRslPlm = initRslPlm(1:addmup(L), :, 1);
         end
 
         forcingLoadPlm = reshape(forcingLoadPlm, ...
             [prod(size(forcingLoadPlm, 1:2)), size(forcingLoadPlm, 3)]);
         forcingLoadStdPlm = reshape(forcingLoadStdPlm, ...
             [prod(size(forcingLoadStdPlm, 1:2)), size(forcingLoadStdPlm, 3)]);
-        initialPlm = reshape(initialPlm, ...
-            [prod(size(initialPlm, 1:2)), size(initialPlm, 3)]);
+        initRslPlm = reshape(initRslPlm, ...
+            [prod(size(initRslPlm, 1:2)), size(initRslPlm, 3)]);
         forcingLoadPlms = forcingLoadPlm(kernelOrder, :);
         forcingLoadStdPlms = forcingLoadStdPlm(kernelOrder, :);
-        initialPlms = initialPlm(kernelOrder, :);
+        initRslPlms = initRslPlm(kernelOrder, :);
     end
 
     oceanFunPlms = oceanFunPlm(kernelOrder);
@@ -243,8 +247,8 @@ function varargout = solvesle(varargin)
     % Initial guess
     gmsl =- forcingLoadPlms(1, :) / oceanFunPlms(1, :) / WATER_DENSITY;
 
-    if ~isempty(initialPlm)
-        rslPlms = initialPlms;
+    if ~isempty(initRslPlm)
+        rslPlms = initRslPlms;
     else
         rslPlms = oceanFunPlms * gmsl;
     end
@@ -378,7 +382,7 @@ function varargout = parseinputs(varargin)
     addParameter(ip, 'OceanKernel', [], @(x) isnumeric(x));
     addParameter(ip, 'OceanFunction', [], @(x) isnumeric(x));
     addParameter(ip, 'KernelOrder', [], @(x) isnumeric(x));
-    addParameter(ip, 'InitialCondition', [], @(x) isnumeric(x));
+    addParameter(ip, 'InitialRSL', [], @(x) isnumeric(x));
     addParameter(ip, 'BeQuiet', false, @(x) (isnumeric(x) || islogical(x)) && isscalar(x));
     parse(ip, varargin{:});
     forcingPlm = squeeze(ip.Results.ForcingPlm);
@@ -392,7 +396,7 @@ function varargout = parseinputs(varargin)
     oceanKernel = ip.Results.OceanKernel;
     oceanFunSph = ip.Results.OceanFunction;
     kernelOrder = ip.Results.KernelOrder;
-    initialPlm = ip.Results.InitialCondition;
+    initRslPlm = ip.Results.InitialRSL;
     beQuiet = logical(ip.Results.BeQuiet);
 
     if strcmpi(loveNumSrc, "Wahr")
@@ -420,16 +424,16 @@ function varargout = parseinputs(varargin)
 
     end
 
-    if isempty(initialPlm) || ...
-            all(initialPlm(:, end - 1:end) == 0, "all")
-        initialPlm = zeros(size(forcingPlm));
+    if isempty(initRslPlm) || ...
+            all(initRslPlm(:, end - 1:end) == 0, "all")
+        initRslPlm = zeros(size(forcingPlm));
     else
 
-        if ~isequal(size(initialPlm), size(forcingPlm))
+        if ~isequal(size(initRslPlm), size(forcingPlm))
             error( ...
                 sprintf('%s:InvalidInput:InputSizeNotMatch', upper(mfilename)), ...
-                'Input size of INITIAL CONDITION ([%s]) does not match FORCINGPLM ([%s])', ...
-                strjoin(string(size(initialPlm)), ', '), ...
+                'Input size of INITIAL RSL ([%s]) does not match FORCINGPLM ([%s])', ...
+                strjoin(string(size(initRslPlm)), ', '), ...
                 strjoin(string(size(forcingPlm)), ', '));
         end
 
@@ -445,8 +449,8 @@ function varargout = parseinputs(varargin)
         forcingPlm = forcingPlm(:, 3:4, :);
         forcingStdPlm = forcingStdPlm(:, 3:4, :);
 
-        if ~isempty(initialPlm)
-            initialPlm = initialPlm(:, 3:4, :);
+        if ~isempty(initRslPlm)
+            initRslPlm = initRslPlm(:, 3:4, :);
         end
 
     elseif isempty(L)
@@ -456,7 +460,7 @@ function varargout = parseinputs(varargin)
     varargout = ...
         {forcingPlm, forcingStdPlm, includesDO, computeError, ...
          L, ocean, frame, loveNumSrc, doRotationFeedback, maxIter, ...
-         oceanKernel, oceanFunSph, kernelOrder, initialPlm, beQuiet};
+         oceanKernel, oceanFunSph, kernelOrder, initRslPlm, beQuiet};
 end
 
 % Find the degree of the spherical harmonic coefficients based on the
