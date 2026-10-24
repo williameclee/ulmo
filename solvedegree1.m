@@ -255,11 +255,11 @@ function [coeffs, coeffStds, dates] = ...
     % STD
     graceStdNoUnknownPlmt = putcoeffs(graceStdPlmt, 0, coeffLocs);
     oceanCoeffStdsNoUnkown = extractcoeffs( ...
-        localise(graceStdNoUnknownPlmt, "L", Lsle, "K", oceanKernelSle), ...
+        localise(graceStdNoUnknownPlmt, "L", Lsle, "K", oceanKernelSle, "IsError", true), ...
         coeffLocs);
 
     %% Solving the degree-1 coefficients
-    maxIter = 5;
+    maxIter = 8;
 
     for iIter = 1:maxIter
         waitbar((iIter - 1) / maxIter, wbar, ...
@@ -278,7 +278,7 @@ function [coeffs, coeffStds, dates] = ...
                     solvesle(landPlmt, landStdPlmt, Lsle, oceanDomain, ...
                     "OceanKernel", oceanKernelSle, "KernelOrder", kernelOrder, ...
                     "InitialRSL", gracePlmt / 1000, ... % kg/m^2 -> m
-                    "RotationFeedback", true, "MaxIter", 5 + (5 * (iIter == maxIter)), "BeQuiet", true);
+                    "RotationFeedback", true, "MaxIter", 8, "BeQuiet", true);
                 oceanPlmt = localise(oceanPlmt, "L", Lsle, "K", oceanKernelSle);
                 oceanStdPlmt = localise(oceanStdPlmt, "L", Lsle, "K", oceanKernelSle, "IsError", true);
                 oceanCoeffs = extractcoeffs(oceanPlmt, coeffLocs);
@@ -286,9 +286,9 @@ function [coeffs, coeffStds, dates] = ...
             case 'uniform'
                 oceanArea = oceanKernelSle(1, 1);
                 barystaticLoad = squeeze(-landPlmt(1, 3, :) / oceanArea);
-                oceanCoeffs = barystaticLoad' .* oceanKernelSle((1:nCoeffs) + 1, 1);
+                oceanCoeffs = barystaticLoad' .* oceanKernelSle(coeffIds, 1);
                 barystaticLoadStd = squeeze(-landStdPlmt(1, 3, :) / oceanArea);
-                oceanCoeffStds = barystaticLoadStd' .* oceanKernelSle((1:nCoeffs) + 1, 1);
+                oceanCoeffStds = barystaticLoadStd' .* oceanKernelSle(coeffIds, 1);
         end
 
         coeffs = coeffsKernel \ (oceanCoeffs - oceanCoeffsNoUnkown);
