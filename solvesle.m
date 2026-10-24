@@ -49,9 +49,12 @@
 %   MaxIter - Maximum number of iterations
 %       The default value is 10.
 %       Data type: [NUMERIC]
-%   OceanKernel/OceanFunction - Precomputed ocean kernel or ocean function
-%       If this function is to be called recursively, providing these
-%       variables prevents having to read these from the disk.
+%   OceanKernel - Precomputed ocean-localization matrix.
+%       Providing it avoids loading or computing the kernel on each call.
+%       Its first column defines the ocean function and its (1,1) entry
+%       defines the ocean area fraction used for mass conservation.
+%   OceanFunction - Legacy precomputed ocean function, accepted but unused.
+%       The kernel supplies consistent geometry for the mass constraint.
 %   InitialRSL - Initial guess of the relative sea level.
 %       Supplies a starting point for the SLE iteration so that an
 %       available prior estimate can accelerate convergence.
@@ -80,6 +83,12 @@
 % Notes
 %   In the implementation, all SH coefficient variables with a 's' suffix
 %   means they are flattened to a column vector.
+%   Uncertainties use diagonal propagation: correlations between the forcing
+%   and iterated ocean load, and between provisional response harmonics, are
+%   neglected, as is covariance of the target mass with that response.
+%   The instantaneous whole-ocean mass adjustment is propagated
+%   before taking marginal standard deviations. Returned marginal errors
+%   alone do not encode the covariance required to localize them exactly.
 %
 % References
 %   Adhikari, S. et al. (2019). Sea-level fingerprints emergent from GRACE
@@ -94,7 +103,7 @@
 %   2024/11/20, En-Chi Lee (williameclee@arizona.edu)
 %
 % Last modified by
-%   2026/09/25, En-Chi Lee (williameclee@arizona.edu)
+%   2026/10/24, En-Chi Lee (williameclee@arizona.edu)
 
 function varargout = solvesle(varargin)
     %% Initialisation
@@ -103,7 +112,7 @@ function varargout = solvesle(varargin)
     % Parse input arguments
     [forcingLoadPlm, forcingLoadStdPlm, includesDO, computeError, ...
          L, ocean, frame, loveNumSrc, doRotationFeedback, maxIter, ...
-         oceanKernel, oceanFunPlm, kernelOrder, initRslPlm, beQuiet] = ...
+         oceanKernel, ~, kernelOrder, initRslPlm, beQuiet] = ...
         parseinputs(varargin{:});
 
     % Create progress bar
@@ -111,21 +120,6 @@ function varargout = solvesle(varargin)
         wbar = waitbar(0, 'Initialising', ...
             "Name", upper(mfilename), "CreateCancelBtn", 'setappdata(gcbf,''canceling'',1)');
         cleanup = onCleanup(@() deleteWaitbar(wbar));
-    end
-
-    % Load the ocean function if not provided
-    if isempty(oceanFunPlm)
-
-        if ~beQuiet
-            waitbar(0, wbar, 'Computing ocean function');
-        end
-
-        [~, ~, ~, ~, ~, oceanFunPlm] = geoboxcap(L, ocean, "BeQuiet", true);
-    end
-
-    % Remove the d/o columns if present
-    if size(oceanFunPlm, 2) == 4
-        oceanFunPlm = oceanFunPlm(:, 3:4);
     end
 
     % Load the ocean kernel if not provided
@@ -138,8 +132,25 @@ function varargout = solvesle(varargin)
         oceanKernel = kernelcp_new(L, ocean, "BeQuiet", true);
     end
 
-    % Precompute the squared ocean kernel for error computation
-    oceanKernelSquare = oceanKernel .^ 2;
+    % Multiplying a constant field by the ocean mask gives this column.
+    % Use the same geometry for localization, mass balance and ocean area.
+    oceanFunPlms = oceanKernel(:, 1);
+    oceanArea = oceanFunPlms(1);
+
+    if ~isfinite(oceanArea) || oceanArea <= 0
+        error('ULMO:solvesle:InvalidOceanArea', ...
+        'OceanKernel must have a finite, positive ocean area in (1,1).');
+    end
+
+    if computeError
+        % The mass adjustment correlates the constant term with the other
+        % harmonics. Apply that constraint before squaring the operator.
+        oceanWghts = oceanFunPlms / oceanArea;
+        cstredOceanKernel = oceanKernel - oceanWghts * oceanKernel(1, :);
+        cstredOceanKernel(:, 1) = 0;
+        cstredOceanKernelSq = cstredOceanKernel .^ 2;
+        clear constrainedOceanKernel
+    end
 
     % Load the permutation order from cosi -> flat
     if isempty(kernelOrder)
@@ -186,8 +197,6 @@ function varargout = solvesle(varargin)
         forcingLoadStdPlms = forcingLoadStdPlm(kernelOrder, :);
         initRslPlms = initRslPlm(kernelOrder, :);
     end
-
-    oceanFunPlms = oceanFunPlm(kernelOrder);
 
     %% Constants
     % Define constants and precompute SLE kernel
@@ -256,9 +265,8 @@ function varargout = solvesle(varargin)
     rslOceanPlms = rslPlms;
 
     if computeError
-        gmslStd = ...
-            -forcingLoadStdPlms(1, :) / oceanFunPlms(1, :) / WATER_DENSITY;
-        rslOceanStdPlms = oceanFunPlms * gmslStd;
+        gmslStd = forcingLoadStdPlms(1, :) / oceanArea / WATER_DENSITY;
+        rslOceanStdPlms = abs(oceanFunPlms) * gmslStd;
     end
 
     for iIter = 1:maxIter
@@ -278,9 +286,12 @@ function varargout = solvesle(varargin)
         rslPlms = sleKernel * loadPlms;
         rslOceanPlms = oceanKernel * rslPlms;
 
-        % Enforce mass conservation
-        rslOceanPlms(1, :) = -forcingLoadPlms(1, :) / WATER_DENSITY;
-        rslPlms(1, :) = rslOceanPlms(1, :) / oceanFunPlms(1, :);
+        % Add a constant sea-level offset and its complete ocean footprint.
+        % Keep the iterated field equal to oceanKernel * the returned field.
+        massOffset = (-forcingLoadPlms(1, :) / WATER_DENSITY ...
+            - rslOceanPlms(1, :)) / oceanArea;
+        rslPlms(1, :) = rslPlms(1, :) + massOffset;
+        rslOceanPlms = rslOceanPlms + oceanFunPlms * massOffset;
 
         % Compute error if required
         if ~computeError
@@ -289,11 +300,14 @@ function varargout = solvesle(varargin)
 
         loadStdPlms = sqrt( ...
             forcingLoadStdPlms .^ 2 + (rslOceanStdPlms * WATER_DENSITY) .^ 2);
-        rslStdPlms = sqrt((sleKernel .^ 2) * (loadStdPlms .^ 2));
-        rslOceanStdPlms = sqrt(oceanKernelSquare * (rslStdPlms .^ 2));
-        rslOceanStdPlms(1, :) = -forcingLoadStdPlms(1, :) / WATER_DENSITY;
-        rslStdPlms(1, :) = rslOceanStdPlms(1, :) ./ oceanFunPlms(1, :);
-
+        rslVarPlms = (sleKernel .^ 2) * (loadStdPlms .^ 2);
+        rslOceanVarPlms = (forcingLoadStdPlms(1, :) / WATER_DENSITY) .^ 2;
+        rslOceanStdPlms = sqrt(cstredOceanKernelSq * rslVarPlms ...
+            + (oceanWghts .^ 2) * rslOceanVarPlms);
+        rslOceanStdPlms(1, :) = sqrt(rslOceanVarPlms);
+        rslVarPlms(1, :) = (rslOceanVarPlms ...
+            + (oceanKernel(1, 2:end) .^ 2) * rslVarPlms(2:end, :)) / oceanArea ^ 2;
+        rslStdPlms = sqrt(rslVarPlms);
     end
 
     %% Post-processing
