@@ -111,7 +111,7 @@
 %   2025/03/18, En-Chi Lee (williameclee@arizona.edu)
 %
 % Last modified by
-%   2026/09/25, En-Chi Lee (williameclee@arizona.edu)
+%   2026/10/24, En-Chi Lee (williameclee@arizona.edu)
 
 function varargout = solvedegree1(varargin)
     %% Initialisation
@@ -245,8 +245,6 @@ function [coeffs, coeffStds, dates] = ...
 
     end
 
-    [~, ~, ~, ~, ~, oceanFunPlm] = ...
-        geoboxcap(Lsle, oceanDomain, "BeQuiet", beQuiet);
     kernelOrder = kernelorder(Lsle);
 
     graceNoUnknownPlmt = putcoeffs(gracePlmt, 0, coeffLocs);
@@ -278,17 +276,18 @@ function [coeffs, coeffStds, dates] = ...
             case 'fingerprint'
                 [oceanPlmt, oceanStdPlmt] = ...
                     solvesle(landPlmt, landStdPlmt, Lsle, oceanDomain, ...
-                    "OceanKernel", oceanKernelSle, "OceanFunction", oceanFunPlm, ...
-                    "KernelOrder", kernelOrder, "InitialRSL", gracePlmt / 1000, ... % kg/m^2 -> m
+                    "OceanKernel", oceanKernelSle, "KernelOrder", kernelOrder, ...
+                    "InitialRSL", gracePlmt / 1000, ... % kg/m^2 -> m
                     "RotationFeedback", true, "MaxIter", 5 + (5 * (iIter == maxIter)), "BeQuiet", true);
                 oceanPlmt = localise(oceanPlmt, "L", Lsle, "K", oceanKernelSle);
                 oceanStdPlmt = localise(oceanStdPlmt, "L", Lsle, "K", oceanKernelSle, "IsError", true);
                 oceanCoeffs = extractcoeffs(oceanPlmt, coeffLocs);
                 oceanCoeffStds = extractcoeffs(oceanStdPlmt, coeffLocs);
             case 'uniform'
-                barystaticLoad = squeeze(-landPlmt(1, 3, :) / oceanFunPlm(1, 3));
+                oceanArea = oceanKernelSle(1, 1);
+                barystaticLoad = squeeze(-landPlmt(1, 3, :) / oceanArea);
                 oceanCoeffs = barystaticLoad' .* oceanKernelSle((1:nCoeffs) + 1, 1);
-                barystaticLoadStd = squeeze(-landStdPlmt(1, 3, :) / oceanFunPlm(1, 3));
+                barystaticLoadStd = squeeze(-landStdPlmt(1, 3, :) / oceanArea);
                 oceanCoeffStds = barystaticLoadStd' .* oceanKernelSle((1:nCoeffs) + 1, 1);
         end
 
