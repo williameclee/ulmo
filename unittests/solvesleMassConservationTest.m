@@ -3,6 +3,9 @@
 % temporary data root. No production masks, data or caches are modified.
 % Add slepian_alpha to the path before running this class.
 %
+% Syntax
+%   results = runtests('unittests/solvesleMassConservationTest.m')
+%
 % Created by
 %   2026/10/24, En-Chi Lee (williameclee@gmail.com)
 
@@ -12,6 +15,8 @@ classdef solvesleMassConservationTest < matlab.unittest.TestCase
         epochCount = {1, 3}
         iterations = {1, 5, 20}
         rotation = {false, true}
+        sourceDegree = {1, 3}
+        columnCount = {2, 4}
     end
 
     methods (TestClassSetup)
@@ -51,6 +56,49 @@ classdef solvesleMassConservationTest < matlab.unittest.TestCase
             testCase.verifyEqual(ocean(1, :), -f(1, :), 'AbsTol', 1e-11);
             testCase.verifyEqual(meanLevel, (-f(1, :) / K(1, 1))', 'AbsTol', 1e-11);
             testCase.verifyEmpty(empty);
+        end
+
+        function resizingPreservesEveryEpoch(testCase, sourceDegree, columnCount, epochCount)
+            % Compare implicit padding/truncation with explicit target-degree
+            % inputs for forcing, uncertainties and the initial RSL together.
+            K = hemisphereKernel();
+            n = (sourceDegree + 1) * (sourceDegree + 2) / 2;
+            values = reshape(1:n * 2 * epochCount, n, 2, epochCount);
+            input = {values, values / 10, values / 1000};
+            expected = cell(1, 3);
+            [order, degree] = addmon(sourceDegree);
+
+            for j = 1:3
+                expected{j} = zeros(6, 2, epochCount);
+                count = min(n, 6);
+                expected{j}(1:count, :, :) = input{j}(1:count, :, :);
+
+                if columnCount == 4
+                    input{j} = cat(2, repmat([degree, order], 1, 1, epochCount), input{j});
+                end
+
+            end
+
+            options = {"OceanKernel", K, "MaxIter", 5, "BeQuiet", true};
+            actual = cell(1, 4); reference = cell(1, 4);
+            [actual{:}] = solvesle(input{1}, input{2}, 2, GeoDomain('alloceans'), ...
+                options{:}, "InitialRSL", input{3});
+            [reference{:}] = solvesle(expected{1}, expected{2}, 2, GeoDomain('alloceans'), ...
+                options{:}, "InitialRSL", expected{3});
+
+            if columnCount == 4
+                [targetOrder, targetDegree] = addmon(2);
+                metadata = repmat([targetDegree, targetOrder], 1, 1, epochCount);
+                testCase.verifyEqual(actual{1}(:, 1:2, :), metadata);
+                testCase.verifyEqual(actual{2}(:, 1:2, :), metadata);
+                actual{1} = actual{1}(:, 3:4, :);
+                actual{2} = actual{2}(:, 3:4, :);
+            end
+
+            for j = 1:4
+                testCase.verifyEqual(actual{j}, reference{j}, 'AbsTol', 1e-12);
+            end
+
         end
 
         function convergesToIndependentLinearSolution(testCase)

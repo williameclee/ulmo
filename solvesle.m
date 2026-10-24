@@ -156,44 +156,17 @@ function varargout = solvesle(varargin)
 
     kernelOrder = kernelOrder(:);
 
-    % Truncate SH input to correct d/o
-    if ismatrix(forcingLoadPlm)
+    % Flatten the SH arrays to 2D
+    forcingLoadPlm = ensureplmdegree(forcingLoadPlm, L, 'traditional');
+    forcingLoadStdPlm = ensureplmdegree(forcingLoadStdPlm, L, 'traditional');
+    initRslPlm = ensureplmdegree(initRslPlm, L, 'traditional');
 
-        if size(forcingLoadPlm, 1) < addmup(L)
-            forcingLoadPlm(addmup(L), 2) = 0;
-            forcingLoadStdPlm(addmup(L), 2) = 0;
-            initRslPlm(addmup(L), 2) = 0;
-        elseif size(forcingLoadPlm, 1) > addmup(L)
-            forcingLoadPlm = forcingLoadPlm(1:addmup(L), :);
-            forcingLoadStdPlm = forcingLoadStdPlm(1:addmup(L), :);
-            initRslPlm = initRslPlm(1:addmup(L), :);
-        end
-
-        forcingLoadPlms = forcingLoadPlm(kernelOrder);
-        forcingLoadStdPlms = forcingLoadStdPlm(kernelOrder);
-        initRslPlms = initRslPlm(kernelOrder);
-    else
-
-        if size(forcingLoadPlm, 1) < addmup(L)
-            forcingLoadPlm(addmup(L), 2, 1) = 0;
-            forcingLoadStdPlm(addmup(L), 2, 1) = 0;
-            initRslPlm(addmup(L), 2, 1) = 0;
-        elseif size(forcingLoadPlm, 1) > addmup(L)
-            forcingLoadPlm = forcingLoadPlm(1:addmup(L), :, 1);
-            forcingLoadStdPlm = forcingLoadStdPlm(1:addmup(L), :, 1);
-            initRslPlm = initRslPlm(1:addmup(L), :, 1);
-        end
-
-        forcingLoadPlm = reshape(forcingLoadPlm, ...
-            [prod(size(forcingLoadPlm, 1:2)), size(forcingLoadPlm, 3)]);
-        forcingLoadStdPlm = reshape(forcingLoadStdPlm, ...
-            [prod(size(forcingLoadStdPlm, 1:2)), size(forcingLoadStdPlm, 3)]);
-        initRslPlm = reshape(initRslPlm, ...
-            [prod(size(initRslPlm, 1:2)), size(initRslPlm, 3)]);
-        forcingLoadPlms = forcingLoadPlm(kernelOrder, :);
-        forcingLoadStdPlms = forcingLoadStdPlm(kernelOrder, :);
-        initRslPlms = initRslPlm(kernelOrder, :);
-    end
+    forcingLoadPlm = reshape(forcingLoadPlm, [], size(forcingLoadPlm, 3));
+    forcingLoadStdPlm = reshape(forcingLoadStdPlm, [], size(forcingLoadStdPlm, 3));
+    initRslPlm = reshape(initRslPlm, [], size(initRslPlm, 3));
+    forcingLoadPlms = forcingLoadPlm(kernelOrder, :);
+    forcingLoadStdPlms = forcingLoadStdPlm(kernelOrder, :);
+    initRslPlms = initRslPlm(kernelOrder, :);
 
     %% Constants
     % Define constants and precompute SLE kernel
