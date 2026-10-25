@@ -46,9 +46,13 @@
 %   RotationFeedback - Logical flag to include rotation feedback
 %       The default option is true.
 %       Data type: LOGICAL
-%   MaxIter - Maximum number of iterations
-%       The default value is 10.
-%       Data type: [NUMERIC]
+%   Tolerance (name-value) - Relative tolerance.
+%       Estimated coefficient and standard-deviation vectors are checked
+%       separately; all epochs must pass.
+%       Set 0 to use exactly MaxIter steps.
+%       Default relative tolerance is 1e-6.
+%   MaxIter (name-value) - Maximum number of the outer iteration.
+%       Default number of iterations is 100.
 %   OceanKernel - Precomputed ocean-localization matrix.
 %       Providing it avoids loading or computing the kernel on each call.
 %       Its first column defines the ocean function and its (1,1) entry
@@ -109,7 +113,7 @@ function varargout = solvesle(varargin)
     % Parse input arguments
     [forcingLoadPlm, forcingLoadStdPlm, includesDO, computeError, ...
          L, ocean, frame, loveNumSrc, doRotationFeedback, maxIter, ...
-         oceanKernel, ~, kernelOrder, initRslPlm, beQuiet] = ...
+         oceanKernel, ~, kernelOrder, initRslPlm, beQuiet, tol] = ...
         parseinputs(varargin{:});
 
     % Create progress bar
@@ -248,7 +252,13 @@ function varargout = solvesle(varargin)
         rslOceanVarPlms = oceanWghtsSq * targetOceanVar;
     end
 
+    converged = false;
+    maxRelChange = Inf;
+    prevStd = [];
+
     for iIter = 1:maxIter
+        prevRslPlms = rslPlms;
+        prevRslOceanPlms = rslOceanPlms;
 
         if ~beQuiet
             waitbar(iIter / maxIter, wbar, ...
@@ -272,18 +282,47 @@ function varargout = solvesle(varargin)
         rslPlms(1, :) = rslPlms(1, :) + massOffset;
         rslOceanPlms = rslOceanPlms + oceanFunPlms * massOffset;
 
-        % Compute error if required
-        if ~computeError
-            continue
+        % Require convergence of both returned and localized coefficients.
+        maxRelChange = max(relativeiterationchange(rslPlms, prevRslPlms), ...
+            relativeiterationchange(rslOceanPlms, prevRslOceanPlms));
+
+        if computeError
+            loadVarPlms = forcingVarPlms + WATER_DENSITY ^ 2 * rslOceanVarPlms;
+            rslVarPlms = sleKernelSq * loadVarPlms;
+            rslOceanVarPlms = cstredOceanKernelSq * rslVarPlms ...
+                + oceanWghtsSq * targetOceanVar;
+            rslOceanVarPlms(1, :) = targetOceanVar;
+            rslVarPlms(1, :) = (targetOceanVar ...
+                + oceanMeanWghtsSq * rslVarPlms(2:end, :)) / oceanArea ^ 2;
+            crntStd = sqrt([rslVarPlms; rslOceanVarPlms]);
+
+            if isempty(prevStd)
+                maxRelChange = Inf;
+            else
+                maxRelChange = max(maxRelChange, relativeiterationchange(crntStd, prevStd));
+            end
+
+            prevStd = crntStd;
+
+            if any(~isfinite(crntStd), 'all')
+                error('ULMO:solvesle:NonFiniteIterate', 'SLE uncertainties became nonfinite.');
+            end
+
         end
 
-        loadVarPlms = forcingVarPlms + WATER_DENSITY ^ 2 * rslOceanVarPlms;
-        rslVarPlms = sleKernelSq * loadVarPlms;
-        rslOceanVarPlms = cstredOceanKernelSq * rslVarPlms ...
-            + oceanWghtsSq * targetOceanVar;
-        rslOceanVarPlms(1, :) = targetOceanVar;
-        rslVarPlms(1, :) = (targetOceanVar ...
-            + oceanMeanWghtsSq * rslVarPlms(2:end, :)) / oceanArea ^ 2;
+        if any(~isfinite(rslPlms), 'all') || any(~isfinite(rslOceanPlms), 'all')
+            error('ULMO:solvesle:NonFiniteIterate', 'SLE coefficients became nonfinite.');
+        elseif tol > 0 && maxRelChange <= tol
+            converged = true;
+            break
+        end
+
+    end
+
+    if tol > 0 && ~converged
+        error('ULMO:solvesle:NonConvergence', ...
+            'SLE did not converge in %d iterations (maximum relative change %.6g; tolerance %.6g).', ...
+            maxIter, maxRelChange, tol);
     end
 
     %% Post-processing
@@ -365,8 +404,10 @@ function varargout = parseinputs(varargin)
         @(x) ischar(validatestring(upper(x), {'CM', 'CF'})));
     addOptional(ip, 'RotationFeedback', true, ...
         @(x) islogical(x) || isnumeric(x));
-    addOptional(ip, 'maxIter', 10, ...
-        @(x) isnumeric(x) && isscalar(x) && x > 0);
+    addOptional(ip, 'maxIter', 100, ...
+        @(x) isnumeric(x) && isscalar(x) && isfinite(x) && x >= 1 && x == fix(x));
+    addParameter(ip, 'Tolerance', 1e-6, ...
+        @(x) isnumeric(x) && isscalar(x) && isfinite(x) && x >= 0);
     addParameter(ip, 'LoveNumSource', 'ISSM', ...
         @(x) ischar(x) || isstring(x));
     addParameter(ip, 'OceanKernel', [], @(x) isnumeric(x));
@@ -442,7 +483,7 @@ function varargout = parseinputs(varargin)
     varargout = ...
         {forcingPlm, forcingStdPlm, includesDO, computeError, ...
          L, ocean, frame, loveNumSrc, doRotationFeedback, maxIter, ...
-         oceanKernel, oceanFunSph, kernelOrder, initRslPlm, beQuiet};
+         oceanKernel, oceanFunSph, kernelOrder, initRslPlm, beQuiet, ip.Results.Tolerance};
 end
 
 % Find the degree of the spherical harmonic coefficients based on the
