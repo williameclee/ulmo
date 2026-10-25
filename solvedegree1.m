@@ -111,7 +111,7 @@
 %   2025/03/18, En-Chi Lee (williameclee@arizona.edu)
 %
 % Last modified by
-%   2026/10/24, En-Chi Lee (williameclee@arizona.edu)
+%   2026/10/25, En-Chi Lee (williameclee@arizona.edu)
 
 function varargout = solvedegree1(varargin)
     %% Initialisation
@@ -259,7 +259,7 @@ function [coeffs, coeffStds, dates] = ...
         coeffLocs);
 
     %% Solving the degree-1 coefficients
-    maxIter = 8;
+    maxIter = 10;
 
     for iIter = 1:maxIter
         waitbar((iIter - 1) / maxIter, wbar, ...
@@ -278,7 +278,7 @@ function [coeffs, coeffStds, dates] = ...
                     solvesle(landPlmt, landStdPlmt, Lsle, oceanDomain, ...
                     "OceanKernel", oceanKernelSle, "KernelOrder", kernelOrder, ...
                     "InitialRSL", gracePlmt / 1000, ... % kg/m^2 -> m
-                    "RotationFeedback", true, "MaxIter", 8, "BeQuiet", true);
+                    "RotationFeedback", true, "MaxIter", maxIter, "BeQuiet", true);
                 oceanPlmt = localise(oceanPlmt, "L", Lsle, "K", oceanKernelSle);
                 oceanStdPlmt = localise(oceanStdPlmt, "L", Lsle, "K", oceanKernelSle, "IsError", true);
                 oceanCoeffs = extractcoeffs(oceanPlmt, coeffLocs);
