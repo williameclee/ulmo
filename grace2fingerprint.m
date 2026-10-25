@@ -35,7 +35,8 @@
 % Notes
 %   Forcing remains GSM-like; GAC/GAD are not added or subtracted here.
 %   Restore GAD separately downstream when constructing ocean-mass signals.
-%   Fingerprint caches use a new GSM-v1 suffix; legacy files are not loaded.
+%   Regenerate existing fingerprints with ForceNew=true after changing
+%   the degree-1 forcing convention; cache names do not track that change.
 %   It doesn't make much sense to compute the GIA feedback or steric correction at this moment, so both arguments are disabled.
 %
 % See also
