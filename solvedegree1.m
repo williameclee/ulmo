@@ -1,4 +1,4 @@
-%% SOLVEDEGREE1
+%% SOLVEDEGREE1 - Solves for the geocentre motion from GRACE observations.
 % Recomputes the GRACE degree-1 surface mass density coefficients based on
 % Sun et al. (2016) with the specified GIA model.
 %
@@ -65,6 +65,18 @@
 %       - 'SD': Surface mass density.
 %       The default field is 'SD'.
 %       Data type: CHAR
+%   Tolerance (name-value) - Absolute tolerance.
+%       Estimated coefficient and standard-deviation vectors are checked
+%       separately; every coefficient in every epoch must pass.
+%       Set 0 to use exactly MaxIter steps.
+%       Default absolute tolerance is 1e-6 kg/m^2 = 1e-6 mm.
+%   MaxIter (name-value) - Maximum number of the outer iteration.
+%       Default number of iterations is 100.
+%   SleTolerance (name-value) - Inner SLE absolute tolerance.
+%       Set 0 to use exactly SleMaxIter steps.
+%       Default absolute tolerance is 1e-6 mm.
+%   SleMaxIter (name-value) - Maximum number of inner SLE iterations.
+%       Default number of iterations is 100.
 %   ForceNew - Logical flag to force reprocess of the data
 %       The default option is false.
 %       Data type: LOGICAL
@@ -118,12 +130,12 @@ function varargout = solvedegree1(varargin)
     % Parse inputs
     [pcenter, rlevel, Ldata, Ltruncation, Lsle, giaModel, oceanDomain, ...
          includeC20, includeC30, replaceWGad, method, timelim, unit, ...
-         forceNew, saveData, beQuiet, onlyId, callChain] = ...
+         forceNew, saveData, beQuiet, onlyId, callChain, intpOpts] = ...
         parseinputs(varargin);
 
     [dataPath, ~, outputId] = ...
         getoutputfile(pcenter, rlevel, Ldata, replaceWGad, giaModel, ...
-        includeC20, includeC30, Ltruncation, Lsle, oceanDomain, method);
+        includeC20, includeC30, Ltruncation, Lsle, oceanDomain, method, intpOpts);
 
     if onlyId
         varargout = {outputId};
@@ -150,7 +162,7 @@ function varargout = solvedegree1(varargin)
 
     [coeffs, coeffStds, dates] = ...
         solvedegree1Core(pcenter, rlevel, Ldata, Ltruncation, Lsle, replaceWGad, ...
-        giaModel, includeC20, includeC30, oceanDomain, method, beQuiet);
+        giaModel, includeC20, includeC30, oceanDomain, method, beQuiet, intpOpts);
 
     if saveData
         save(dataPath, 'coeffs', 'coeffStds', 'dates')
@@ -170,11 +182,13 @@ end
 %% Subfunctions
 % Heart of the programme
 function [coeffs, coeffStds, dates] = ...
-        solvedegree1Core(pcenter, rlevel, Ldata, Ltruncation, Lsle, rwGad, giaModel, includeC20, includeC30, oceanDomain, method, beQuiet)
+        solvedegree1Core(pcenter, rlevel, Ldata, Ltruncation, Lsle, rwGad, giaModel, includeC20, includeC30, oceanDomain, method, beQuiet, iterOpts)
     %% Loading data
-    wbar = waitbar(0, 'Loading GRACE data', ...
-        "Name", upper(mfilename), "CreateCancelBtn", 'setappdata(gcbf,''canceling'',1)');
-    cleanup = onCleanup(@() deleteWaitbar(wbar));
+    if ~beQuiet
+        wbar = waitbar(0, 'Loading GRACE data', ...
+            "Name", upper(mfilename), "CreateCancelBtn", 'setappdata(gcbf,''canceling'',1)');
+        cleanup = onCleanup(@() deleteWaitbar(wbar));
+    end
 
     [gracePlmt, graceStdPlmt, dates] = grace2plmt_new(pcenter, rlevel, Ldata, ...
         "Unit", 'SD', "OutputFormat", 'timefirst', "TimeFormat", 'datetime', ...
@@ -205,17 +219,20 @@ function [coeffs, coeffStds, dates] = ...
     % Ignore STD of GIA for now
 
     %% Preparing/preallocating variables
-    waitbar(0, wbar, 'Preparing kernels and variables');
+    if ~beQuiet
+        waitbar(0, wbar, 'Preparing kernels and variables');
+
+        if getappdata(wbar, 'canceling')
+            error('ULMO:ProcessCancelledByUser', 'Geocentre computation cancelled');
+        end
+
+    end
+
     gracePlmt = permute(gracePlmt, [2, 3, 1]); % timefirst -> traditional
     graceStdPlmt = permute(graceStdPlmt, [2, 3, 1]); % timefirst -> traditional
 
-    if getappdata(wbar, 'canceling')
-        error('ULMO:ProcessCancelledByUser', 'Geocentre computation cancelled');
-    end
-
     % Whether to also reestimate C20 and C30
     nCoeffs = 3 + includeC20 + includeC30; % C10, C11, S11, (C20), (C30)
-    coeffs = nan([length(dates), nCoeffs]);
 
     % Precompute kernels
     coeffLocs = [2, 1; 3, 1; 3, 2];
@@ -247,26 +264,35 @@ function [coeffs, coeffStds, dates] = ...
 
     kernelOrder = kernelorder(Lsle);
 
-    graceNoUnknownPlmt = putcoeffs(gracePlmt, 0, coeffLocs);
+    % Set unknown coefficients to 0
+    gracePlmt = putcoeffs(gracePlmt, 0, coeffLocs);
+    graceStdPlmt = putcoeffs(graceStdPlmt, 0, coeffLocs);
     oceanCoeffsNoUnkown = extractcoeffs( ...
-        localise(graceNoUnknownPlmt, "L", Lsle, "K", oceanKernelSle), ...
+        localise(gracePlmt, "L", Lsle, "K", oceanKernelSle), ...
         coeffLocs);
-
-    % STD
-    graceStdNoUnknownPlmt = putcoeffs(graceStdPlmt, 0, coeffLocs);
     oceanCoeffStdsNoUnkown = extractcoeffs( ...
-        localise(graceStdNoUnknownPlmt, "L", Lsle, "K", oceanKernelSle, "IsError", true), ...
+        localise(graceStdPlmt, "L", Lsle, "K", oceanKernelSle, "IsError", true), ...
         coeffLocs);
 
     %% Solving the degree-1 coefficients
-    maxIter = 10;
+    maxIter = iterOpts.MaxIter;
+    tol = iterOpts.Tolerance;
+    converged = false;
+    coeffs = extractcoeffs(gracePlmt, coeffLocs);
+    coeffStds = extractcoeffs(graceStdPlmt, coeffLocs);
 
     for iIter = 1:maxIter
-        waitbar((iIter - 1) / maxIter, wbar, ...
-            sprintf('Solving degree-1 coefficients iteratively (%d/%d)', iIter, maxIter));
+        prevCoeffs = coeffs;
+        prevStds = coeffStds;
 
-        if getappdata(wbar, 'canceling')
-            error('ULMO:ProcessCancelledByUser', 'Geocentre computation cancelled');
+        if ~beQuiet
+            waitbar((iIter - 1) / maxIter, wbar, ...
+                sprintf('Solving degree-1 coefficients iteratively (%d/%d)', iIter, maxIter));
+
+            if getappdata(wbar, 'canceling')
+                error('ULMO:ProcessCancelledByUser', 'Geocentre computation cancelled');
+            end
+
         end
 
         landPlmt = localise(gracePlmt, "L", Lsle, "K", landKernelSle);
@@ -278,7 +304,8 @@ function [coeffs, coeffStds, dates] = ...
                     solvesle(landPlmt, landStdPlmt, Lsle, oceanDomain, ...
                     "OceanKernel", oceanKernelSle, "KernelOrder", kernelOrder, ...
                     "InitialRSL", gracePlmt / 1000, ... % kg/m^2 -> m
-                    "RotationFeedback", true, "MaxIter", maxIter, "BeQuiet", true);
+                    "RotationFeedback", true, "MaxIter", iterOpts.SleMaxIter, ...
+                    "Tolerance", iterOpts.SleTolerance, "BeQuiet", true);
                 oceanPlmt = localise(oceanPlmt, "L", Lsle, "K", oceanKernelSle);
                 oceanStdPlmt = localise(oceanStdPlmt, "L", Lsle, "K", oceanKernelSle, "IsError", true);
                 oceanCoeffs = extractcoeffs(oceanPlmt, coeffLocs);
@@ -297,13 +324,35 @@ function [coeffs, coeffStds, dates] = ...
         coeffStds = sqrt((coeffsKernel \ eye(nCoeffs)) .^ 2 * ...
             (oceanCoeffStds .^ 2 + oceanCoeffStdsNoUnkown .^ 2));
         graceStdPlmt = putcoeffs(graceStdPlmt, coeffStds, coeffLocs);
+
+        if any(~isfinite(coeffs), 'all') || any(~isfinite(coeffStds), 'all')
+            error('ULMO:solvedegree1:NonFiniteIterate', ...
+            'Estimated coefficients or uncertainties became nonfinite.');
+        end
+
+        maxChange = max(absoluteiterationchange(coeffs, prevCoeffs), ...
+            absoluteiterationchange(coeffStds, prevStds));
+
+        if tol > 0 && maxChange <= tol
+            converged = true;
+            break
+        end
+
+    end
+
+    if tol > 0 && ~converged
+        error('ULMO:solvedegree1:NonConvergence', ...
+            'Solution did not converge in %d iterations (maximum absolute change %.6g; tolerance %.6g).', ...
+            maxIter, maxChange, tol);
     end
 
     coeffs = coeffs'; % traditional -> timefirst
     coeffStds = coeffStds'; % traditional -> timefirst
 
     %% Postprocessing and output
-    waitbar(1, wbar, 'Postprocessing results');
+    if ~beQuiet
+        waitbar(1, wbar, 'Postprocessing results');
+    end
 
     % Restore GAC/GAD
     if rwGad
@@ -375,6 +424,12 @@ function varargout = parseinputs(inputs)
         @(x) isempty(x) || isdatetime(x) || isnumeric(x));
     addOptional(ip, 'Unit', 'SD', ...
         @(x) ischar(validatestring(x, {'GRAV', 'POT', 'SD'})));
+    valdLimit = @(x) isnumeric(x) && isscalar(x) && isfinite(x) && x >= 1 && x == fix(x);
+    valdTol = @(x) isnumeric(x) && isscalar(x) && isfinite(x) && x >= 0;
+    addParameter(ip, 'MaxIter', 100, valdLimit);
+    addParameter(ip, 'Tolerance', 1e-6, valdTol);
+    addParameter(ip, 'SleMaxIter', 100, valdLimit);
+    addParameter(ip, 'SleTolerance', 1e-9, valdTol);
     addParameter(ip, 'ForceNew', false, ...
         @(x) (isnumeric(x) || islogical(x)) && isscalar(x));
     addParameter(ip, 'SaveData', true, ...
@@ -385,7 +440,7 @@ function varargout = parseinputs(inputs)
         @(x) (isnumeric(x) || islogical(x)) && isscalar(x));
     addParameter(ip, 'CallChain', {}, @iscell);
 
-    if iscell(inputs{1})
+    if ~isempty(inputs) && iscell(inputs{1})
         inputs = [inputs{1}{:}, inputs(2:end)];
     end
 
@@ -410,6 +465,10 @@ function varargout = parseinputs(inputs)
     onlyId = logical(ip.Results.OnlyId);
     callChain = [ip.Results.CallChain, {mfilename}];
 
+    iterOpts = struct('MaxIter', ip.Results.MaxIter, ...
+        'Tolerance', ip.Results.Tolerance, 'SleMaxIter', ip.Results.SleMaxIter, ...
+        'SleTolerance', ip.Results.SleTolerance);
+
     if ~isempty(regexp(lower(giaModel), '^ice[-]?6g[_-]?d$', 'once'))
         giaModel = 'ICE6GD';
     elseif contains(lower(giaModel), 'caron')
@@ -421,13 +480,13 @@ function varargout = parseinputs(inputs)
     varargout = ...
         {pcenter, rlevel, Ldata, Ltruncation, Lsle, giaModel, oceanDomain, ...
          includeC20, includeC30, replaceWGad, method, timelim, unit, ...
-         forceNew, saveData, beQuiet, onlyId, callChain};
+         forceNew, saveData, beQuiet, onlyId, callChain, iterOpts};
 end
 
 % Get the input and output file names
 function [outputPath, outputFile, deg1Id] = ...
         getoutputfile(pcenter, rlevel, Ldata, replaceWGad, giaModel, ...
-        includeC20, includeC30, Ltruncation, Lsle, oceanDomain, method)
+        includeC20, includeC30, Ltruncation, Lsle, oceanDomain, method, iterOpts)
     outputFolder = fullfile(getenv('GRACEDATA'), 'Degree1', 'new');
 
     if ~exist(outputFolder, 'dir')
@@ -462,6 +521,10 @@ function [outputPath, outputFile, deg1Id] = ...
         gadFlag, giaModel, includeC20Flag, ...
         Ltruncation, Lsle, oceanDomain.Id, methodFlag);
 
+    % Separate zero-start adaptive solutions from legacy and other tolerances.
+    deg1Id = sprintf('%s-zero-absolute-v3-t%.17g-n%d-st%.17g-sn%d', deg1Id, ...
+        iterOpts.Tolerance, iterOpts.MaxIter, ...
+        iterOpts.SleTolerance, iterOpts.SleMaxIter);
     outputFile = sprintf('%s_%s-SD.mat', productId, deg1Id);
 
     outputPath = fullfile(outputFolder, outputFile);

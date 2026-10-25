@@ -1,0 +1,3 @@
+function x=convertgravity(x,varargin)
+    % Identity for the SD-only test calls.
+end
