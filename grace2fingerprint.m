@@ -33,6 +33,9 @@
 %   time - Time stamps of the data, in datetime format
 %
 % Notes
+%   Forcing remains GSM-like; GAC/GAD are not added or subtracted here.
+%   Restore GAD separately downstream when constructing ocean-mass signals.
+%   Fingerprint caches use a new GSM-v1 suffix; legacy files are not loaded.
 %   It doesn't make much sense to compute the GIA feedback or steric correction at this moment, so both arguments are disabled.
 %
 % See also
@@ -42,17 +45,17 @@
 %   2024/11/20, williameclee@arizona.edu (@williameclee)
 %
 % Last modified by
-%   2025/10/16, williameclee@arizona.edu (@williameclee)
+%   2026/10/25, williameclee@arizona.edu (@williameclee)
 
 function [rslLoadPlmt, rslLoadStdPlmt, dates] = grace2fingerprint(varargin)
     %% Parsing inputs
     [product, oceanDomain, landDomain, L, Loutput, ...
-         giaModel, doGia, redoDeg1, rwGad, timelim, doRotation, frame, unit, ...
+         giaModel, doGia, redoDeg1, timelim, doRotation, frame, unit, ...
          outputFmt, timeFmt, beQuiet, forceNew, saveData, oceanKernel, callChain] = parseinputs(varargin);
 
     %% Data locating
     filepath = findoutputpath( ...
-        product, L, oceanDomain, landDomain, frame, giaModel, doRotation, rwGad, redoDeg1);
+        product, L, oceanDomain, landDomain, frame, giaModel, doRotation, redoDeg1);
 
     vars = {'rslLoadPlmt', 'rslLoadStdPlmt', 'dates'};
 
@@ -74,7 +77,7 @@ function [rslLoadPlmt, rslLoadStdPlmt, dates] = grace2fingerprint(varargin)
 
     %% Solving the sea level equation
     [rslLoadPlmt, rslLoadStdPlmt, dates] = ...
-        grace2fingerprintCore(product, oceanDomain, landDomain, L, giaModel, doGia, rwGad, redoDeg1, doRotation, oceanKernel, beQuiet);
+        grace2fingerprintCore(product, oceanDomain, landDomain, L, giaModel, doGia, redoDeg1, doRotation, oceanKernel, beQuiet);
 
     %% Saving and returning data
     if saveData
@@ -96,7 +99,7 @@ end
 %% Subfunctions
 % Heart of the programme
 function [rslLoadPlmt, rslLoadStdPlmt, dates] = ...
-        grace2fingerprintCore(product, oceanDomain, landDomain, Lsle, giaModel, doGia, rwGad, redoDeg1, doRotation, oceanKernel, beQuiet)
+        grace2fingerprintCore(product, oceanDomain, landDomain, Lsle, giaModel, doGia, redoDeg1, doRotation, oceanKernel, beQuiet)
     %% Loading data
     deg1Args = false;
     Ldata = product{3};
@@ -111,20 +114,6 @@ function [rslLoadPlmt, rslLoadStdPlmt, dates] = ...
         "BeQuiet", beQuiet);
     gracePlmt = ensureplmdegree(gracePlmt, Ldata);
     graceStdPlmt = ensureplmdegree(graceStdPlmt, Ldata);
-
-    % Add back GAC and remove GAD instead (Sun et al., 2016)
-    % GAC/GAD products don't have uncertainties
-    % Only replace for l >= 2 (see TN-13)
-    if rwGad
-        [gacPlmt, ~] = aod1b2plmt(product{1:2}, 'GAC', Ldata, ...
-            "OutputFormat", 'timefirst', "BeQuiet", beQuiet);
-        gacPlmt = ensureplmdegree(gacPlmt, Ldata);
-        [gadPlmt, ~] = aod1b2plmt(product{1:2}, 'GAD', Ldata, ...
-            "OutputFormat", 'timefirst', "BeQuiet", beQuiet);
-        gadPlmt = ensureplmdegree(gadPlmt, Ldata);
-        gracePlmt(:, 4:end, 3:4) = gracePlmt(:, 4:end, 3:4) ...
-            + gacPlmt(:, 4:end, 3:4) - gadPlmt(:, 4:end, 3:4);
-    end
 
     % Load GIA model
     if doGia
@@ -181,8 +170,6 @@ function varargout = parseinputs(inputs)
     addOptional(ip, 'GIA', 'ice6gd', @(x) ischar(x) || islogical(x));
     addOptional(ip, 'RotationFeedback', true, ...
         @(x) (islogical(x) || isnumeric(x)) && isscalar(x));
-    addOptional(ip, 'ReplaceWithGAD', true, ...
-        @(x) islogical(x) || isnumeric(x));
     addParameter(ip, 'RecomputeDegree1', false, ...
         @(x) (islogical(x) || isnumeric(x)) && isscalar(x));
     addParameter(ip, 'Frame', 'CF', @(x) ischar(validatestring(x, {'CF', 'CM'})));
@@ -216,7 +203,6 @@ function varargout = parseinputs(inputs)
     oceanDomain = ip.Results.OceanDomain;
     landDomain = ip.Results.LandDomain;
     giaModel = ip.Results.GIA;
-    replaceWGad = logical(ip.Results.ReplaceWithGAD);
     redoDeg1 = logical(ip.Results.RecomputeDegree1);
     frame = ip.Results.Frame;
     doRotation = logical(ip.Results.RotationFeedback);
@@ -250,12 +236,12 @@ function varargout = parseinputs(inputs)
 
     varargout = ...
         {product, oceanDomain, landDomain, L, Loutput, ...
-         giaModel, doGia, redoDeg1, replaceWGad, timelim, doRotation, frame, unit, ...
+         giaModel, doGia, redoDeg1, timelim, doRotation, frame, unit, ...
          outputFmt, timeFmt, beQuiet, forceNew, saveData, oceanKernel, callChain};
 end
 
 % Get the output path
-function filepath = findoutputpath(product, L, oceanDomain, landDomain, frame, giaModel, doRotation, rwGad, redoDeg1)
+function filepath = findoutputpath(product, L, oceanDomain, landDomain, frame, giaModel, doRotation, redoDeg1)
     productName = sprintf("%s%s%d", product{:});
 
     switch class(oceanDomain)
@@ -289,12 +275,6 @@ function filepath = findoutputpath(product, L, oceanDomain, landDomain, frame, g
 
     end
 
-    if rwGad
-        gadName = '_GAD';
-    else
-        gadName = '';
-    end
-
     if strcmpi(frame, 'CF')
         frameName = '';
     else
@@ -325,8 +305,8 @@ function filepath = findoutputpath(product, L, oceanDomain, landDomain, frame, g
         mkdir(filefolder);
     end
 
-    filename = sprintf('%s%s%s-Ls%d-%s%s%s%s%s.mat', ...
-        productName, gadName, giaName, L, oceanName, landName, frameName, rotationName, deg1Name);
+    filename = sprintf('%s%s-Ls%d-%s%s%s%s%s.mat', ...
+        productName, giaName, L, oceanName, landName, frameName, rotationName, deg1Name);
     filepath = fullfile(filefolder, filename);
 end
 

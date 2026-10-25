@@ -1,12 +1,14 @@
 %% SOLVEDEGREE1 - Solves for the geocentre motion from GRACE observations.
 % Recomputes the GRACE degree-1 surface mass density coefficients based on
 % Sun et al. (2016) with the specified GIA model.
+% Estimates remain GSM-like: the solver does not add GAC or subtract GAD.
+% Restore GAD separately downstream when constructing ocean-mass signals.
 %
 % Syntax
 %   [coeffs, coeffStd, dates] = SOLVEDEGREE1(...
 %       pcenter, rlevel, Ldata, Lsle, GIAModel, oceanDomain)
 %   [__] = SOLVEDEGREE1(__, ...
-%       "ReplaceWithGAD", rwGad, "IncludeC20", includeC20, "TimeRange", timelim)
+%       "IncludeC20", includeC20, "TimeRange", timelim)
 %   [__] = SOLVEDEGREE1(__, ...
 %       "ForceNew", forceNew, "SaveData", saveData, "BeQuiet", beQuiet)
 %   [__, gracePlmt] = SOLVEDEGREE1(__)
@@ -48,9 +50,6 @@
 %   IncludeC20 - Whether to also recompute C20
 %       The default option is false, as C20 is usually replaced with SLR
 %       values.
-%       Data type: LOGICAL
-%   ReplaceWithGAD - Whether to remove GAD instead of GAC
-%       The default option is true (see Sun et al., 2016).
 %       Data type: LOGICAL
 %   Method - Method to solve the sea level equation
 %       - 'fingerprint': Solve the sea level equation using the fingerprint
@@ -103,7 +102,7 @@
 %       'ice6gd', GeoDomain('alloceans', "Buffer", 2))
 %   coeffs = SOLVEDEGREE1('CSR', 'RL06', 45, 180, ...
 %       'ice6gd', GeoDomain('alloceans', "Buffer", 2), ...
-%       "IncludeC20", true, "ReplaceWithGAD", true)
+%       "IncludeC20", true)
 %
 % See also
 %   SOLVESLE, GRACE2PLMT
@@ -129,12 +128,12 @@ function varargout = solvedegree1(varargin)
     %% Initialisation
     % Parse inputs
     [pcenter, rlevel, Ldata, Ltruncation, Lsle, giaModel, oceanDomain, ...
-         includeC20, includeC30, replaceWGad, method, timelim, unit, ...
+         includeC20, includeC30, method, timelim, unit, ...
          forceNew, saveData, beQuiet, onlyId, callChain, intpOpts] = ...
         parseinputs(varargin);
 
     [dataPath, ~, outputId] = ...
-        getoutputfile(pcenter, rlevel, Ldata, replaceWGad, giaModel, ...
+        getoutputfile(pcenter, rlevel, Ldata, giaModel, ...
         includeC20, includeC30, Ltruncation, Lsle, oceanDomain, method, intpOpts);
 
     if onlyId
@@ -161,7 +160,7 @@ function varargout = solvedegree1(varargin)
     end
 
     [coeffs, coeffStds, dates] = ...
-        solvedegree1Core(pcenter, rlevel, Ldata, Ltruncation, Lsle, replaceWGad, ...
+        solvedegree1Core(pcenter, rlevel, Ldata, Ltruncation, Lsle, ...
         giaModel, includeC20, includeC30, oceanDomain, method, beQuiet, intpOpts);
 
     if saveData
@@ -182,7 +181,7 @@ end
 %% Subfunctions
 % Heart of the programme
 function [coeffs, coeffStds, dates] = ...
-        solvedegree1Core(pcenter, rlevel, Ldata, Ltruncation, Lsle, rwGad, giaModel, includeC20, includeC30, oceanDomain, method, beQuiet, iterOpts)
+        solvedegree1Core(pcenter, rlevel, Ldata, Ltruncation, Lsle, giaModel, includeC20, includeC30, oceanDomain, method, beQuiet, iterOpts)
     %% Loading data
     if ~beQuiet
         wbar = waitbar(0, 'Loading GRACE data', ...
@@ -197,20 +196,6 @@ function [coeffs, coeffStds, dates] = ...
     gracePlmt = ensureplmdegree(gracePlmt, Lsle);
     graceStdPlmt = ensureplmdegree(graceStdPlmt, Ltruncation);
     graceStdPlmt = ensureplmdegree(graceStdPlmt, Lsle);
-
-    % Add back GAC and remove GAD instead (Sun et al., 2016)
-    % GAC/GAD products don't have uncertainties
-    % Only replace for l >= 2 (see TN-13 & Sun et al., 2015)
-    if rwGad
-        [gacPlmt, ~] = aod1b2plmt(pcenter, rlevel, 'GAC', Lsle, ...
-            "OutputFormat", 'timefirst', "BeQuiet", beQuiet);
-        gacPlmt = ensureplmdegree(gacPlmt, Lsle);
-        [gadPlmt, ~] = aod1b2plmt(pcenter, rlevel, 'GAD', Lsle, ...
-            "OutputFormat", 'timefirst', "BeQuiet", beQuiet);
-        gadPlmt = ensureplmdegree(gadPlmt, Lsle);
-        gracePlmt(:, 4:end, 3:4) = gracePlmt(:, 4:end, 3:4) ...
-            + gacPlmt(:, 4:end, 3:4) - gadPlmt(:, 4:end, 3:4);
-    end
 
     % Remove GIA signal for l >= 2 (Sun et al., 2016)
     giaPlmt = gia2plmt(dates, giaModel, "L", Lsle, ...
@@ -354,18 +339,6 @@ function [coeffs, coeffStds, dates] = ...
         waitbar(1, wbar, 'Postprocessing results');
     end
 
-    % Restore GAC/GAD
-    if rwGad
-
-        for iCoeff = 1:nCoeffs
-            coeffs(:, iCoeff) = ...
-                coeffs(:, iCoeff) ...
-                - squeeze(gacPlmt(:, coeffLocs(iCoeff, 1), 2 + coeffLocs(iCoeff, 2)) ...
-                - gadPlmt(:, coeffLocs(iCoeff, 1), 2 + coeffLocs(iCoeff, 2)));
-        end
-
-    end
-
     % Restore GIA signal for C20
     if includeC20 && includeC30
         coeffs(:, 4) = coeffs(:, 4) + ...
@@ -394,7 +367,6 @@ function varargout = parseinputs(inputs)
     dfOpt.OceanDomain = GeoDomain('alloceans', "Buffer", 0.5); % Sun et al. (2016)
     dfOpt.IncludeC20 = false;
     dfOpt.IncludeC30 = false;
-    dfOpt.RwGAD = true;
     dfOpt.Method = 'fingerprint';
     % Construct input parser
     ip = inputParser;
@@ -415,8 +387,6 @@ function varargout = parseinputs(inputs)
     addOptional(ip, 'IncludeC20', dfOpt.IncludeC20, ...
         @(x) islogical(x) || isnumeric(x));
     addOptional(ip, 'IncludeC30', dfOpt.IncludeC30, ...
-        @(x) islogical(x) || isnumeric(x));
-    addOptional(ip, 'ReplaceWithGAD', dfOpt.RwGAD, ...
         @(x) islogical(x) || isnumeric(x));
     addOptional(ip, 'Method', dfOpt.Method, ...
         @(x) ischar(validatestring(x, {'fingerprint', 'uniform'})));
@@ -455,7 +425,6 @@ function varargout = parseinputs(inputs)
     oceanDomain = ip.Results.OceanDomain;
     includeC20 = logical(ip.Results.IncludeC20);
     includeC30 = logical(ip.Results.IncludeC30);
-    replaceWGad = logical(ip.Results.ReplaceWithGAD);
     method = ip.Results.Method;
     timelim = ip.Results.TimeRange;
     unit = ip.Results.Unit;
@@ -479,24 +448,18 @@ function varargout = parseinputs(inputs)
 
     varargout = ...
         {pcenter, rlevel, Ldata, Ltruncation, Lsle, giaModel, oceanDomain, ...
-         includeC20, includeC30, replaceWGad, method, timelim, unit, ...
+         includeC20, includeC30, method, timelim, unit, ...
          forceNew, saveData, beQuiet, onlyId, callChain, iterOpts};
 end
 
 % Get the input and output file names
 function [outputPath, outputFile, deg1Id] = ...
-        getoutputfile(pcenter, rlevel, Ldata, replaceWGad, giaModel, ...
+        getoutputfile(pcenter, rlevel, Ldata, giaModel, ...
         includeC20, includeC30, Ltruncation, Lsle, oceanDomain, method, iterOpts)
     outputFolder = fullfile(getenv('GRACEDATA'), 'Degree1', 'new');
 
     if ~exist(outputFolder, 'dir')
         mkdir(outputFolder);
-    end
-
-    gadFlag = '';
-
-    if replaceWGad
-        gadFlag = 'GAD-';
     end
 
     includeC20Flag = '';
@@ -517,8 +480,8 @@ function [outputPath, outputFile, deg1Id] = ...
     end
 
     productId = sprintf('%s%s%d', pcenter, rlevel, Ldata);
-    deg1Id = sprintf('%s%s%s-Ld%d_Ls%d-%s%s', ...
-        gadFlag, giaModel, includeC20Flag, ...
+    deg1Id = sprintf('%s%s-Ld%d_Ls%d-%s%s', ...
+        giaModel, includeC20Flag, ...
         Ltruncation, Lsle, oceanDomain.Id, methodFlag);
 
     % Separate zero-start adaptive solutions from legacy and other tolerances.
