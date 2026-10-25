@@ -2,6 +2,9 @@
 %
 % Created by
 %   2026/10/25, En-Chi Lee (williameclee@gmail.com)
+%
+% Last modified
+%   2026/10/25, En-Chi Lee (williameclee@gmail.com)
 
 classdef degree1ConvergenceTest < matlab.unittest.TestCase
 
@@ -102,6 +105,31 @@ classdef degree1ConvergenceTest < matlab.unittest.TestCase
             testCase.verifyTrue(contains(a, 'zero-absolute-v3'));
         end
 
+        function ignoresLegacyGadCache(testCase)
+            [expected, expectedStd, dates] = runSolver();
+            id = runSolver("OnlyId", true);
+            testCase.verifyFalse(startsWith(id, 'GAD-'));
+            coeffs = ones(size(expected)) * 1e6;
+            coeffStds = coeffs;
+            legacyPath = fullfile(testCase.Folder, 'Degree1', 'new', ...
+                ['CSRRL062_GAD-', id, '-SD.mat']);
+            save(legacyPath, 'coeffs', 'coeffStds', 'dates');
+            [actual, actualStd] = runSolver("SaveData", true);
+            testCase.verifyEqual(actual, expected);
+            testCase.verifyEqual(actualStd, expectedStd);
+            testCase.verifyTrue(isfile(legacyPath));
+        end
+
+        function reusesGsmCache(testCase)
+            [coeffs, coeffStds, dates] = runSolver();
+            id = runSolver("OnlyId", true);
+            coeffs(:) = 42;
+            cachePath = fullfile(testCase.Folder, 'Degree1', 'new', ...
+                ['CSRRL062_', id, '-SD.mat']);
+            save(cachePath, 'coeffs', 'coeffStds', 'dates');
+            testCase.verifyEqual(runSolver(), coeffs);
+        end
+
         function checksLastEpoch(testCase)
             global DEGREE1_CONVERGENCE_FIXTURE
             DEGREE1_CONVERGENCE_FIXTURE.x(:, 1:2) = 0;
@@ -116,7 +144,7 @@ end
 
 function varargout = runSolver(varargin)
     [varargout{1:nargout}] = solvedegree1('CSR', 'RL06', 2, 2, 2, 'ICE6GD', GeoDomain('alloceans'), ...
-        "ReplaceWithGAD", false, "Method", 'uniform', "BeQuiet", true, "SaveData", false, varargin{:});
+        "Method", 'uniform', "BeQuiet", true, "SaveData", false, varargin{:});
 end
 
 function clearFixture()
