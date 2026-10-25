@@ -46,12 +46,12 @@
 %   RotationFeedback - Logical flag to include rotation feedback
 %       The default option is true.
 %       Data type: LOGICAL
-%   Tolerance (name-value) - Relative tolerance.
+%   Tolerance (name-value) - Absolute tolerance.
 %       Estimated coefficient and standard-deviation vectors are checked
-%       separately; all epochs must pass.
+%       separately; every coefficient in every epoch must pass.
 %       Set 0 to use exactly MaxIter steps.
-%       Default relative tolerance is 1e-6.
-%   MaxIter (name-value) - Maximum number of the outer iteration.
+%       Default absolute tolerance is 1e-6 mm or 1e-9 m.
+%   MaxIter (name-value) - Maximum number of SLE iterations.
 %       Default number of iterations is 100.
 %   OceanKernel - Precomputed ocean-localization matrix.
 %       Providing it avoids loading or computing the kernel on each call.
@@ -104,7 +104,7 @@
 %   2024/11/20, En-Chi Lee (williameclee@arizona.edu)
 %
 % Last modified by
-%   2026/10/24, En-Chi Lee (williameclee@arizona.edu)
+%   2026/10/25, En-Chi Lee (williameclee@arizona.edu)
 
 function varargout = solvesle(varargin)
     %% Initialisation
@@ -253,7 +253,7 @@ function varargout = solvesle(varargin)
     end
 
     converged = false;
-    maxRelChange = Inf;
+    maxAbsChange = Inf;
     prevStd = [];
 
     for iIter = 1:maxIter
@@ -283,8 +283,8 @@ function varargout = solvesle(varargin)
         rslOceanPlms = rslOceanPlms + oceanFunPlms * massOffset;
 
         % Require convergence of both returned and localized coefficients.
-        maxRelChange = max(relativeiterationchange(rslPlms, prevRslPlms), ...
-            relativeiterationchange(rslOceanPlms, prevRslOceanPlms));
+        maxAbsChange = max(absoluteiterationchange(rslPlms, prevRslPlms), ...
+            absoluteiterationchange(rslOceanPlms, prevRslOceanPlms));
 
         if computeError
             loadVarPlms = forcingVarPlms + WATER_DENSITY ^ 2 * rslOceanVarPlms;
@@ -297,9 +297,9 @@ function varargout = solvesle(varargin)
             crntStd = sqrt([rslVarPlms; rslOceanVarPlms]);
 
             if isempty(prevStd)
-                maxRelChange = Inf;
+                maxAbsChange = Inf;
             else
-                maxRelChange = max(maxRelChange, relativeiterationchange(crntStd, prevStd));
+                maxAbsChange = max(maxAbsChange, absoluteiterationchange(crntStd, prevStd));
             end
 
             prevStd = crntStd;
@@ -312,7 +312,7 @@ function varargout = solvesle(varargin)
 
         if any(~isfinite(rslPlms), 'all') || any(~isfinite(rslOceanPlms), 'all')
             error('ULMO:solvesle:NonFiniteIterate', 'SLE coefficients became nonfinite.');
-        elseif tol > 0 && maxRelChange <= tol
+        elseif tol > 0 && maxAbsChange <= tol
             converged = true;
             break
         end
@@ -321,8 +321,8 @@ function varargout = solvesle(varargin)
 
     if tol > 0 && ~converged
         error('ULMO:solvesle:NonConvergence', ...
-            'SLE did not converge in %d iterations (maximum relative change %.6g; tolerance %.6g).', ...
-            maxIter, maxRelChange, tol);
+            'SLE did not converge in %d iterations (maximum absolute change %.6g; tolerance %.6g).', ...
+            maxIter, maxAbsChange, tol);
     end
 
     %% Post-processing
@@ -406,7 +406,7 @@ function varargout = parseinputs(varargin)
         @(x) islogical(x) || isnumeric(x));
     addOptional(ip, 'maxIter', 100, ...
         @(x) isnumeric(x) && isscalar(x) && isfinite(x) && x >= 1 && x == fix(x));
-    addParameter(ip, 'Tolerance', 1e-6, ...
+    addParameter(ip, 'Tolerance', 1e-9, ...
         @(x) isnumeric(x) && isscalar(x) && isfinite(x) && x >= 0);
     addParameter(ip, 'LoveNumSource', 'ISSM', ...
         @(x) ischar(x) || isstring(x));

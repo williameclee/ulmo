@@ -58,15 +58,13 @@ classdef degree1ConvergenceTest < matlab.unittest.TestCase
             testCase.verifyGreaterThan(max(abs(a), [], 'all'), 0);
         end
 
-        function relativeStoppingPreservesSmallEpochs(testCase)
+        function absoluteToleranceAllowsSmallUpdates(testCase)
             global DEGREE1_CONVERGENCE_FIXTURE
-            [a, sa] = runSolver();
-            scales = [1e-9, 1, 1e9];
-            DEGREE1_CONVERGENCE_FIXTURE.x = DEGREE1_CONVERGENCE_FIXTURE.x .* scales;
-            DEGREE1_CONVERGENCE_FIXTURE.sigma = DEGREE1_CONVERGENCE_FIXTURE.sigma .* scales;
-            [b, sb] = runSolver();
-            testCase.verifyEqual(b ./ scales', a, 'AbsTol', 1e-12);
-            testCase.verifyEqual(sb ./ scales', sa, 'AbsTol', 1e-12);
+            DEGREE1_CONVERGENCE_FIXTURE.x = DEGREE1_CONVERGENCE_FIXTURE.x * 1e-12;
+            DEGREE1_CONVERGENCE_FIXTURE.sigma = DEGREE1_CONVERGENCE_FIXTURE.sigma * 1e-12;
+            [a, sa] = runSolver("Tolerance", 1e-6, "MaxIter", 1);
+            [b, sb] = runSolver("Tolerance", 0, "MaxIter", 1);
+            testCase.verifyEqual(a, b); testCase.verifyEqual(sa, sb);
         end
 
         function adaptiveMatchesLongRun(testCase)
@@ -101,7 +99,7 @@ classdef degree1ConvergenceTest < matlab.unittest.TestCase
             c = runSolver("OnlyId", true, "SleTolerance", 1e-10);
             d = runSolver("OnlyId", true, "MaxIter", 50);
             testCase.verifyEqual(numel(unique({a, b, c, d})), 4);
-            testCase.verifyTrue(contains(a, 'zero-relative-v2'));
+            testCase.verifyTrue(contains(a, 'zero-absolute-v3'));
         end
 
         function checksLastEpoch(testCase)

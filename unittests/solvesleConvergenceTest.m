@@ -49,16 +49,22 @@ classdef solvesleConvergenceTest < matlab.unittest.TestCase
             testCase.verifyEqual(flatten(p), exact, 'AbsTol', 1e-8);
         end
 
-        function stoppingIsInvariantToEpochScaling(testCase)
-            f = reshape(sin(1:27), 9, 3);
-            sigma = abs(f) / 10;
-            scales = [1e-9, 1, 1e9];
-            opts = {"OceanKernel", hemisphereKernel(), "RotationFeedback", false, "BeQuiet", true};
-            [a, sa] = solvesle(unflatten(f), unflatten(sigma), 2, GeoDomain('alloceans'), opts{:});
-            [b, sb] = solvesle(unflatten(f .* scales), unflatten(sigma .* scales), ...
-                2, GeoDomain('alloceans'), opts{:});
-            testCase.verifyEqual(flatten(b) ./ scales, flatten(a), 'AbsTol', 1e-11);
-            testCase.verifyEqual(flatten(sb) ./ scales, flatten(sa), 'AbsTol', 1e-11);
+        function zeroForcingConvergesFromNonzeroInitialRSL(testCase)
+            initial = zeros(9, 1); initial(end) = 1;
+            p = solvesle(unflatten(zeros(9, 1)), [], 2, GeoDomain('alloceans'), ...
+                "OceanKernel", hemisphereKernel(), "RotationFeedback", false, ...
+                "InitialRSL", unflatten(initial), "Tolerance", 1e-6, "BeQuiet", true);
+            % Output is SD (kg/m^2); the stopping tolerance is in metres.
+            testCase.verifyLessThan(max(abs(flatten(p)), [], 'all'), 1e-3);
+        end
+
+        function absoluteToleranceAllowsSmallUpdates(testCase)
+            f = unflatten(reshape(sin(1:27), 9, 3) * 1e-12);
+            opts = {"OceanKernel", hemisphereKernel(), "RotationFeedback", false, ...
+                        "BeQuiet", true, "MaxIter", 1};
+            a = solvesle(f, [], 2, GeoDomain('alloceans'), opts{:}, "Tolerance", 1e-6);
+            b = solvesle(f, [], 2, GeoDomain('alloceans'), opts{:}, "Tolerance", 0);
+            testCase.verifyEqual(a, b);
         end
 
         function checksEveryEpochAndUncertainties(testCase)

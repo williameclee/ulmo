@@ -65,17 +65,17 @@
 %       - 'SD': Surface mass density.
 %       The default field is 'SD'.
 %       Data type: CHAR
-%   Tolerance (name-value) - Relative tolerance.
+%   Tolerance (name-value) - Absolute tolerance.
 %       Estimated coefficient and standard-deviation vectors are checked
-%       separately; all epochs must pass.
+%       separately; every coefficient in every epoch must pass.
 %       Set 0 to use exactly MaxIter steps.
-%       Default relative tolerance is 1e-6.
+%       Default absolute tolerance is 1e-6 kg/m^2 = 1e-6 mm.
 %   MaxIter (name-value) - Maximum number of the outer iteration.
 %       Default number of iterations is 100.
-%   SleTolerance (name-value) - Inner SLE relative tolerance.
-%       Set 0 to use exactly MaxIter steps.
-%       Default relative tolerance is 1e-6.
-%   SleMaxIter (name-value) - Maximum number of the outer iteration for the SLE.
+%   SleTolerance (name-value) - Inner SLE absolute tolerance.
+%       Set 0 to use exactly SleMaxIter steps.
+%       Default absolute tolerance is 1e-6 mm.
+%   SleMaxIter (name-value) - Maximum number of inner SLE iterations.
 %       Default number of iterations is 100.
 %   ForceNew - Logical flag to force reprocess of the data
 %       The default option is false.
@@ -330,10 +330,10 @@ function [coeffs, coeffStds, dates] = ...
             'Estimated coefficients or uncertainties became nonfinite.');
         end
 
-        maxRelChange = max(relativeiterationchange(coeffs, prevCoeffs), ...
-            relativeiterationchange(coeffStds, prevStds));
+        maxChange = max(absoluteiterationchange(coeffs, prevCoeffs), ...
+            absoluteiterationchange(coeffStds, prevStds));
 
-        if tol > 0 && maxRelChange <= tol
+        if tol > 0 && maxChange <= tol
             converged = true;
             break
         end
@@ -342,8 +342,8 @@ function [coeffs, coeffStds, dates] = ...
 
     if tol > 0 && ~converged
         error('ULMO:solvedegree1:NonConvergence', ...
-            'Solution did not converge in %d iterations (maximum relative change %.6g; tolerance %.6g).', ...
-            maxIter, maxRelChange, tol);
+            'Solution did not converge in %d iterations (maximum absolute change %.6g; tolerance %.6g).', ...
+            maxIter, maxChange, tol);
     end
 
     coeffs = coeffs'; % traditional -> timefirst
@@ -429,7 +429,7 @@ function varargout = parseinputs(inputs)
     addParameter(ip, 'MaxIter', 100, valdLimit);
     addParameter(ip, 'Tolerance', 1e-6, valdTol);
     addParameter(ip, 'SleMaxIter', 100, valdLimit);
-    addParameter(ip, 'SleTolerance', 1e-6, valdTol);
+    addParameter(ip, 'SleTolerance', 1e-9, valdTol);
     addParameter(ip, 'ForceNew', false, ...
         @(x) (isnumeric(x) || islogical(x)) && isscalar(x));
     addParameter(ip, 'SaveData', true, ...
@@ -522,7 +522,7 @@ function [outputPath, outputFile, deg1Id] = ...
         Ltruncation, Lsle, oceanDomain.Id, methodFlag);
 
     % Separate zero-start adaptive solutions from legacy and other tolerances.
-    deg1Id = sprintf('%s-zero-relative-v2-t%.17g-n%d-st%.17g-sn%d', deg1Id, ...
+    deg1Id = sprintf('%s-zero-absolute-v3-t%.17g-n%d-st%.17g-sn%d', deg1Id, ...
         iterOpts.Tolerance, iterOpts.MaxIter, ...
         iterOpts.SleTolerance, iterOpts.SleMaxIter);
     outputFile = sprintf('%s_%s-SD.mat', productId, deg1Id);
