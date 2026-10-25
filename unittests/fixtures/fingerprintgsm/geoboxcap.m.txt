@@ -1,0 +1,6 @@
+%% GEOBOXCAP - Supplies unused geometry to the fingerprint forcing observer.
+% Created by
+%   2026/10/25, En-Chi Lee (williameclee@gmail.com)
+function varargout = geoboxcap(varargin)
+    varargout = {[], [], [], [], [], zeros(6, 4)};
+end

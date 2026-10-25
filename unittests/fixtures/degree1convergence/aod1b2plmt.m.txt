@@ -1,0 +1,6 @@
+%% AOD1B2PLMT - Rejects atmospheric/ocean model reads in GSM-only solver tests.
+% Created by
+%   2026/10/25, En-Chi Lee (williameclee@gmail.com)
+function varargout = aod1b2plmt(varargin)
+    error('ULMO:Test:UnexpectedAodRead', 'GSM-only solvers must not read GAC/GAD.');
+end
