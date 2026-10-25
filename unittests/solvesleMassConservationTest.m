@@ -8,6 +8,9 @@
 %
 % Created by
 %   2026/10/24, En-Chi Lee (williameclee@gmail.com)
+%
+% Last modified
+%   2026/10/25, En-Chi Lee (williameclee@gmail.com)
 
 classdef solvesleMassConservationTest < matlab.unittest.TestCase
 
@@ -79,12 +82,12 @@ classdef solvesleMassConservationTest < matlab.unittest.TestCase
 
             end
 
-            options = {"OceanKernel", K, "MaxIter", 5, "BeQuiet", true};
+            opts = {"OceanKernel", K, "Tolerance", 0, "MaxIter", 5, "BeQuiet", true};
             actual = cell(1, 4); reference = cell(1, 4);
             [actual{:}] = solvesle(input{1}, input{2}, 2, GeoDomain('alloceans'), ...
-                options{:}, "InitialRSL", input{3});
+                opts{:}, "InitialRSL", input{3});
             [reference{:}] = solvesle(expected{1}, expected{2}, 2, GeoDomain('alloceans'), ...
-                options{:}, "InitialRSL", expected{3});
+                opts{:}, "InitialRSL", expected{3});
 
             if columnCount == 4
                 [targetOrder, targetDegree] = addmon(2);
@@ -121,11 +124,11 @@ classdef solvesleMassConservationTest < matlab.unittest.TestCase
             K = hemisphereKernel(); f = (1:9)';
             reference = solve(f, [], K, 5, false, zeros(size(f)));
             p = unflatten(f); wrongOcean = ones(6, 2) * 0.9;
-            % Hold initialization fixed while varying the ocean expansion.
+            % Hold initialisation fixed while varying the ocean expansion.
             r = solvesle(p, [], 2, GeoDomain('alloceans'), ...
                 "OceanKernel", K, "OceanFunction", wrongOcean, ...
                 "InitialRSL", zeros(size(p)), ...
-                "RotationFeedback", false, "MaxIter", 5, "BeQuiet", true);
+                "RotationFeedback", false, "Tolerance", 0, "MaxIter", 5, "BeQuiet", true);
             testCase.verifyEqual(flatten(r), reference, 'AbsTol', 1e-12);
         end
 
@@ -164,7 +167,7 @@ classdef solvesleMassConservationTest < matlab.unittest.TestCase
             [order, degree] = addmon(2);
             p = cat(2, repmat([degree, order], 1, 1, 3), p);
             r = solvesle(p, [], 2, GeoDomain('alloceans'), ...
-                "OceanKernel", K, "OceanFunction", unflatten(K(:, 1)), "MaxIter", 3, "BeQuiet", true);
+                "OceanKernel", K, "OceanFunction", unflatten(K(:, 1)), "Tolerance", 0, "MaxIter", 3, "BeQuiet", true);
             testCase.verifyEqual(r(:, 1:2, :), p(:, 1:2, :));
             testCase.verifyEqual(K(1, :) * flatten(r(:, 3:4, :)), -f(1, :), 'AbsTol', 1e-11);
         end
@@ -197,7 +200,7 @@ function [r, sigma, g, gStd] = solve(f, s, K, count, rotation, initial)
     if ~isempty(s), s = unflatten(s); end
     [p, stdP, g, gStd] = solvesle(unflatten(f), s, 2, GeoDomain('alloceans'), ...
         "OceanKernel", K, "OceanFunction", unflatten(K(:, 1)), ...
-        "RotationFeedback", rotation, "MaxIter", count, ...
+        "RotationFeedback", rotation, "Tolerance", 0, "MaxIter", count, ...
         "InitialRSL", unflatten(initial), "BeQuiet", true);
     r = flatten(p); sigma = [];
     if ~isempty(stdP), sigma = flatten(stdP); end
