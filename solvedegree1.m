@@ -213,6 +213,9 @@ function [coeffs, coeffStds, dates] = ...
     ocnKernelSle = kernelcp_new(Lsle, ocnDom, ...
         "BeQuiet", beQuiet);
     lndKernelSle = eye(size(ocnKernelSle)) - ocnKernelSle;
+    % Prepare the ocean constraint rows once for signal and variance propagation.
+    coeffOcnKernel = ocnKernelSle(coeffIds, :);
+    coeffOcnKernelSq = coeffOcnKernel .^ 2;
     coeffsKernel = nan([nCoeffs, nCoeffs]);
 
     for iCoeff = 1:nCoeffs
@@ -229,10 +232,8 @@ function [coeffs, coeffStds, dates] = ...
     sdPlmt = putcoeffs(sdPlmt, 0, coeffLocs);
     sdStdPlmt = putcoeffs(sdStdPlmt, 0, coeffLocs);
     % Only the jointly estimated coefficients enter the ocean constraint.
-    knownOcnSdCoeffs = localise(sdPlmt, "L", Lsle, "K", ocnKernelSle, ...
-        "KernelOrder", kernelOrder, "OutputIndices", coeffIds);
-    knownOcnSdCoeffStds = localise(sdStdPlmt, "L", Lsle, "K", ocnKernelSle, ...
-        "KernelOrder", kernelOrder, "OutputIndices", coeffIds, "IsError", true);
+    knownOcnSdCoeffs = coeffOcnKernel * packcoeffs(sdPlmt, kernelOrder);
+    knownOcnSdCoeffStds = sqrt(coeffOcnKernelSq * packcoeffs(sdStdPlmt, kernelOrder) .^ 2);
 
     %% Solving the degree-1 coefficients
     maxIter = iterOpts.MaxIter;
@@ -266,10 +267,8 @@ function [coeffs, coeffStds, dates] = ...
                     "InitialRSL", sdPlmt / 1000, ... % kg/m^2 -> m
                     "RotationFeedback", true, "MaxIter", iterOpts.SleMaxIter, ...
                     "Tolerance", iterOpts.SleTolerance, "BeQuiet", true);
-                ocnCoeffs = localise(ocnPlmt, "L", Lsle, "K", ocnKernelSle, ...
-                    "KernelOrder", kernelOrder, "OutputIndices", coeffIds);
-                ocnCoeffStds = localise(ocnStdPlmt, "L", Lsle, "K", ocnKernelSle, ...
-                    "KernelOrder", kernelOrder, "OutputIndices", coeffIds, "IsError", true);
+                ocnCoeffs = coeffOcnKernel * packcoeffs(ocnPlmt, kernelOrder);
+                ocnCoeffStds = sqrt(coeffOcnKernelSq * packcoeffs(ocnStdPlmt, kernelOrder) .^ 2);
             case 'uniform'
                 ocnArea = ocnKernelSle(1, 1);
                 eustatic = squeeze(-lndPlmt(1, 3, :) / ocnArea);
@@ -499,6 +498,13 @@ function out = formatoutput(coeffs, coeffStds, dates, timelim, unit, nOut, inclu
 
     out = {coeffs, coeffStds, dates, gracePlmt, coeffLocs};
 
+end
+
+% Pack matching-bandwidth lmcosi fields into kernel order, with epochs in columns.
+function coeffs = packcoeffs(plm, kernelOrder)
+    coeffs = plm(:, 3:4, :);
+    coeffs = reshape(coeffs, [], size(plm, 3));
+    coeffs = coeffs(kernelOrder, :);
 end
 
 % Just get the coeffs

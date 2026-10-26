@@ -1,17 +1,16 @@
-%% LOCALISE - Localise spherical harmonic coefficients to a domain.
-% This goal is very similar to that of Slepian functions', but this 
+%% LOCALISE - Localises spherical harmonic coefficients to a domain.
+% The goal is very similar to that of Slepian functions', but this
 % function don't truncate anything.
 %
 % Syntax
 %   Plm = LOCALISE(Plm, domain, L)
 %   Plm = LOCALISE(Plm, domain, L, "Inverse", true)
 %   Plm = LOCALISE(Plm, "K", K)
-%   coeffs = LOCALISE(Plm, "L", L, "K", K, "OutputIndices", indices)
 %   [Plm, K] = LOCALISE(Plm, __)
 %
 % Input arguments
 %   Plm - Spherical harmonic coefficients
-%       The coefficients are in the form lmcosi, but the first two columns 
+%       The coefficients are in the form lmcosi, but the first two columns
 %       (degree and order) can be omitted.
 %       Can be three-dimensional, where the third dimension is the data.
 %   domain - Geographic domain
@@ -23,31 +22,22 @@
 %   "K" - Kernel matrix
 %       The default value is computed using KERNELCP_NEW.
 %       For large L, loading the kernel matrix can be time-consuming.
-%   OutputIndices (name-value) - Selected rows in the kernel's harmonic ordering.
-%       Positive integer vector, with entries no greater than (L+1)^2.
-%       Preserves the requested order and repeated indices. Nonempty indices
-%       compute only the selected coefficients and return a matrix without
-%       degree/order columns. Empty indices retain the full lmcosi output.
-%       Default selection: [] (all coefficients in the original format).
 %   IsError (name-value) - Whether to propagate input standard deviations.
 %       Uses squared kernel entries and assumes uncorrelated input errors.
 %       Default option: false.
 %
 % Output arguments
 %   Plm - Localised spherical harmonic coefficients
-%       With OutputIndices, size is (number of indices, number of epochs),
-%       including a column vector for one epoch, regardless of input metadata.
 %   K - Kernel matrix
-%       Remains the full kernel even when OutputIndices is supplied.
 %
 % See also
 %   KERNELCP_NEW
 %
 % Authored by
-%   2024/11/20, williameclee@arizona.edu (@williameclee)
+%   2024/11/20, En-Chi Lee (williameclee@arizona.edu)
 %
 % Last modified
-%   2026/10/26, OpenAI Codex
+%   2026/10/26, En-Chi Lee (williameclee@gmail.com)
 
 function [plm, K] = localise(plm, varargin)
     ip = inputParser;
@@ -58,7 +48,6 @@ function [plm, K] = localise(plm, varargin)
     addParameter(ip, 'Inverse', false, @(x) islogical(x) || isnumeric(x));
     addParameter(ip, 'K', [], @ismatrix);
     addParameter(ip, 'KernelOrder', [], @isvector);
-    addParameter(ip, 'OutputIndices', [], @isnumeric);
     addParameter(ip, 'IsError', false, ...
         @(x) (islogical(x) || isnumeric(x)) && isscalar(x));
     addParameter(ip, 'BeQuiet', true, @(x) islogical(x) || isnumeric(x));
@@ -69,7 +58,6 @@ function [plm, K] = localise(plm, varargin)
     isInverted = ip.Results.Inverse;
     K = ip.Results.K;
     j2 = ip.Results.KernelOrder;
-    outputIndices = ip.Results.OutputIndices;
     isError = ip.Results.IsError;
     beQuiet = ip.Results.BeQuiet;
 
@@ -79,9 +67,9 @@ function [plm, K] = localise(plm, varargin)
         nData = size(plm, 3);
     end
 
-    includesDO = size(plm, 2) == 4;
+    inclDO = size(plm, 2) == 4;
 
-    if includesDO
+    if inclDO
 
         if isempty(L)
             L = max(plm(:, 1));
@@ -101,15 +89,6 @@ function [plm, K] = localise(plm, varargin)
 
     nInput = size(plm, 1);
     nTarget = addmup(L);
-
-    if ~isempty(outputIndices)
-        assert(isreal(outputIndices) && isvector(outputIndices) ...
-            && all(isfinite(outputIndices)) ...
-            && all(outputIndices >= 1 & outputIndices == fix(outputIndices) ...
-            & outputIndices <= (L + 1)^2), ...
-            'ULMO:localise:InvalidOutputIndices', ...
-            'OutputIndices must be a vector of integer indices from 1 to (L+1)^2.');
-    end
 
     if nInput < nTarget
 
@@ -144,21 +123,10 @@ function [plm, K] = localise(plm, varargin)
         K = eye(size(K)) - K;
     end
 
-    if isempty(outputIndices)
-        selectedKernel = K;
-    else
-        selectedKernel = K(outputIndices, :);
-    end
-
     if ~isError
-        ofun = selectedKernel * plm;
+        ofun = K * plm;
     else
-        ofun = sqrt((selectedKernel .^ 2) * (plm .^ 2));
-    end
-
-    if ~isempty(outputIndices)
-        plm = ofun;
-        return
+        ofun = sqrt((K .^ 2) * (plm .^ 2));
     end
 
     if is3d
@@ -170,7 +138,7 @@ function [plm, K] = localise(plm, varargin)
         plm(j2) = ofun;
     end
 
-    if includesDO
+    if inclDO
 
         [order, degree] = addmon(L);
 
