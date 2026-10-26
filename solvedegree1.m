@@ -524,7 +524,7 @@ function plm = coeff2lmcosi(coeffs, kernelOrder, plm)
     nEpochs = size(plm, 3);
     vals = zeros(2 * nRows, nEpochs);
     vals(kernelOrder, :) = coeffs;
-    plm(:, end:end - 1, :) = reshape(vals, nRows, 2, nEpochs);
+    plm(:, end - 1:end, :) = reshape(vals, nRows, 2, nEpochs);
 end
 
 % Just get the coeffs
