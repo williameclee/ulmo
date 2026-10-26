@@ -235,12 +235,21 @@ function [coeffs, coeffStds, dates] = ...
     knownOcnCoeffs = coeffOcnKernel * packcoeffs(sdPlmt, kernelOrder);
     knownOcnCoeffVars = coeffOcnKernelSq * packcoeffs(sdStdPlmt, kernelOrder) .^ 2;
 
+    % Only the estimated coefficients change between outer iterations.
+    % Keep the fixed land signal and variance, plus their update columns.
+    knownLndSdPlms = lndKernelSle * packcoeffs(sdPlmt, kernelOrder);
+    knownLndVarPlms = (lndKernelSle .^ 2) * packcoeffs(sdStdPlmt, kernelOrder) .^ 2;
+    coeffLndKernel = lndKernelSle(:, coeffIds);
+    coeffLndKernelSq = coeffLndKernel .^ 2;
+    clear lndKernelSle
+
     %% Solving the degree-1 coefficients
     maxIter = iterOpts.MaxIter;
     tol = iterOpts.Tolerance;
     converged = false;
     coeffs = extractcoeffs(sdPlmt, coeffLocs);
     coeffStds = extractcoeffs(sdStdPlmt, coeffLocs);
+    clear sdStdPlmt
 
     for iIter = 1:maxIter
         prevCoeffs = coeffs;
@@ -256,8 +265,11 @@ function [coeffs, coeffStds, dates] = ...
 
         end
 
-        lndPlmt = localise(sdPlmt, "L", Lsle, "K", lndKernelSle);
-        lndStdPlmt = localise(sdStdPlmt, "L", Lsle, "K", lndKernelSle, "IsError", true);
+        lndPlmt = unpackcoeffs(knownLndSdPlms + coeffLndKernel * coeffs, ...
+            kernelOrder, sdPlmt);
+        lndStdPlmt = unpackcoeffs( ...
+            sqrt(knownLndVarPlms + coeffLndKernelSq * coeffStds .^ 2), ...
+            kernelOrder, sdPlmt);
 
         switch mthd
             case 'fingerprint'
@@ -282,7 +294,6 @@ function [coeffs, coeffStds, dates] = ...
         % STD
         coeffStds = sqrt((coeffsKernel \ eye(nCoeffs)) .^ 2 * ...
             (ocnCoeffVars + knownOcnCoeffVars));
-        sdStdPlmt = putcoeffs(sdStdPlmt, coeffStds, coeffLocs);
 
         if any(~isfinite(coeffs), 'all') || any(~isfinite(coeffStds), 'all')
             error('ULMO:solvedegree1:NonFiniteIterate', ...
@@ -505,6 +516,15 @@ function coeffs = packcoeffs(plm, kernelOrder)
     coeffs = plm(:, 3:4, :);
     coeffs = reshape(coeffs, [], size(plm, 3));
     coeffs = coeffs(kernelOrder, :);
+end
+
+% Restore matching-bandwidth lmcosi coefficients, preserving degree/order columns.
+function plm = unpackcoeffs(coeffs, kernelOrder, plm)
+    nRows = size(plm, 1);
+    nEpochs = size(plm, 3);
+    vals = zeros(2 * nRows, nEpochs);
+    vals(kernelOrder, :) = coeffs;
+    plm(:, 3:4, :) = reshape(vals, nRows, 2, nEpochs);
 end
 
 % Just get the coeffs
