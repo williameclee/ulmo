@@ -52,7 +52,7 @@
 function [rslLoadPlmt, rslLoadStdPlmt, dates] = grace2fingerprint(varargin)
     %% Parsing inputs
     [prod, ocnDom, lndDom, L, Lout, ...
-         giaMdl, doGia, redoDeg1, redoC21S21, timelim, doRot, frame, unit, ...
+         giaMdl, redoDeg1, redoC21S21, timelim, doRot, frame, unit, ...
          ocnKernel, outputFmt, timeFmt, beQuiet, forceNew, saveData, callChain] = parseinputs(varargin);
 
     %% Data locating
@@ -79,7 +79,7 @@ function [rslLoadPlmt, rslLoadStdPlmt, dates] = grace2fingerprint(varargin)
 
     %% Solving the sea level equation
     [rslLoadPlmt, rslLoadStdPlmt, dates] = ...
-        grace2fingerprintCore(prod, ocnDom, lndDom, L, giaMdl, doGia, redoDeg1, redoC21S21, doRot, ocnKernel, beQuiet);
+        grace2fingerprintCore(prod, ocnDom, lndDom, L, giaMdl, redoDeg1, redoC21S21, doRot, ocnKernel, beQuiet);
 
     %% Saving and returning data
     if saveData
@@ -101,7 +101,7 @@ end
 %% Subfunctions
 % Heart of the programme
 function [rslSdPlmt, rslSdStdPlmt, dates] = ...
-        grace2fingerprintCore(prod, ocnDom, lndDom, Lsle, giaMdl, doGia, redoDeg1, redoC21S21, doRotation, ocnKernel, beQuiet)
+        grace2fingerprintCore(prod, ocnDom, lndDom, Lsle, giaMdl, redoDeg1, redoC21S21, doRotation, ocnKernel, beQuiet)
     %% Loading data
     deg1Args = false;
     Ldata = prod{3};
@@ -118,12 +118,10 @@ function [rslSdPlmt, rslSdStdPlmt, dates] = ...
     sdStdPlmt = ensureplmdegree(sdStdPlmt, Ldata);
 
     % Load GIA model
-    if doGia
-        giaPlmt = gia2plmt(dates, giaMdl, "L", Ldata, ...
-            "OutputFormat", 'timefirst', "BeQuiet", beQuiet);
-        % GSM degree-1 fields should be GIA-free (see Sun et al., 2016)
-        sdPlmt(:, 4:end, 3:4) = sdPlmt(:, 4:end, 3:4) - giaPlmt(:, 4:end, 3:4);
-    end
+    giaPlmt = gia2plmt(dates, giaMdl, "L", Ldata, ...
+        "OutputFormat", 'timefirst', "BeQuiet", beQuiet);
+    % GSM degree-1 fields should be GIA-free (see Sun et al., 2016)
+    sdPlmt(:, 4:end, 3:4) = sdPlmt(:, 4:end, 3:4) - giaPlmt(:, 4:end, 3:4);
 
     sdPlmt = permute(sdPlmt, [2, 3, 1]); % timefirst -> traditional
     sdStdPlmt = permute(sdStdPlmt, [2, 3, 1]); % timefirst -> traditional
@@ -166,7 +164,7 @@ function varargout = parseinputs(inputs)
     addOptional(ip, 'OceanDomain', GeoDomain('alloceans', "Buffer", 0.5), ...
         @(x) isa(x, 'GeoDomain') || ischar(x) || (iscell(x) && length(x) == 2) ...
         || (isnumeric(x) && size(x, 2) == 2));
-    addOptional(ip, 'GIA', 'ice6gd', @(x) ischar(x) || islogical(x));
+    addOptional(ip, 'GIA', 'ice6gd', @(x) ischar(x));
     addOptional(ip, 'RotationFeedback', true, ...
         @(x) (islogical(x) || isnumeric(x)) && isscalar(x));
     addParameter(ip, 'RecomputeDegree1', false, ...
@@ -202,13 +200,14 @@ function varargout = parseinputs(inputs)
     Lout = round(ip.Results.Truncation);
     ocnDom = ip.Results.OceanDomain;
     lndDom = ip.Results.LandDomain;
-    giaMdl = ip.Results.GIA;
+    giaMdl = lower(ip.Results.GIA);
     redoC21S21 = ip.Results.RecomputeC21S21;
     redoDeg1 = logical(ip.Results.RecomputeDegree1) || redoC21S21;
     frame = ip.Results.Frame;
     doRot = logical(ip.Results.RotationFeedback);
     timelim = ip.Results.TimeRange;
     unit = ip.Results.Unit;
+    ocnKernel = ip.Results.OceanKernel;
     outputFmt = ip.Results.OutputFormat;
     timeFmt = ip.Results.TimeFormat;
     beQuiet = double(ip.Results.BeQuiet) * 2;
@@ -216,28 +215,13 @@ function varargout = parseinputs(inputs)
     saveData = logical(ip.Results.SaveData);
     callChain = [ip.Results.CallChain, {mfilename}];
 
-    ocnKernel = ip.Results.OceanKernel;
-
-    if islogical(giaMdl) && ~giaMdl
-        doGia = false;
-    else
-        doGia = true;
-
-        if islogical(giaMdl)
-            giaMdl = 'ice6gd';
-        else
-            giaMdl = lower(giaMdl);
-        end
-
-    end
-
     if isnumeric(timelim)
         timelim = datetime(timelim, "ConvertFrom", 'datenum');
     end
 
     varargout = ...
         {prod, ocnDom, lndDom, L, Lout, ...
-         giaMdl, doGia, redoDeg1, redoC21S21, timelim, doRot, frame, unit, ...
+         giaMdl, redoDeg1, redoC21S21, timelim, doRot, frame, unit, ...
          ocnKernel, outputFmt, timeFmt, beQuiet, forceNew, saveData, callChain};
 end
 
