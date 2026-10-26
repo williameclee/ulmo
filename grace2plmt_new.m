@@ -129,20 +129,10 @@
 %	    https://podaac.jpl.nasa.gov/
 %
 % See also
-%   GRACEDEG1, GRACEDEG2, PLM2POT, AOD1B2PLMT
-%
-% Notes
-%   See docs/grace-input-formats.md for input layout, reference fields,
-%   correction behavior, missing degrees and cache migration.
-%   All the intermediate outputs originally printed on the screen are
-%   printed to the log file instead.
+%   GRACEDEG1, GRACEDEG2, PLM2POT, AOD1B2PLMT, SOLVEDEGREE1
 %
 % Last modified by
-%   2026/09/26, williameclee@arizona.edu (@williameclee)
-%   2022/05/18, charig@email.arizona.edu (@harig00)
-%   2020/11/09, lashokkumar@arizona.edu
-%   2019/03/18, mlubeck@email.arizona.edu
-%   2011/05/17, fjsimons@alum.mit.edu (@fjsimons)
+%   2026/10/26, En-Chi Lee (williameclee@arizona.edu)
 
 function [gracePlmt, graceStdPlmt, dates] = grace2plmt_new(varargin)
     %% Initialisation
@@ -192,24 +182,21 @@ function [gracePlmt, graceStdPlmt, dates] = grace2plmt_new(varargin)
     %% Post-processing and formatting
     % Recalculate degree 1 coefficients
     if iscell(redoDeg1)
-        [myDeg1, myDeg1Std, myDeg1Dates] = ...
+        [myDeg1, myDeg1Std, myDeg1Dates, ~, coeffLocs] = ...
             solvedegree1(Pcenter, Rlevel, Ldata, redoDeg1{:}, "Unit", unit, ...
             "BeQuiet", beQuiet, "CallChain", callChain);
 
-        if size(myDeg1, 1) > size(gracePlmt, 1)
-            [~, isValidTime] = ismember(myDeg1Dates, dates);
-            isValidTime = isValidTime > 0;
-            myDeg1 = myDeg1(isValidTime, :);
-            myDeg1Std = myDeg1Std(isValidTime, :);
+        [matched, dateIndex] = ismember(dates, myDeg1Dates);
+        assert(all(matched), 'ULMO:MissingLowDegreeDates', ...
+        'Joint coefficient estimates do not cover all GRACE dates.');
+
+        for iCoeff = 1:size(coeffLocs, 1)
+            row = coeffLocs(iCoeff, 1);
+            col = 2 + coeffLocs(iCoeff, 2);
+            gracePlmt(:, row, col) = myDeg1(dateIndex, iCoeff);
+            graceStdPlmt(:, row, col) = myDeg1Std(dateIndex, iCoeff);
         end
 
-        gracePlmt(:, 2, 3) = myDeg1(:, 1);
-        gracePlmt(:, 3, 3) = myDeg1(:, 2);
-        gracePlmt(:, 3, 4) = myDeg1(:, 3);
-
-        graceStdPlmt(:, 2, 3) = myDeg1Std(:, 1);
-        graceStdPlmt(:, 3, 3) = myDeg1Std(:, 2);
-        graceStdPlmt(:, 3, 4) = myDeg1Std(:, 3);
     end
 
     % Format output

@@ -1,5 +1,4 @@
-%% GRACE2FINGERPRINT
-% Computes the relative sea level fingerprint based on forcing from GRACE data.
+%% GRACE2FINGERPRINT - Computes the relative sea level fingerprint based on forcing from GRACE data.
 %
 % Syntax
 %   [rslPlmt, time] = grace2fingerprint(L)
@@ -22,6 +21,8 @@
 %       The default value is true
 %   "RotationFeedback" - Whether to include rotation feedback
 %       The default value is true
+%   "RecomputeC21S21" - Jointly reestimate degree 1, C21 and S21 (default false).
+%       Enables RecomputeDegree1 and uses a separate fingerprint cache.
 %   "Frame" - Reference frame
 %       Centre of mass (CM) frame or centre of figure (CF) frame.
 %       The default frame is the CF frame, which is the frame used in slepian_delta
@@ -46,17 +47,17 @@
 %   2024/11/20, williameclee@arizona.edu (@williameclee)
 %
 % Last modified by
-%   2026/10/25, williameclee@arizona.edu (@williameclee)
+%   2026/10/26, williameclee@arizona.edu (@williameclee)
 
 function [rslLoadPlmt, rslLoadStdPlmt, dates] = grace2fingerprint(varargin)
     %% Parsing inputs
     [product, oceanDomain, landDomain, L, Loutput, ...
-         giaModel, doGia, redoDeg1, timelim, doRotation, frame, unit, ...
+         giaModel, doGia, redoDeg1, redoC21S21, timelim, doRotation, frame, unit, ...
          outputFmt, timeFmt, beQuiet, forceNew, saveData, oceanKernel, callChain] = parseinputs(varargin);
 
     %% Data locating
     filepath = findoutputpath( ...
-        product, L, oceanDomain, landDomain, frame, giaModel, doRotation, redoDeg1);
+        product, L, oceanDomain, landDomain, frame, giaModel, doRotation, redoDeg1, redoC21S21);
 
     vars = {'rslLoadPlmt', 'rslLoadStdPlmt', 'dates'};
 
@@ -78,7 +79,7 @@ function [rslLoadPlmt, rslLoadStdPlmt, dates] = grace2fingerprint(varargin)
 
     %% Solving the sea level equation
     [rslLoadPlmt, rslLoadStdPlmt, dates] = ...
-        grace2fingerprintCore(product, oceanDomain, landDomain, L, giaModel, doGia, redoDeg1, doRotation, oceanKernel, beQuiet);
+        grace2fingerprintCore(product, oceanDomain, landDomain, L, giaModel, doGia, redoDeg1, redoC21S21, doRotation, oceanKernel, beQuiet);
 
     %% Saving and returning data
     if saveData
@@ -100,13 +101,13 @@ end
 %% Subfunctions
 % Heart of the programme
 function [rslLoadPlmt, rslLoadStdPlmt, dates] = ...
-        grace2fingerprintCore(product, oceanDomain, landDomain, Lsle, giaModel, doGia, redoDeg1, doRotation, oceanKernel, beQuiet)
+        grace2fingerprintCore(product, oceanDomain, landDomain, Lsle, giaModel, doGia, redoDeg1, redoC21S21, doRotation, oceanKernel, beQuiet)
     %% Loading data
     deg1Args = false;
     Ldata = product{3};
 
     if redoDeg1
-        deg1Args = {"Lsle", Lsle, "GIAModel", giaModel, "OceanDomain", oceanDomain, "Unit", 'SD'};
+        deg1Args = {"Lsle", Lsle, "GIAModel", giaModel, "OceanDomain", oceanDomain, "Unit", 'SD', "IncludeC21S21", redoC21S21};
     end
 
     [gracePlmt, graceStdPlmt, dates] = ...
@@ -173,6 +174,7 @@ function varargout = parseinputs(inputs)
         @(x) (islogical(x) || isnumeric(x)) && isscalar(x));
     addParameter(ip, 'RecomputeDegree1', false, ...
         @(x) (islogical(x) || isnumeric(x)) && isscalar(x));
+    addParameter(ip, 'RecomputeC21S21', false, @(x) islogical(x) && isscalar(x));
     addParameter(ip, 'Frame', 'CF', @(x) ischar(validatestring(x, {'CF', 'CM'})));
     addParameter(ip, 'LandDomain', NaN, ...
         @(x) isa(x, 'GeoDomain') || ischar(x) || (iscell(x) && length(x) == 2) ...
@@ -204,7 +206,8 @@ function varargout = parseinputs(inputs)
     oceanDomain = ip.Results.OceanDomain;
     landDomain = ip.Results.LandDomain;
     giaModel = ip.Results.GIA;
-    redoDeg1 = logical(ip.Results.RecomputeDegree1);
+    RecomputeC21S21 = ip.Results.RecomputeC21S21;
+    redoDeg1 = logical(ip.Results.RecomputeDegree1) || RecomputeC21S21;
     frame = ip.Results.Frame;
     doRotation = logical(ip.Results.RotationFeedback);
     timelim = ip.Results.TimeRange;
@@ -237,12 +240,13 @@ function varargout = parseinputs(inputs)
 
     varargout = ...
         {product, oceanDomain, landDomain, L, Loutput, ...
-         giaModel, doGia, redoDeg1, timelim, doRotation, frame, unit, ...
+         giaModel, doGia, redoDeg1, RecomputeC21S21, timelim, doRotation, frame, unit, ...
          outputFmt, timeFmt, beQuiet, forceNew, saveData, oceanKernel, callChain};
 end
 
 % Get the output path
-function filepath = findoutputpath(product, L, oceanDomain, landDomain, frame, giaModel, doRotation, redoDeg1)
+function filepath = ...
+        findoutputpath(product, L, oceanDomain, landDomain, frame, giaModel, doRotation, redoDeg1, redoC21S21)
     productName = sprintf("%s%s%d", product{:});
 
     switch class(oceanDomain)
@@ -294,10 +298,12 @@ function filepath = findoutputpath(product, L, oceanDomain, landDomain, frame, g
         rotationName = '-NRot';
     end
 
-    if redoDeg1
-        deg1Name = '-Rdeg1';
+    if redoDeg1 && ~redoC21S21
+        redoName = '-Rdeg1';
+    elseif redoDeg1 && redoC21S21
+        redoName = '-Rdeg1CS21';
     else
-        deg1Name = '';
+        redoName = '';
     end
 
     filefolder = fullfile(getenv('IFILES'), 'FINGERPRINT');
@@ -307,7 +313,7 @@ function filepath = findoutputpath(product, L, oceanDomain, landDomain, frame, g
     end
 
     filename = sprintf('%s%s-Ls%d-%s%s%s%s%s.mat', ...
-        productName, giaName, L, oceanName, landName, frameName, rotationName, deg1Name);
+        productName, giaName, L, oceanName, landName, frameName, rotationName, redoName);
     filepath = fullfile(filefolder, filename);
 end
 

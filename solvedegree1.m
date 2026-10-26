@@ -47,10 +47,9 @@
 %       GeoDomain object.
 %       The default ocean domain is the global ocean (ALLOCEANS) with a
 %       0.5° buffer.
-%   IncludeC20 - Whether to also recompute C20
-%       The default option is false, as C20 is usually replaced with SLR
-%       values.
-%       Data type: LOGICAL
+%   IncludeC20, IncludeC30 (name-value) - Whether to also recompute C20 or C30
+%       Default option is false.
+%   IncludeC21S21 - Jointly estimate C21 and S21 with degree 1.
 %   Method - Method to solve the sea level equation
 %       - 'fingerprint': Solve the sea level equation using the fingerprint
 %           method (see SOLVESLE).
@@ -91,8 +90,10 @@
 %		Data types: LOGICAL
 %
 % Output arguments
-%   coeffs - C10, C11, S11 (and maybe C20) surface mass density
-%       coefficients
+%   coeffs - Columns C10, C11, S11, followed by optional C20, C30,
+%       then C21 and S21. Values use the requested Unit (default SD).
+%   coeffStds - Formal uncertainties in the same order and units.
+%   coeffLocs - Fifth output: [lmcosi row, cosine/sine column (1/2)].
 %   dates - dates of the coefficients
 %       In DATETIME format.
 %   gracePlmt - GRACE SH coefficients with the recomputed coefficients
@@ -114,7 +115,7 @@
 %       10.1007/s00190-015-0852-y.
 %   Sun, Y., Riva, R. E. M., and Ditmar, P. (2016). Optimizing
 %       estimates of annual variations and trends in geocenter
-%       motion and J2  from a combination of GRACE data and
+%       motion and J2 from a combination of GRACE data and
 %       geophysical models. Journal of Geophysical Research: Solid
 %       Earth, 121(11):8352-8370. doi: 10.1002/2016JB013073.
 %
@@ -122,19 +123,19 @@
 %   2025/03/18, En-Chi Lee (williameclee@arizona.edu)
 %
 % Last modified by
-%   2026/10/25, En-Chi Lee (williameclee@arizona.edu)
+%   2026/10/26, En-Chi Lee (williameclee@arizona.edu)
 
 function varargout = solvedegree1(varargin)
     %% Initialisation
     % Parse inputs
-    [pcenter, rlevel, Ldata, Ltruncation, Lsle, giaModel, oceanDomain, ...
-         includeC20, includeC30, method, timelim, unit, ...
-         forceNew, saveData, beQuiet, onlyId, callChain, intpOpts] = ...
+    [pcenter, rlevel, Ldata, Lused, Lsle, giaModel, oceanDomain, ...
+         inclC20, inclC30, inclC21S21, mthd, timelim, unit, ...
+         forceNew, saveData, beQuiet, onlyId, callChain, iterOpts] = ...
         parseinputs(varargin);
 
     [dataPath, ~, outputId] = ...
         getoutputfile(pcenter, rlevel, Ldata, giaModel, ...
-        includeC20, includeC30, Ltruncation, Lsle, oceanDomain, method, intpOpts);
+        inclC20, inclC30, inclC21S21, Lused, Lsle, oceanDomain, mthd);
 
     if onlyId
         varargout = {outputId};
@@ -152,7 +153,7 @@ function varargout = solvedegree1(varargin)
                 callchaintext(callChain), dataPath, dataPath);
         end
 
-        varargout = formatoutput(data.coeffs, data.coeffStds, data.dates, timelim, unit, nargout, [includeC20, includeC30], ...
+        varargout = formatoutput(data.coeffs, data.coeffStds, data.dates, timelim, unit, nargout, [inclC20, inclC30, inclC21S21], ...
             {pcenter, rlevel, Ldata}, beQuiet);
 
         return
@@ -160,8 +161,8 @@ function varargout = solvedegree1(varargin)
     end
 
     [coeffs, coeffStds, dates] = ...
-        solvedegree1Core(pcenter, rlevel, Ldata, Ltruncation, Lsle, ...
-        giaModel, includeC20, includeC30, oceanDomain, method, beQuiet, intpOpts);
+        solvedegree1Core(pcenter, rlevel, Ldata, Lused, Lsle, ...
+        giaModel, inclC20, inclC30, inclC21S21, oceanDomain, mthd, beQuiet, iterOpts);
 
     if saveData
         save(dataPath, 'coeffs', 'coeffStds', 'dates')
@@ -173,7 +174,7 @@ function varargout = solvedegree1(varargin)
 
     end
 
-    varargout = formatoutput(coeffs, coeffStds, dates, timelim, unit, nargout, [includeC20, includeC30], ...
+    varargout = formatoutput(coeffs, coeffStds, dates, timelim, unit, nargout, [inclC20, inclC30, inclC21S21], ...
         {pcenter, rlevel, Ldata}, beQuiet);
 
 end
@@ -181,7 +182,7 @@ end
 %% Subfunctions
 % Heart of the programme
 function [coeffs, coeffStds, dates] = ...
-        solvedegree1Core(pcenter, rlevel, Ldata, Ltruncation, Lsle, giaModel, includeC20, includeC30, oceanDomain, method, beQuiet, iterOpts)
+        solvedegree1Core(pcenter, rlevel, Ldata, Ltruncation, Lsle, giaModel, includeC20, includeC30, includeC21S21, oceanDomain, method, beQuiet, iterOpts)
     %% Loading data
     if ~beQuiet
         wbar = waitbar(0, 'Loading GRACE data', ...
@@ -189,18 +190,18 @@ function [coeffs, coeffStds, dates] = ...
         cleanup = onCleanup(@() deleteWaitbar(wbar));
     end
 
-    [gracePlmt, graceStdPlmt, dates] = grace2plmt_new(pcenter, rlevel, Ldata, ...
+    [sdPlmt, sdStdPlmt, dates] = grace2plmt_new(pcenter, rlevel, Ldata, ...
         "Unit", 'SD', "OutputFormat", 'timefirst', "TimeFormat", 'datetime', ...
         "BeQuiet", beQuiet);
-    gracePlmt = ensureplmdegree(gracePlmt, Ltruncation);
-    gracePlmt = ensureplmdegree(gracePlmt, Lsle);
-    graceStdPlmt = ensureplmdegree(graceStdPlmt, Ltruncation);
-    graceStdPlmt = ensureplmdegree(graceStdPlmt, Lsle);
+    sdPlmt = ensureplmdegree(sdPlmt, Ltruncation);
+    sdPlmt = ensureplmdegree(sdPlmt, Lsle);
+    sdStdPlmt = ensureplmdegree(sdStdPlmt, Ltruncation);
+    sdStdPlmt = ensureplmdegree(sdStdPlmt, Lsle);
 
     % Remove GIA signal for l >= 2 (Sun et al., 2016)
     giaPlmt = gia2plmt(dates, giaModel, "L", Lsle, ...
         "OutputFormat", 'timefirst', "BeQuiet", beQuiet);
-    gracePlmt(:, 4:end, 3:4) = gracePlmt(:, 4:end, 3:4) - giaPlmt(:, 4:end, 3:4);
+    sdPlmt(:, 4:end, 3:4) = sdPlmt(:, 4:end, 3:4) - giaPlmt(:, 4:end, 3:4);
     % Ignore STD of GIA for now
 
     %% Preparing/preallocating variables
@@ -213,25 +214,14 @@ function [coeffs, coeffStds, dates] = ...
 
     end
 
-    gracePlmt = permute(gracePlmt, [2, 3, 1]); % timefirst -> traditional
-    graceStdPlmt = permute(graceStdPlmt, [2, 3, 1]); % timefirst -> traditional
+    sdPlmt = permute(sdPlmt, [2, 3, 1]); % timefirst -> traditional
+    sdStdPlmt = permute(sdStdPlmt, [2, 3, 1]); % timefirst -> traditional
 
-    % Whether to also reestimate C20 and C30
-    nCoeffs = 3 + includeC20 + includeC30; % C10, C11, S11, (C20), (C30)
+    % Number of simultaneously estimated low-degree coefficients
+    nCoeffs = 3 + includeC20 + includeC30 + 2 * includeC21S21; % Degree 1 and optional degree-2/3 terms
 
     % Precompute kernels
-    coeffLocs = [2, 1; 3, 1; 3, 2];
-    coeffIds = [2, 3, 4];
-
-    if includeC20
-        coeffLocs = [coeffLocs; 4, 1];
-        coeffIds = [coeffIds, 5];
-    end
-
-    if includeC30
-        coeffLocs = [coeffLocs; 7, 1];
-        coeffIds = [coeffIds, 10];
-    end
+    [coeffLocs, coeffIds] = lowdegreecoefficients(includeC20, includeC30, includeC21S21);
 
     % Note: Converting to SINGLE does not work because it is not compatible with the sparse SLE kernel
     oceanKernelSle = kernelcp_new(Lsle, oceanDomain, ...
@@ -250,21 +240,21 @@ function [coeffs, coeffStds, dates] = ...
     kernelOrder = kernelorder(Lsle);
 
     % Set unknown coefficients to 0
-    gracePlmt = putcoeffs(gracePlmt, 0, coeffLocs);
-    graceStdPlmt = putcoeffs(graceStdPlmt, 0, coeffLocs);
-    oceanCoeffsNoUnkown = extractcoeffs( ...
-        localise(gracePlmt, "L", Lsle, "K", oceanKernelSle), ...
+    sdPlmt = putcoeffs(sdPlmt, 0, coeffLocs);
+    sdStdPlmt = putcoeffs(sdStdPlmt, 0, coeffLocs);
+    knownOceanSdCoeffs = extractcoeffs( ...
+        localise(sdPlmt, "L", Lsle, "K", oceanKernelSle), ...
         coeffLocs);
-    oceanCoeffStdsNoUnkown = extractcoeffs( ...
-        localise(graceStdPlmt, "L", Lsle, "K", oceanKernelSle, "IsError", true), ...
+    knownOceanSdCoeffStds = extractcoeffs( ...
+        localise(sdStdPlmt, "L", Lsle, "K", oceanKernelSle, "IsError", true), ...
         coeffLocs);
 
     %% Solving the degree-1 coefficients
     maxIter = iterOpts.MaxIter;
     tol = iterOpts.Tolerance;
     converged = false;
-    coeffs = extractcoeffs(gracePlmt, coeffLocs);
-    coeffStds = extractcoeffs(graceStdPlmt, coeffLocs);
+    coeffs = extractcoeffs(sdPlmt, coeffLocs);
+    coeffStds = extractcoeffs(sdStdPlmt, coeffLocs);
 
     for iIter = 1:maxIter
         prevCoeffs = coeffs;
@@ -280,15 +270,15 @@ function [coeffs, coeffStds, dates] = ...
 
         end
 
-        landPlmt = localise(gracePlmt, "L", Lsle, "K", landKernelSle);
-        landStdPlmt = localise(graceStdPlmt, "L", Lsle, "K", landKernelSle, "IsError", true);
+        landPlmt = localise(sdPlmt, "L", Lsle, "K", landKernelSle);
+        landStdPlmt = localise(sdStdPlmt, "L", Lsle, "K", landKernelSle, "IsError", true);
 
         switch method
             case 'fingerprint'
                 [oceanPlmt, oceanStdPlmt] = ...
                     solvesle(landPlmt, landStdPlmt, Lsle, oceanDomain, ...
                     "OceanKernel", oceanKernelSle, "KernelOrder", kernelOrder, ...
-                    "InitialRSL", gracePlmt / 1000, ... % kg/m^2 -> m
+                    "InitialRSL", sdPlmt / 1000, ... % kg/m^2 -> m
                     "RotationFeedback", true, "MaxIter", iterOpts.SleMaxIter, ...
                     "Tolerance", iterOpts.SleTolerance, "BeQuiet", true);
                 oceanPlmt = localise(oceanPlmt, "L", Lsle, "K", oceanKernelSle);
@@ -303,12 +293,12 @@ function [coeffs, coeffStds, dates] = ...
                 oceanCoeffStds = barystaticLoadStd' .* oceanKernelSle(coeffIds, 1);
         end
 
-        coeffs = coeffsKernel \ (oceanCoeffs - oceanCoeffsNoUnkown);
-        gracePlmt = putcoeffs(gracePlmt, coeffs, coeffLocs);
+        coeffs = coeffsKernel \ (oceanCoeffs - knownOceanSdCoeffs);
+        sdPlmt = putcoeffs(sdPlmt, coeffs, coeffLocs);
         % STD
         coeffStds = sqrt((coeffsKernel \ eye(nCoeffs)) .^ 2 * ...
-            (oceanCoeffStds .^ 2 + oceanCoeffStdsNoUnkown .^ 2));
-        graceStdPlmt = putcoeffs(graceStdPlmt, coeffStds, coeffLocs);
+            (oceanCoeffStds .^ 2 + knownOceanSdCoeffStds .^ 2));
+        sdStdPlmt = putcoeffs(sdStdPlmt, coeffStds, coeffLocs);
 
         if any(~isfinite(coeffs), 'all') || any(~isfinite(coeffStds), 'all')
             error('ULMO:solvedegree1:NonFiniteIterate', ...
@@ -339,18 +329,10 @@ function [coeffs, coeffStds, dates] = ...
         waitbar(1, wbar, 'Postprocessing results');
     end
 
-    % Restore GIA signal for C20
-    if includeC20 && includeC30
-        coeffs(:, 4) = coeffs(:, 4) + ...
-            squeeze(giaPlmt(:, 4, 3));
-        coeffs(:, 5) = coeffs(:, 5) + ...
-            squeeze(giaPlmt(:, 7, 3));
-    elseif includeC20
-        coeffs(:, 4) = coeffs(:, 4) + ...
-            squeeze(giaPlmt(:, 4, 3));
-    elseif includeC30
-        coeffs(:, 5) = coeffs(:, 5) + ...
-            squeeze(giaPlmt(:, 7, 3));
+    % Restore the GIA signal for every estimated coefficient of degree >= 2.
+    for iCoeff = 4:nCoeffs
+        coeffs(:, iCoeff) = coeffs(:, iCoeff) + ...
+            squeeze(giaPlmt(:, coeffLocs(iCoeff, 1), 2 + coeffLocs(iCoeff, 2)));
     end
 
 end
@@ -388,6 +370,7 @@ function varargout = parseinputs(inputs)
         @(x) islogical(x) || isnumeric(x));
     addOptional(ip, 'IncludeC30', dfOpt.IncludeC30, ...
         @(x) islogical(x) || isnumeric(x));
+    addParameter(ip, 'IncludeC21S21', false, @(x) islogical(x) && isscalar(x));
     addOptional(ip, 'Method', dfOpt.Method, ...
         @(x) ischar(validatestring(x, {'fingerprint', 'uniform'})));
     addOptional(ip, 'TimeRange', [], ...
@@ -411,7 +394,7 @@ function varargout = parseinputs(inputs)
     addParameter(ip, 'CallChain', {}, @iscell);
 
     if ~isempty(inputs) && iscell(inputs{1})
-        inputs = [inputs{1}{:}, inputs(2:end)];
+        inputs = [inputs{1}, inputs(2:end)];
     end
 
     parse(ip, inputs{:});
@@ -425,6 +408,7 @@ function varargout = parseinputs(inputs)
     oceanDomain = ip.Results.OceanDomain;
     includeC20 = logical(ip.Results.IncludeC20);
     includeC30 = logical(ip.Results.IncludeC30);
+    includeC21S21 = ip.Results.IncludeC21S21;
     method = ip.Results.Method;
     timelim = ip.Results.TimeRange;
     unit = ip.Results.Unit;
@@ -448,14 +432,14 @@ function varargout = parseinputs(inputs)
 
     varargout = ...
         {pcenter, rlevel, Ldata, Ltruncation, Lsle, giaModel, oceanDomain, ...
-         includeC20, includeC30, method, timelim, unit, ...
+         includeC20, includeC30, includeC21S21, method, timelim, unit, ...
          forceNew, saveData, beQuiet, onlyId, callChain, iterOpts};
 end
 
 % Get the input and output file names
 function [outputPath, outputFile, deg1Id] = ...
         getoutputfile(pcenter, rlevel, Ldata, giaModel, ...
-        includeC20, includeC30, Ltruncation, Lsle, oceanDomain, method, iterOpts)
+        includeC20, includeC30, includeC21S21, Ltruncation, Lsle, oceanDomain, method)
     outputFolder = fullfile(getenv('GRACEDATA'), 'Degree1', 'new');
 
     if ~exist(outputFolder, 'dir')
@@ -472,6 +456,10 @@ function [outputPath, outputFile, deg1Id] = ...
         includeC20Flag = '-WC30';
     end
 
+    if includeC21S21
+        includeC20Flag = [includeC20Flag, '-WC21S21'];
+    end
+
     switch method
         case 'fingerprint'
             methodFlag = '';
@@ -483,11 +471,6 @@ function [outputPath, outputFile, deg1Id] = ...
     deg1Id = sprintf('%s%s-Ld%d_Ls%d-%s%s', ...
         giaModel, includeC20Flag, ...
         Ltruncation, Lsle, oceanDomain.Id, methodFlag);
-
-    % Separate zero-start adaptive solutions from legacy and other tolerances.
-    deg1Id = sprintf('%s-zero-absolute-v3-t%.17g-n%d-st%.17g-sn%d', deg1Id, ...
-        iterOpts.Tolerance, iterOpts.MaxIter, ...
-        iterOpts.SleTolerance, iterOpts.SleMaxIter);
     outputFile = sprintf('%s_%s-SD.mat', productId, deg1Id);
 
     outputPath = fullfile(outputFolder, outputFile);
@@ -495,32 +478,13 @@ end
 
 % Format the output
 function output = formatoutput(coeffs, coeffStds, dates, timelim, unit, nOut, includeC2030, product, beQuiet)
-    coeffs(:, 1:3) = convertgravity(coeffs(:, 1:3), 'SD', unit, ...
-        "InputFormat", 'L', "L", 1);
-    coeffStds(:, 1:3) = convertgravity(coeffStds(:, 1:3), 'SD', unit, ...
-        "InputFormat", 'L', "L", 1);
+    [coeffLocs, ~, degrees] = lowdegreecoefficients(includeC2030(1), includeC2030(2), includeC2030(3));
 
-    if size(coeffs, 2) == 4
-
-        if includeC2030(1)
-            L = 2;
-        else
-            L = 3;
-        end
-
-        coeffs(:, 4) = convertgravity(coeffs(:, 4), 'SD', unit, ...
-            "InputFormat", 'L', "L", L);
-        coeffStds(:, 4) = convertgravity(coeffStds(:, 4), 'SD', unit, ...
-            "InputFormat", 'L', "L", L);
-    elseif size(coeffs, 2) == 5
-        coeffs(:, 4) = convertgravity(coeffs(:, 4), 'SD', unit, ...
-            "InputFormat", 'L', "L", 2);
-        coeffStds(:, 4) = convertgravity(coeffStds(:, 4), 'SD', unit, ...
-            "InputFormat", 'L', "L", 2);
-        coeffs(:, 5) = convertgravity(coeffs(:, 5), 'SD', unit, ...
-            "InputFormat", 'L', "L", 3);
-        coeffStds(:, 5) = convertgravity(coeffStds(:, 5), 'SD', unit, ...
-            "InputFormat", 'L', "L", 3);
+    for iCoeff = 1:numel(degrees)
+        coeffs(:, iCoeff) = convertgravity(coeffs(:, iCoeff), 'SD', unit, ...
+            "InputFormat", 'L', "L", degrees(iCoeff));
+        coeffStds(:, iCoeff) = convertgravity(coeffStds(:, iCoeff), 'SD', unit, ...
+            "InputFormat", 'L', "L", degrees(iCoeff));
     end
 
     if ~isempty(timelim)
@@ -539,15 +503,11 @@ function output = formatoutput(coeffs, coeffStds, dates, timelim, unit, nOut, in
         "Unit", unit, "TimeRange", timelim, "OutputFormat", 'timefirst', "TimeFormat", 'datetime', ...
         "BeQuiet", beQuiet);
 
-    gracePlmt(:, 2, 3) = coeffs(:, 1);
-    gracePlmt(:, 3, 3) = coeffs(:, 2);
-    gracePlmt(:, 3, 4) = coeffs(:, 3);
-
-    if size(coeffs, 2) == 4
-        gracePlmt(:, 4, 3) = coeffs(:, 4);
+    for iCoeff = 1:size(coeffLocs, 1)
+        gracePlmt(:, coeffLocs(iCoeff, 1), 2 + coeffLocs(iCoeff, 2)) = coeffs(:, iCoeff);
     end
 
-    output = {coeffs, coeffStds, dates, gracePlmt};
+    output = {coeffs, coeffStds, dates, gracePlmt, coeffLocs};
 
 end
 
