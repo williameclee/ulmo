@@ -4,7 +4,7 @@
 %   2026/10/25, En-Chi Lee (williameclee@gmail.com)
 %
 % Last modified
-%   2026/10/25, En-Chi Lee (williameclee@gmail.com)
+%   2026/10/26, En-Chi Lee (williameclee@gmail.com)
 
 classdef degree1ConvergenceTest < matlab.unittest.TestCase
 
@@ -81,6 +81,28 @@ classdef degree1ConvergenceTest < matlab.unittest.TestCase
             [b, sb] = runSolver("Method", 'fingerprint', "Tolerance", 0, "MaxIter", 50, ...
                 "SleTolerance", 0, "SleMaxIter", 80);
             testCase.verifyEqual(a, b, 'AbsTol', 1e-7); testCase.verifyEqual(sa, sb, 'AbsTol', 1e-7);
+        end
+
+        function jointFingerprintMatchesLongRun(testCase)
+            % Exercise merged joint-coefficient support through both solver loops.
+            opts = {"IncludeC21S21", true, "Method", 'fingerprint'};
+            [a, sa] = runSolver(opts{:});
+            [b, sb] = runSolver(opts{:}, "Tolerance", 0, "MaxIter", 100, ...
+                "SleTolerance", 0, "SleMaxIter", 100);
+            testCase.verifySize(a, [3, 5]);
+            testCase.verifyEqual(a, b, 'AbsTol', 1e-5);
+            testCase.verifyEqual(sa, sb, 'AbsTol', 1e-5);
+        end
+
+        function jointFirstUpdateIgnoresImportedUnknowns(testCase)
+            global DEGREE1_CONVERGENCE_FIXTURE
+            opts = {"IncludeC21S21", true, "Tolerance", 0, "MaxIter", 1};
+            [a, sa] = runSolver(opts{:});
+            DEGREE1_CONVERGENCE_FIXTURE.x([2:4, 6:7], :) = 1e8;
+            DEGREE1_CONVERGENCE_FIXTURE.sigma([2:4, 6:7], :) = 1e7;
+            [b, sb] = runSolver(opts{:});
+            testCase.verifyEqual(a, b, 'AbsTol', 1e-14);
+            testCase.verifyEqual(sa, sb, 'AbsTol', 1e-14);
         end
 
         function innerCapFailureDoesNotSave(testCase)
