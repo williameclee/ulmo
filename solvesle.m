@@ -1,109 +1,112 @@
-%% SOLVESLE
-% Solves the (elastic) sea level equation (SLE) for a given forcing and
-% ocean domain.
-% The ocean function is assumed constant.
+%% SOLVESLE - Solves the elastic sea-level equation for a fixed ocean domain.
+% Computes the relative sea-level load and barystatic sea level from
+% spherical harmonic forcing, with optional formal uncertainty propagation.
 %
 % Syntax
-%   [rslSd, [], gmsl, []] = SOLVESLE(forcing, [], L, ocean)
-%   [rslSd, rslSdStd, gmsl, gmslStd] = SOLVESLE(forcing, forcingStd, L, ocean)
-%   rslSd = SOLVESLE(__, "Name", Value)
+%   rslSd = solvesle(forcing)
+%   [rslSd, rslSdStd, gmsl, gmslStd] = solvesle(forcing, forcingStd, L, ocean)
+%   [rslSd, rslSdStd, gmsl, gmslStd] = solvesle(forcing, [], L, ocean)
+%   rslSd = solvesle(__, "Name", value)
 %
 % Input arguments
-%   forcing - SH coefficients of the forcing
-%       The forcing will not be localised, i.e. signal in the ocean is
-%       retained even when enforcing mass conservation (could be useful
-%       for, e.g. GAD).
-%       Unit: kg/m^2 (SD, equivalent to mm of fresh water)
-%       Data type: DOUBLE
-%       Dimension: [addmup(L), 4] (lmcosi) | [addmup(L) x 2] (cosi) |
-%           [addmup(L) x 4 x N] (lmcosi, t) | [addmup(L) x 2 x N] (cosi, t)
-%           (detected automatically, the GRACE2PLMT output format should be
-%           set to 'traditional' (lmcosi, t))
-%   forcingStd - Standard deviation of the forcing coefficients
-%       The data type and dimension are the same as for forcing.
-%   L - Degree to solve the SLE
-%       The default degree is the degree of forcing (recommended to be
-%       >= 96).
-%       Data type: DOUBLE
-%   ocean - Ocean domain to contruct the ocean function
-%       Note this ocean domain should include, e.g. the Arctics and is not
-%       the traditional sense of 'global' ocean in altimetry studies.
-%       The default domain is all oceans (ALLOCEANS) with a buffer of 0.5°.
-%       Data type: GEODOMAIN
-%           or whatever is accepted by GEOBOXCAP and KERNELCP(_NEW)
-%   Frame - Reference frame
-%       Centre of mass (CM) frame or centre of figure (CF) frame.
-%       The default frame is the CF frame, which is the frame used in
-%       SLEPIAN_DELTA and most gravimetry and altimetry studies.
-%       Data type: CHAR
-%   LoveNumSource - Source of load Love numbers
-%       - 'ISSM': Love numbers from the Ice Sheet System Model (ISSM)
-%       - 'ALMA3 <model>': Love numbers from the ALMA3 models (currently
-%           has to be added manually)
-%       Note: The 'Wahr' Love number set used in the SLEPIAN_DELTA package
-%       is not supported for SOLVESLE and will result in an error if used.
-%       The default source is 'ISSM'.
-%   RotationFeedback - Logical flag to include rotation feedback
-%       The default option is true.
-%       Data type: LOGICAL
+%   forcing - Surface mass density spherical harmonic coefficients.
+%       Forcing is not additionally localised; any ocean signal is retained.
+%       M = addmup(L). A single epoch may be 2-D.
+%       Size: (M, 4, N) in lmcosi order or (M, 2, N) in cosi order.
+%       Unit: kg/m^2, equivalent to mm of fresh water.
+%   forcingStd (optional) - Formal standard deviations of forcing.
+%       An empty value disables uncertainty propagation.
+%       Size: same as forcing.
+%       Unit: same as forcing for coefficient columns.
+%       Default field: [].
+%   L (optional) - SLE bandwidth.
+%       Default bandwidth: inferred from forcing.
+%   ocean (optional) - Ocean domain.
+%       Accepts a GeoDomain or a longitude/latitude polygon.
+%       Size: (n, 2) for a polygon.
+%       Unit: degrees for polygon coordinates.
+%       Default domain: GeoDomain('alloceans', "Buffer", 0.5).
+%   Frame (name-value) - Reference frame.
+%       'CF': centre of figure; 'CM': centre of mass.
+%       Default frame: 'CF'.
+%   LoveNumSource (name-value) - Source of the Love numbers.
+%       Options: 'ISSM' or 'ALMA3 <model>'. The 'Wahr' set lacks the
+%       required Love numbers.
+%       Default source: 'ISSM'.
+%   RotationFeedback (name-value) - Whether to include rotation feedback.
+%       Default option: true.
 %   Tolerance (name-value) - Absolute tolerance.
-%       Estimated coefficient and standard-deviation vectors are checked
-%       separately; every coefficient in every epoch must pass.
-%       Set 0 to use exactly MaxIter steps.
-%       Default absolute tolerance is 1e-6 mm or 1e-9 m.
-%   MaxIter (name-value) - Maximum number of SLE iterations.
-%       Default number of iterations is 100.
-%   OceanKernel - Precomputed ocean-localization matrix.
-%       Providing it avoids loading or computing the kernel on each call.
-%       Its first column defines the ocean function and its (1,1) entry
-%       defines the ocean area fraction used for mass conservation.
-%   OceanFunction - Legacy precomputed ocean function, accepted but unused.
-%       The kernel supplies consistent geometry for the mass constraint.
-%   InitialRSL - Initial guess of the relative sea level.
-%       Supplies a starting point for the SLE iteration so that an
-%       available prior estimate can accelerate convergence.
-%       Unit: m
+%       Checks returned and ocean-localised coefficients, and standard
+%       deviations when supplied, at every epoch. Set 0 for exactly
+%       MaxIter steps.
+%       Unit: m.
+%       Default tolerance: 1e-9.
+%   MaxIter (name-value) - Maximum iterations.
+%       Default iteration limit: 100.
+%   OceanKernel (name-value) - Precomputed ocean-localisation matrix.
+%       The first column gives the ocean function; entry (1,1) gives
+%       the positive ocean area fraction used for mass conservation.
+%       An empty value computes or loads the kernel.
+%       Size: ((L+1)^2, (L+1)^2).
+%       Default kernel: [].
+%   OceanFunction (name-value) - Legacy ocean function; accepted but unused.
+%       OceanKernel supplies the geometry.
+%       Default function: [].
+%   KernelOrder (name-value) - Indices mapping cosi to kernel order.
+%       An empty value uses KERNELORDER(L).
+%       Size: vector with (L+1)^2 elements.
+%       Default order: [].
+%   InitialRSL (name-value) - Initial relative sea-level coefficients.
+%       Uses the same layout as forcing. An empty value uses an internal
+%       initial guess.
+%       Size: same as forcing.
+%       Unit: m for coefficient columns.
+%       Default field: [].
+%   BeQuiet (name-value) - Whether to suppress the progress waitbar.
+%       Default option: false.
 %
 % Output arguments
-%   rslSd - SH coefficients of the mass load from the forcing
-%       Note this value is only physical in the ocean domain.
-%       Unit: kg/m^2 (SD, equivalent to mm of fresh water)
-%       The dimension should be the same as the input forcing.
-%   rslSdStd - Standard deviation of the mass load coefficients
-%       When the standard deviation of the forcing is not provided, this
-%       output is empty.
-%       The data type and dimension should be the same as rslSd.
-%   gmsl - Barystatic sea level from the forcing
-%       Since the ocean domain is the true global ocean, the GMSL is not
-%       comparible with values reported in latitude-bounded oceans.
-%       Unit: mm
-%       Dimension: scalar | [N x 1]
-%           (depending on the input forcing)
-%   gmslStd - Standard deviation of the barystatic sea level
-%       When the standard deviation of the forcing is not provided, this
-%       output is empty.
-%       The data type and dimension is the same as gmsl.
+%   rslSd - Relative sea-level load coefficients, physical over the ocean.
+%       Matches the input column layout. A single epoch is a 2-D matrix.
+%       Size: (addmup(L), 4, N) or (addmup(L), 2, N).
+%       Unit: kg/m^2 for coefficient columns, equivalent to mm of fresh water.
+%   rslSdStd - Formal standard deviations of rslSd.
+%       Empty when forcingStd is not supplied.
+%       Size: same as rslSd.
+%       Unit: same as rslSd for coefficient columns.
+%   gmsl - Barystatic sea level over the specified ocean domain.
+%       Size: (N, 1).
+%       Unit: mm.
+%   gmslStd - Formal standard deviation of gmsl.
+%       Empty when forcingStd is not supplied.
+%       Size: (N, 1).
+%       Unit: mm.
 %
 % Notes
-%   In the implementation, all SH coefficient variables with a 's' suffix
-%   means they are flattened to a column vector.
-%   Uncertainties use diagonal propagation: correlations between the forcing
-%   and iterated ocean load, and between provisional response harmonics, are
-%   neglected, as is covariance of the target mass with that response.
+%   The ocean function is fixed. Its domain should include the polar oceans
+%   for global mass balance.
+%   Uncertainties use diagonal propagation. Correlations between forcing
+%   and iterated ocean load, between provisional response harmonics, and
+%   between target mass and that response are neglected.
+%   Positive tolerance requires convergence; reaching MaxIter without it
+%   raises an error. Tolerance=0 explicitly requests a fixed iteration count.
 %
 % References
-%   Adhikari, S. et al. (2019). Sea-level fingerprints emergent from GRACE
-%       mission data. Earth System Science Data, 11(2):629–646.
-%       doi: 10.5194/essd-11-629-2019
-%   Adhikari, S. et al. (2016). ISSM-SESAW v1.0: mesh-based computation of
-%       gravitationally consistent sea-level and geodetic signatures caused
+%   Adhikari, S et al. (2016). ISSM-SESAW v1.0: mesh-based computation
+%       of gravitationally consistent sea-level and geodetic signatures caused
 %       by cryosphere and climate driven mass change. Geoscientific Model
-%       Development, 9(3):1087–1109. doi: 10.5194/gmd-9-1087-2016
+%       Development, 9(3):1087-1109. doi: 10.5194/gmd-9-1087-2016.
+%   Adhikari, S et al. (2019). Sea-level fingerprints emergent from GRACE
+%       mission data. Earth System Science Data, 11(2):629-646.
+%       doi: 10.5194/essd-11-629-2019.
 %
-% Author
+% See also
+%   GRACE2FINGERPRINT, SOLVEDEGREE1, KERNELCP_NEW, KERNELORDER, LOVENUMBER
+%
+% Created by
 %   2024/11/20, En-Chi Lee (williameclee@arizona.edu)
 %
-% Last modified by
+% Last modified
 %   2026/10/26, En-Chi Lee (williameclee@arizona.edu)
 
 function varargout = solvesle(varargin)

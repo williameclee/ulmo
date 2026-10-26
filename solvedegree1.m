@@ -1,143 +1,129 @@
-%% SOLVEDEGREE1 - Solves for the geocentre motion from GRACE observations.
-% Recomputes the GRACE degree-1 surface mass density coefficients based on
-% Sun et al. (2016) with the specified GIA model.
-% Estimates remain GSM-like: the solver does not add GAC or subtract GAD.
-% Restore GAD separately downstream when constructing ocean-mass signals.
+%% SOLVEDEGREE1 - Jointly estimates low-degree GRACE coefficients.
+% Estimates degree 1 and optional C20, C30, C21 and S21 using an ocean
+% constraint and the specified GIA model, following Sun et al. (2016).
 %
 % Syntax
-%   [coeffs, coeffStd, dates] = SOLVEDEGREE1(...
-%       pcenter, rlevel, Ldata, Lsle, GIAModel, oceanDomain)
-%   [__] = SOLVEDEGREE1(__, ...
-%       "IncludeC20", includeC20, "TimeRange", timelim)
-%   [__] = SOLVEDEGREE1(__, ...
-%       "ForceNew", forceNew, "SaveData", saveData, "BeQuiet", beQuiet)
-%   [__, gracePlmt] = SOLVEDEGREE1(__)
+%   [coeffs, coeffStds, dates] = solvedegree1()
+%   [coeffs, coeffStds, dates] = solvedegree1(product, "Name", value)
+%   [coeffs, coeffStds, dates] = solvedegree1(Pcenter, Rlevel, Ldata, ...
+%       Ltruncation, Lsle, GiaModel, OceanDomain)
+%   [coeffs, coeffStds, dates, gracePlmt, coeffLocs] = solvedegree1(__)
+%   [coeffs, coeffStds, dates] = solvedegree1(__, "IncludeC21S21", true)
 %
 % Input arguments
-%   Pcenter - Data centre
-%       - 'CSR': Center for Space Research
-%       - 'GFZ': GeoForschungsZentrum Potsdam
-%       - 'JPL': Jet Propulsion Laboratory
-%       The default data centre is 'CSR'.
-%       When the first argument is a cell array, it is interpreted as
-%       {Pcenter, Rlevel, Ldata}.
-%       Data type: CHAR
-%   Rlevel - Release level of the solution
-%       Either 'RL04','RL05', or 'RL06' (or numbers).
-%       The default release level is 'RL06'.
-%       Currently, only RL06 is guaranteed to work.
-%       Data type: CHAR | [NUMERIC]
-%   Ldata - Bandwidth of the date product
-%       In the case where there are more than one product from a data
-%       centre (such as BA 60 or BB 96 standard L2 products) this allows
-%       you to choose between them.
-%       The default L is 60.
-%       Data type: [NUMERIC]
-%   Ltruncation - Bandwidth to truncate the date product
-%       The default option is no truncation.
-%       Data type: [NUMERIC]
-%   Lsle - Bandwidth used to solve the sea level equation
-%       The default Lsle is 96.
-%       Data type: [NUMERIC]
-%   GiaModel - Name of GIA model
-%       The default GIA model is 'ice6gd'.
-%       Data type: CHAR
-%   OceanDomain - Ocean domain
-%       The input format should be whatever KERNELCP_NEW accepts, e.g. a
-%       GeoDomain object.
-%       The default ocean domain is the global ocean (ALLOCEANS) with a
-%       0.5° buffer.
-%   IncludeC20, IncludeC30 (name-value) - Whether to also recompute C20 or C30
-%       Default option is false.
-%   IncludeC21S21 - Jointly estimate C21 and S21 with degree 1.
-%   Method - Method to solve the sea level equation
-%       - 'fingerprint': Solve the sea level equation using the fingerprint
-%           method (see SOLVESLE).
-%       - 'uniform': Assume a uniform barystatic load over the ocean
-%           domain.
-%       The default method is 'fingerprint'.
-%       Data type: CHAR
-%   Unit - Unit of the output
-%       - 'GRAV': Surface gravity (this is POT in SLEPIAN_ALPHA).
-%       - 'POT': Geopotential field (surface gravity * equatorial radius).
-%       - 'SD': Surface mass density.
-%       The default field is 'SD'.
-%       Data type: CHAR
-%   Tolerance (name-value) - Absolute tolerance.
-%       Estimated coefficient and standard-deviation vectors are checked
-%       separately; every coefficient in every epoch must pass.
-%       Set 0 to use exactly MaxIter steps.
-%       Default absolute tolerance is 1e-6 kg/m^2 = 1e-6 mm.
-%   MaxIter (name-value) - Maximum number of the outer iteration.
-%       Default number of iterations is 100.
+%   Pcenter (optional) - GRACE data centre.
+%       Options: 'CSR', 'GFZ' or 'JPL'. Alternatively, pass the cell array
+%       product = {Pcenter, Rlevel, Ldata} as the first argument.
+%       Default centre: 'CSR'.
+%   Rlevel (optional) - Release name.
+%       Options: 'RL04', 'RL05' or 'RL06'. Available data and corrections
+%       depend on the release.
+%       Default release level: 'RL06'.
+%   Ldata (optional) - Product bandwidth.
+%       Default bandwidth: 60.
+%   Ltruncation (optional) - Input truncation degree.
+%       Default truncation: Ldata (no truncation).
+%   Lsle (optional) - SLE bandwidth.
+%       Default bandwidth: 96.
+%   GiaModel (optional) - GIA model name.
+%       Default model: 'ice6gd'.
+%   OceanDomain (optional) - GeoDomain used for the ocean constraint.
+%       Default domain: GeoDomain('alloceans', "Buffer", 0.5).
+%   IncludeC20 (name-value) - Also estimate C20.
+%       Default option: false.
+%   IncludeC30 (name-value) - Also estimate C30.
+%       Default option: false.
+%   IncludeC21S21 (name-value) - Also estimate C21 and S21 jointly.
+%       Scalar logical.
+%       Default option: false.
+%   Method (name-value) - Method used for the ocean constraint.
+%       'fingerprint': use SOLVESLE; 'uniform': use a uniform ocean load.
+%       Default method: 'fingerprint'.
+%   TimeRange (name-value) - Inclusive start and end dates for the output.
+%       Size: (1, 2) or (2, 1).
+%       Default range: [] (all dates).
+%   Unit (name-value) - Output coefficient unit.
+%       'SD': surface mass density in kg/m^2, equivalent to mm of fresh
+%       water. 'GRAV' and 'POT' follow the CONVERTGRAVITY conventions.
+%       Default unit: 'SD'.
+%   Tolerance (name-value) - Outer absolute tolerance.
+%       Checks coefficients and standard deviations at every epoch.
+%       Set 0 for exactly MaxIter steps.
+%       Unit: kg/m^2.
+%       Default tolerance: 1e-6.
+%   MaxIter (name-value) - Maximum outer iterations.
+%       Default iteration limit: 100.
 %   SleTolerance (name-value) - Inner SLE absolute tolerance.
-%       Set 0 to use exactly SleMaxIter steps.
-%       Default absolute tolerance is 1e-6 mm.
-%   SleMaxIter (name-value) - Maximum number of inner SLE iterations.
-%       Default number of iterations is 100.
-%   ForceNew - Logical flag to force reprocess of the data
-%       The default option is false.
-%       Cached solutions are assumed converged at sufficiently small tolerances;
-%       iteration settings are not included in the cache filename. Set true
-%       to test different iteration settings in a fresh run. Use SaveData=false
-%       to preserve the existing cache during these experiments.
-%       Data type: LOGICAL
-%	SaveData - Logical flag to save the data
-%		- true: Save the data to disk.
-%		- false: Do not save the data to disk.
-%		The default option is true.
-%		Data types: LOGICAL
-%	BeQuiet - Logical flag to print messages
-%		- true: Suppress all messages.
-%		- false: Print all messages (usually for debugging).
-%		The default option is false.
-%		Data types: LOGICAL
+%       Set 0 for exactly SleMaxIter steps.
+%       Unit: m.
+%       Default tolerance: 1e-9.
+%   SleMaxIter (name-value) - Maximum inner SLE iterations.
+%       Default iteration limit: 100.
+%   ForceNew (name-value) - Whether to bypass the coefficient cache.
+%       Default option: false.
+%   SaveData (name-value) - Whether to save computed coefficients.
+%       Default option: true.
+%   BeQuiet (name-value) - Whether to report progress.
+%       false: messages and waitbar; 0.5: messages only; true: silent.
+%       Default reporting level: 0.5.
 %
 % Output arguments
-%   coeffs - Columns C10, C11, S11, followed by optional C20, C30,
-%       then C21 and S21. Values use the requested Unit (default SD).
-%   coeffStds - Formal uncertainties in the same order and units.
-%   coeffLocs - Fifth output: [lmcosi row, cosine/sine column (1/2)].
-%   dates - dates of the coefficients
-%       In DATETIME format.
-%   gracePlmt - GRACE SH coefficients with the recomputed coefficients
+%   coeffs - Estimated coefficients.
+%       Column order: C10, C11, S11, optional C20, optional C30, then
+%       optional C21, S21. N is the number of dates and
+%       K = 3 + IncludeC20 + IncludeC30 + 2 * IncludeC21S21.
+%       Size: (N, K).
+%       Unit: selected Unit; 'SD' uses kg/m^2.
+%   coeffStds - Formal standard deviations.
+%       Uses the same coefficient order as coeffs. GIA uncertainty is
+%       not included.
+%       Size: (N, K).
+%       Unit: same as coeffs.
+%   dates - Coefficient epochs as a datetime column vector.
+%       Size: (N, 1).
+%   gracePlmt - GRACE field with the estimated coefficients inserted.
+%       The four columns are degree, order, cosine and sine coefficients.
+%       Size: (N, addmup(Ldata), 4).
+%       Unit: selected Unit for coefficient columns.
+%   coeffLocs - Locations corresponding to columns of coeffs.
+%       Each row is [lmcosi row, cosine/sine selector (1/2)].
+%       Size: (K, 2).
 %
-% Example
-%   coeffs = SOLVEDEGREE1('CSR', 'RL06', 60, 96, ...
-%       'ice6gd', GeoDomain('alloceans', "Buffer", 2))
-%   coeffs = SOLVEDEGREE1('CSR', 'RL06', 45, 180, ...
-%       'ice6gd', GeoDomain('alloceans', "Buffer", 2), ...
-%       "IncludeC20", true)
-%
-% See also
-%   SOLVESLE, GRACE2PLMT
+% Notes
+%   GIA is removed for degrees >= 2 during estimation and restored for
+%   estimated coefficients of those degrees. Degree 1 remains GIA-free.
+%   Cached solutions are assumed converged at sufficiently small tolerances;
+%   iteration settings are not part of cache filenames. Use ForceNew=true
+%   for other settings and SaveData=false to preserve an existing cache.
 %
 % References
-%   Sun, Y., Ditmar, P., and Riva, R. E. M. (2015). Observed changes
-%       in the Earth’s dynamic oblateness from GRACE data and
-%       geophysical models. Journal of Geodesy, 90(1):81-89. doi:
-%       10.1007/s00190-015-0852-y.
-%   Sun, Y., Riva, R. E. M., and Ditmar, P. (2016). Optimizing
-%       estimates of annual variations and trends in geocenter
-%       motion and J2 from a combination of GRACE data and
-%       geophysical models. Journal of Geophysical Research: Solid
-%       Earth, 121(11):8352-8370. doi: 10.1002/2016JB013073.
+%   Sun, Y, Ditmar, P, and Riva, REM. (2015). Observed changes
+%       in the Earth's dynamic oblateness from GRACE data and geophysical
+%       models. Journal of Geodesy, 90:81-89. doi: 10.1007/s00190-015-0852-y.
+%   Sun, Y, Riva, REM, and Ditmar, P. (2016). Optimizing estimates
+%       of annual variations and trends in geocenter motion and J2 from a
+%       combination of GRACE data and geophysical models. Journal of
+%       Geophysical Research: Solid Earth, 121(11):8352-8370.
+%       doi: 10.1002/2016JB013073.
 %
-% Author
+% See also
+%   GRACE2PLMT_NEW, GRACE2FINGERPRINT, SOLVESLE
+%
+% Created by
 %   2025/03/18, En-Chi Lee (williameclee@arizona.edu)
 %
-% Last modified by
+% Last modified
 %   2026/10/26, En-Chi Lee (williameclee@arizona.edu)
 
 function varargout = solvedegree1(varargin)
     %% Initialisation
     % Parse inputs
     [prod, Lused, Lsle, giaMdl, ocnDom, ...
-         inclC20, inclC30, inclC21S21, mthd, timelim, unit, iterOpts, ...
+         inclC20, inclC30, inclCS21, mthd, timelim, unit, iterOpts, ...
          forceNew, saveData, beQuiet, callChain] = ...
         parseinputs(varargin);
 
-    dataPath = getoutputfile(prod, giaMdl, inclC20, inclC30, inclC21S21, Lused, Lsle, ocnDom, mthd);
+    dataPath = getoutputfile(prod, giaMdl, inclC20, inclC30, inclCS21, Lused, Lsle, ocnDom, mthd);
 
     vars = {'coeffs', 'coeffStds', 'dates'};
 
@@ -151,7 +137,7 @@ function varargout = solvedegree1(varargin)
         end
 
         varargout = formatoutput(data.coeffs, data.coeffStds, data.dates, ...
-            timelim, unit, nargout, [inclC20, inclC30, inclC21S21], ...
+            timelim, unit, nargout, [inclC20, inclC30, inclCS21], ...
             prod, beQuiet);
 
         return
@@ -160,7 +146,7 @@ function varargout = solvedegree1(varargin)
 
     [coeffs, coeffStds, dates] = ...
         solvedegree1Core(prod, Lused, Lsle, ...
-        giaMdl, inclC20, inclC30, inclC21S21, ocnDom, mthd, beQuiet, iterOpts);
+        giaMdl, inclC20, inclC30, inclCS21, ocnDom, mthd, beQuiet, iterOpts);
 
     if saveData
         save(dataPath, 'coeffs', 'coeffStds', 'dates')
@@ -172,8 +158,8 @@ function varargout = solvedegree1(varargin)
 
     end
 
-    varargout = formatoutput(coeffs, coeffStds, dates, timelim, unit, nargout, [inclC20, inclC30, inclC21S21], ...
-        prod, beQuiet);
+    varargout = formatoutput(coeffs, coeffStds, dates, timelim, unit, nargout, ...
+        [inclC20, inclC30, inclCS21], prod, beQuiet);
 
 end
 

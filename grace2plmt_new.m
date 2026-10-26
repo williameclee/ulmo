@@ -1,137 +1,99 @@
-%% GRACE2PLMT
-% Reads Level-2 GRACE GSM products from CSR, GFZ and JPL, or CSR mascon
-% GSU spherical harmonics, and saves processed plmt matrices in .mat files.
-% Coefficients use lmcosi order. GSM fields are referenced to WGS84; GSU
-% fields retain their GGM05C reference. For RL06 by default, the C20/C30
-% coefficients are replaced with more accurate measurements from satellite
-% laser ranging from Loomis et al, (2020), and the degree one coefficients
-% are substituted with those from Sun et al., (2016).  You have the option
-% of leaving them as geopotential or converting them to surface mass
-% density using the method of Wahr et al. 1998, based on Love numbers.
+%% GRACE2PLMT_NEW - Reads and corrects GRACE spherical harmonic time series.
+% Reads CSR, GFZ and JPL Level-2 GSM products or CSR mascon GSU harmonics.
+% GSM fields use a WGS84 reference; GSU fields retain GGM05C. Processed
+% coefficients are cached before optional low-degree recomputation.
 %
 % Syntax
-%   [plmt, stdPlmt, dates] = grace2plmt(Pcenter, Rlevel, unit)
-%   [plmt, stdPlmt, dates] = grace2plmt(__, 'Name', Value)
+%   [gracePlmt, graceStdPlmt, dates] = grace2plmt_new()
+%   [gracePlmt, graceStdPlmt, dates] = grace2plmt_new(Pcenter, Rlevel, Ldata, Unit)
+%   [gracePlmt, graceStdPlmt, dates] = grace2plmt_new(product, "Name", value)
+%   [gracePlmt, graceStdPlmt, dates] = grace2plmt_new(__, ...
+%       "RecomputeDegree1", {"IncludeC21S21", true})
 %
 % Input arguments
-%   Pcenter - Data centre
-%       - 'CSR': Center for Space Research
-%       - 'GFZ': GeoForschungsZentrum Potsdam
-%       - 'JPL': Jet Propulsion Laboratory
-%       - 'CSR mascon': RL06 GSU spherical harmonics relative to GGM05C
-%       The default data centre is 'CSR'.
-%       When the first argument is a cell array, it is interpreted as
-%       {Pcenter, Rlevel, Ldata}.
-%       Data type: char
-%   Rlevel - Release level of the solution
-%       Either 'RL04','RL05', or 'RL06' (or numbers).
-%       The default release level is 'RL06'.
+%   Pcenter (optional) - GRACE data centre.
+%       Options: 'CSR', 'GFZ', 'JPL' or 'CSR mascon'. Alternatively, pass
+%       the cell array product = {Pcenter, Rlevel, Ldata} first.
+%       Default centre: 'CSR'.
+%   Rlevel (optional) - Release name or number.
 %       RL05 and RL06 are supported; RL04 loading is not implemented.
-%       Data type: char | [numeric]
-%   Ldata - Bandwidth of the date product
-%       In the case where there are more than one product from a data
-%       centre (such as BA 60 or BB 96 standard L2 products) this allows
-%       you to choose between them.
-%       The default L is 60. RL05 uses CSR=60, GFZ/JPL=90 (JPL months
-%       may stop at 60); CSR mascon uses 720. These override Ldata.
-%       Missing coefficients and uncertainties are NaN, with valid l/m
-%       indices. Use Loutput=60 for a common RL05 bandwidth.
-%       Data type: [numeric]
-%   Unit - Unit of the output
-%       - 'GRAV': Surface gravity (this is POT in SLEPIAN_ALPHA).
-%       - 'POT': Geopotential field (surface gravity * equatorial radius).
-%       - 'SD': Surface mass density.
-%       The default field is 'SD'.
-%       Data type: char
-%   TimeRange - Time range of the output
-%       When specified, the output will be truncated to the specified time
-%       range. If the input has two elements, it is interpreted as the
-%       start and end of the time range; if the input has more than two
-%       elements, it is interpreted as a list of time stamps.
-%       The default time range is [] (all available data).
-%       Data type: datetime | ([numeric])
-%   TimeFormat - Format of the output time
-%       - 'datetime': Matlab DATETIME object
-%       - 'datenum': Matlab double in DATENUM format
-%       The default option is 'datetime'.
-%       Data type: char
-%   OutputFormat - Format of the output coefficients
-%       - 'timefirst': Coefficients are ordered as [time, lmcosi]
-%       - 'traditional': Coefficients are ordered as [lmcosi, time]
-%       The default option is 'timefirst' (to be consistent with
-%       GRACE2PLMT).
-%       Data type: char
-%   Loutput - Optional output bandwidth
-%       Truncate higher degrees or pad missing coefficients/sigmas with NaN.
-%       Degree/order labels remain valid; the default [] keeps Ldata.
-%       Data type: [numeric]
-%   LoveNumSource - Source of load Love numbers
-%       - 'ISSM': Love numbers from the Ice Sheet System Model (ISSM)
-%       - 'Wahr': Love numbers as used in slepian_delta package
-%       - 'ALMA3 <model>': Love numbers from the ALMA3 models (currently
-%           has to be added manually)
-%       The default source is 'ISSM'.
-%   Deg1Correction, C20Correction, C30Correction - Logical flag to apply
-%       these corrections
-%       The default options are all true for RL06, including CSR mascon.
-%       For GSU, SLR C20/C30 are converted to updates relative to GGM05C;
-%       degree 1 uses CSR TN-13. WGS84 zonals are not subtracted from GSU.
-%       RL05 defaults to false; explicit true raises UnsupportedCorrection.
-%       No GAD restoration, GIA correction or temporal demeaning is applied.
-%       Data type: logical | ([numeric])
-%   RecomputeDegree1 - Logical flag to recompute the degree 1 coefficients
-%       - false: Do not recompute the degree 1 coefficients.
-%       - true: Recompute the degree 1 coefficients using degree 60 input
-%           data, SLE solved at degree 180, ICE-6G_D (VM5a) model is used
-%           for GIA correction, and the ocean function has a buffer of
-%           0.5°.
-%       - Name of some GIA model (e.g. 'Caron18): Same as above, but using
-%           the specified GIA model instead of ICE-6G_D (VM5a).
-%       - Some cell array: These options are passed to the SOLVEDEGREE1
-%           function.
-%       The default option is false.
-%       Data type: logical | char | cell array
-%	ForceNew - Logical flag to force reprocess of the data
-%		- true: Reprocess the data
-%		- false: Only reprocess if previous output is not found
-%		The default option is 'soft-true', only reprocessing the data if
-%       the output file is older than the input files. This option is not
-%       explicitly exposed; to enforce this option, set it to 0.5.
-%		Data types: logical | ([numeric])
-%	SaveData - Logical flag to save the data
-%		- true: Save the data to disk.
-%		- false: Do not save the data to disk.
-%		The default option is true.
-%		Data types: logical | ([numeric])
-%	BeQuiet - Logical flag to print messages
-%		- true: Suppress all messages.
-%		- false: Print all messages (usually for debugging).
-%		The default option is false.
-%		Data types: logical | ([numeric])
+%       Default release level: 'RL06'.
+%   Ldata (optional) - Product bandwidth.
+%       RL05 uses CSR=60 and GFZ/JPL=90; JPL months may stop at 60.
+%       CSR mascon uses 720. These product limits override Ldata.
+%       Default bandwidth: 60.
+%   Unit (optional) - Output coefficient unit.
+%       'SD': surface mass density in kg/m^2, equivalent to mm of fresh
+%       water. 'GRAV' and 'POT' follow the CONVERTGRAVITY conventions.
+%       Default unit: 'SD'.
+%   TimeRange (optional) - Inclusive start and end dates for the output.
+%       Accepts datetime or datenum values.
+%       Size: (1, 2) or (2, 1).
+%       Default range: [] (all dates).
+%   Deg1Correction (name-value) - Whether to apply the degree-1 replacement series.
+%       GSU uses CSR TN-13. RL05 rejects explicit true.
+%       Default option: true for RL06; false for RL05.
+%   C20Correction (name-value) - Whether to apply the SLR C20 replacement series.
+%       GSU uses updates relative to GGM05C. RL05 rejects explicit true.
+%       Default option: true for RL06; false for RL05.
+%   C30Correction (name-value) - Whether to apply the SLR C30 replacement series.
+%       GSU uses updates relative to GGM05C. RL05 rejects explicit true.
+%       Default option: true for RL06; false for RL05.
+%   RecomputeDegree1 (name-value) - Low-degree recomputation options.
+%       false: retain the field after the selected replacement corrections.
+%       true: use the preset solver arguments; a GIA model name selects
+%       that model for the preset. A cell array passes explicit arguments
+%       to SOLVEDEGREE1, including IncludeC20, IncludeC30 and IncludeC21S21.
+%       All returned coefficients and uncertainties are inserted by harmonic
+%       location and matched date; missing dates fail.
+%       Default option: false.
+%   OutputFormat (name-value) - Coefficient array layout.
+%       'timefirst': time precedes lmcosi; 'traditional': time follows it.
+%       Default format: 'timefirst'.
+%   TimeFormat (name-value) - Output date format.
+%       Options: 'datenum' or 'datetime'.
+%       Default format: 'datenum'.
+%   Loutput (name-value) - Output bandwidth.
+%       Truncates or pads coefficients and uncertainties with NaN while
+%       preserving valid degree/order labels. An empty value keeps Ldata.
+%       Default bandwidth: [].
+%   LoveNumSource (name-value) - Source of the load Love numbers.
+%       Options: 'ISSM', 'Wahr' or 'ALMA3 <model>'.
+%       Default source: 'ISSM'.
+%   ForceNew (name-value) - Whether to use the processed GRACE cache.
+%       false: reuse a valid cache; 0.5: refresh if source files are newer;
+%       true: always reprocess.
+%       Default refresh option: 0.5.
+%   SaveData (name-value) - Whether to save processed GRACE data.
+%       Default option: true.
+%   BeQuiet (name-value) - Whether to report progress.
+%       false: full reporting; 0.5: reduced reporting; true: silent.
+%       Default reporting level: 0.5.
 %
 % Output arguments
-%   plmt - SH coefficients of the gravity field
-%       Units: m/s^2 (POT) | kg/m^2 (SD)
-%       Data type: DOUBLE
-%       Dimension: [ndates x addmup(L) x 4] | [addmup(L) x 4 x ndates]
-%           (depending on the OutputFormat input)
-%   stdPlmt - Standard deviation of the SH coefficients
-%       The data type and dimension are the same as for plmt.
-%   dates - Time stamps of the coefficients
-%       The time stamps are the midpoints of the time intervals of the
-%       input data.
-%       Datatype: DATATIME | DOUBLE
-%           (depending on the TimeFormat input)
-%       Dimension: [ndates x 1]
+%   gracePlmt - GRACE spherical harmonic coefficients.
+%       The four columns are degree, order, cosine and sine coefficients.
+%       Missing coefficients are NaN; degree/order labels remain valid.
+%       Size: (N, M, 4) for 'timefirst', or (M, 4, N) for 'traditional',
+%       where M = addmup(Lout); N is the number of epochs.
+%       Unit: selected Unit for coefficient columns; 'SD' uses kg/m^2.
+%   graceStdPlmt - Formal standard deviations.
+%       Degree/order columns retain their labels.
+%       Size: same as gracePlmt.
+%       Unit: same as gracePlmt for coefficient columns.
+%   dates - Midpoints of the input intervals in TimeFormat.
+%       Size: (N, 1).
+%
+% Notes
+%   See docs/grace-input-formats.md for source layouts and corrections.
 %
 % Data sources
-%	GRACE data available from NASA PODAAC:
-%	    https://podaac.jpl.nasa.gov/
+%   NASA PO.DAAC GRACE data. https://podaac.jpl.nasa.gov/
 %
 % See also
-%   GRACEDEG1, GRACEDEG2, PLM2POT, AOD1B2PLMT, SOLVEDEGREE1
+%   GRACEDEG1, GRACEDEG2, SOLVEDEGREE1, CONVERTGRAVITY
 %
-% Last modified by
+% Last modified
 %   2026/10/26, En-Chi Lee (williameclee@arizona.edu)
 
 function [gracePlmt, graceStdPlmt, dates] = grace2plmt_new(varargin)

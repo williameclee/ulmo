@@ -1,72 +1,116 @@
-%% GRACE2FINGERPRINT - Computes the relative sea level fingerprint based on forcing from GRACE data.
+%% GRACE2FINGERPRINT - Computes relative sea-level fingerprints from GRACE.
+% Removes GIA from degrees >= 2, localises the land forcing, and solves
+% the sea-level equation. Degree 1 and C21/S21 can be recomputed jointly.
 %
 % Syntax
-%   [rslPlmt, time] = grace2fingerprint(L)
-%   [rslPlmt, time] = grace2fingerprint(L, "GIA", model, "GIAFeedback", feedback)
-%   [rslPlmt, time] = grace2fingerprint(__, "RotationFeedback", feedback)
-%   [rslPlmt, time] = grace2fingerprint(__, "Name", Value)
+%   [rslLoadPlmt, rslLoadStdPlmt, dates] = grace2fingerprint()
+%   [rslLoadPlmt, rslLoadStdPlmt, dates] = grace2fingerprint(product, L, oceanDomain)
+%   [rslLoadPlmt, rslLoadStdPlmt, dates] = grace2fingerprint(__, "Name", value)
+%   [rslLoadPlmt, rslLoadStdPlmt, dates] = grace2fingerprint(__, "RecomputeC21S21", true)
 %
 % Input arguments
-%   product - GRACE product
-%       A cell array of the form {centre, release, degree}.
-%       The default product is {'CSR', 'RL06', 60}
-%   L - Bandwidth to compute spherical harmonic coefficients
-%       The default value is 96
-%   oceanDomain - Ocean domain
-%       A geographic domain (GeoDomain object).
-%       The default domain is all oceans with a buffer of 1 degree
-%   "GIA" - Glacial isostatic adjustment model
-%       The default model is 'ICE-6G_D'
-%   "GIAFeedback" - Whether to include GIA feedback
-%       The default value is true
-%   "RotationFeedback" - Whether to include rotation feedback
-%       The default value is true
-%   "RecomputeC21S21" - Jointly reestimate degree 1, C21 and S21 (default false).
-%       Enables RecomputeDegree1 and uses a separate fingerprint cache.
-%   "Frame" - Reference frame
-%       Centre of mass (CM) frame or centre of figure (CF) frame.
-%       The default frame is the CF frame, which is the frame used in slepian_delta
-%   "Truncation" - Truncate the output to a lower degree
-%       The default value is the same as L
+%   product (optional) - GRACE product specification.
+%       Cell array {centre, release, degree}.
+%       Size: (1, 3).
+%       Default product: {'CSR', 'RL06', 60}.
+%   L (optional) - SLE bandwidth.
+%       Default bandwidth: 96.
+%   oceanDomain (optional) - Ocean domain accepted by KERNELCP_NEW.
+%       Default domain: GeoDomain('alloceans', "Buffer", 0.5).
+%   GIA (name-value) - GIA model name as a character vector.
+%       GIA correction is required; logical flags are not accepted.
+%       Default model: 'ice6gd'.
+%   RotationFeedback (name-value) - Include rotation feedback.
+%       Default option: true.
+%   RecomputeDegree1 (name-value) - Whether to re-estimate degree 1 with
+%       SOLVEDEGREE1.
+%       Default option: false.
+%   RecomputeC21S21 (name-value) - Whether to jointly re-estimate degree 1,
+%       C21 and S21.
+%       Enables RecomputeDegree1 and passes IncludeC21S21 to SOLVEDEGREE1.
+%       Default option: false.
+%   LandDomain (name-value) - Domain used to localise the forcing.
+%       NaN selects the complement of oceanDomain.
+%       Default domain: NaN.
+%   Frame (name-value) - Reference-frame label used in the cache filename.
+%       Options: 'CF' or 'CM'. This option is not forwarded to SOLVESLE;
+%       that call currently uses its default CF frame.
+%       Default frame: 'CF'.
+%   Truncation (name-value) - Output bandwidth, no greater than L.
+%       An empty value uses L.
+%       Default truncation: [].
+%   Unit (name-value) - Output coefficient unit.
+%       'SD': surface mass density in kg/m^2, equivalent to mm of fresh
+%       water. 'GRAV' and 'POT' follow the CONVERTGRAVITY conventions.
+%       Default unit: 'SD'.
+%   TimeRange (name-value) - Inclusive start and end dates for the output.
+%       Accepts datetime or datenum values.
+%       Size: (1, 2) or (2, 1).
+%       Default range: [] (all dates).
+%   OutputFormat (name-value) - Coefficient array layout.
+%       'timefirst': time precedes lmcosi; 'traditional': time follows it.
+%       Default format: 'timefirst'.
+%   TimeFormat (name-value) - Output date format.
+%       Options: 'datenum' or 'datetime'.
+%       Default format: 'datenum'.
+%   OceanKernel (name-value) - Precomputed ocean-localisation matrix.
+%       An empty value computes or loads the kernel.
+%       Size: ((L+1)^2, (L+1)^2).
+%       Default kernel: [].
+%   ForceNew (name-value) - Whether to bypass the fingerprint cache.
+%       Default option: false.
+%   SaveData (name-value) - Whether to save the computed fingerprint.
+%       Default option: true.
+%   BeQuiet (name-value) - Whether to log messages.
+%       true suppresses messages; 0.5 prints load/save messages.
+%       Default reporting level: 0.5.
 %
 % Output arguments
-%   rslPlmt - Relative sea level load spherical harmonic coefficients
-%   time - Time stamps of the data, in datetime format
+%   rslLoadPlmt - Relative sea-level load coefficients.
+%       The four columns are degree, order, cosine and sine coefficients.
+%       Size: (N, M, 4) for 'timefirst', or (M, 4, N) for 'traditional',
+%       Where M = addmup(output bandwidth); N is the number of dates.
+%       Unit: selected Unit for coefficient columns; 'SD' uses kg/m^2.
+%   rslLoadStdPlmt - Formal standard deviations.
+%       Degree/order columns retain their labels.
+%       Size: same as rslLoadPlmt.
+%       Unit: same as rslLoadPlmt for coefficient columns.
+%   dates - Epochs in the selected TimeFormat.
+%       Size: (N, 1).
 %
 % Notes
-%   Forcing remains GSM-like; GAC/GAD are not added or subtracted here.
-%   Restore GAD separately downstream when constructing ocean-mass signals.
-%   Regenerate existing fingerprints with ForceNew=true after changing
-%   the degree-1 forcing convention; cache names do not track that change.
-%   It doesn't make much sense to compute the GIA feedback or steric correction at this moment, so both arguments are disabled.
+%   Forcing remains GSM-like.
+%   ForceNew applies to this fingerprint cache, not upstream solver caches.
+%   Regenerate fingerprints when changing a forcing convention that is not
+%   represented in the cache filename. GIA uncertainty is not propagated.
 %
 % See also
-%   SOLVESLE
+%   SOLVEDEGREE1, GRACE2PLMT_NEW, SOLVESLE, KERNELCP_NEW
 %
-% Authored by
-%   2024/11/20, williameclee@arizona.edu (@williameclee)
+% Created by
+%   2024/11/20, En-Chi Lee (williameclee@arizona.edu)
 %
-% Last modified by
-%   2026/10/26, williameclee@arizona.edu (@williameclee)
+% Last modified
+%   2026/10/26, En-Chi Lee (williameclee@arizona.edu)
 
 function [rslLoadPlmt, rslLoadStdPlmt, dates] = grace2fingerprint(varargin)
     %% Parsing inputs
     [prod, ocnDom, lndDom, L, Lout, ...
-         giaMdl, redoDeg1, redoC21S21, timelim, doRot, frame, unit, ...
+         giaMdl, redoDeg1, redoCS21, timelim, doRot, frame, unit, ...
          ocnKernel, outputFmt, timeFmt, beQuiet, forceNew, saveData, callChain] = parseinputs(varargin);
 
     %% Data locating
-    filepath = findoutputpath( ...
-        prod, L, ocnDom, lndDom, frame, giaMdl, doRot, redoDeg1, redoC21S21);
+    outPath = findoutputpath( ...
+        prod, L, ocnDom, lndDom, frame, giaMdl, doRot, redoDeg1, redoCS21);
 
     vars = {'rslLoadPlmt', 'rslLoadStdPlmt', 'dates'};
 
-    if ~forceNew && exist(filepath, 'file')
-        data = load(filepath, vars{:});
+    if ~forceNew && exist(outPath, 'file')
+        data = load(outPath, vars{:});
 
         if beQuiet <= 1
             fprintf('[ULMO>%s] Loaded %s.\n', ...
-                callchaintext(callChain), filehref(filepath, 'fingerprint'));
+                callchaintext(callChain), filehref(outPath, 'fingerprint'));
         end
 
         [rslLoadPlmt, rslLoadStdPlmt, dates] = ...
@@ -79,15 +123,15 @@ function [rslLoadPlmt, rslLoadStdPlmt, dates] = grace2fingerprint(varargin)
 
     %% Solving the sea level equation
     [rslLoadPlmt, rslLoadStdPlmt, dates] = ...
-        grace2fingerprintCore(prod, ocnDom, lndDom, L, giaMdl, redoDeg1, redoC21S21, doRot, ocnKernel, beQuiet);
+        grace2fingerprintCore(prod, ocnDom, lndDom, L, giaMdl, redoDeg1, redoCS21, doRot, ocnKernel, beQuiet);
 
     %% Saving and returning data
     if saveData
-        save(filepath, vars{:}, '-v7.3');
+        save(outPath, vars{:}, '-v7.3');
 
         if beQuiet <= 1
             fprintf('[ULMO>%s] Saved %s.\n', ...
-                callchaintext(callChain), filehref(filepath, 'fingerprint'));
+                callchaintext(callChain), filehref(outPath, 'fingerprint'));
         end
 
     end
@@ -101,13 +145,13 @@ end
 %% Subfunctions
 % Heart of the programme
 function [rslSdPlmt, rslSdStdPlmt, dates] = ...
-        grace2fingerprintCore(prod, ocnDom, lndDom, Lsle, giaMdl, redoDeg1, redoC21S21, doRotation, ocnKernel, beQuiet)
+        grace2fingerprintCore(prod, ocnDom, lndDom, Lsle, giaMdl, redoDeg1, redoCS21, doRot, ocnKernel, beQuiet)
     %% Loading data
     deg1Args = false;
     Ldata = prod{3};
 
     if redoDeg1
-        deg1Args = {"Lsle", Lsle, "GIAModel", giaMdl, "OceanDomain", ocnDom, "Unit", 'SD', "IncludeC21S21", redoC21S21};
+        deg1Args = {"Lsle", Lsle, "GIAModel", giaMdl, "OceanDomain", ocnDom, "Unit", 'SD', "IncludeC21S21", redoCS21};
     end
 
     [sdPlmt, sdStdPlmt, dates] = ...
@@ -150,7 +194,7 @@ function [rslSdPlmt, rslSdStdPlmt, dates] = ...
 
     [rslSdPlmt, rslSdStdPlmt] = ...
         solvesle(forcPlmt, forcStdPlmt, Lsle, ocnDom, ...
-        "RotationFeedback", doRotation, "OceanKernel", ocnKernel);
+        "RotationFeedback", doRot, "OceanKernel", ocnKernel);
     rslSdPlmt = rslSdPlmt(:, 3:4, :);
     rslSdStdPlmt = rslSdStdPlmt(:, 3:4, :);
 end
@@ -201,8 +245,8 @@ function varargout = parseinputs(inputs)
     ocnDom = ip.Results.OceanDomain;
     lndDom = ip.Results.LandDomain;
     giaMdl = lower(ip.Results.GIA);
-    redoC21S21 = ip.Results.RecomputeC21S21;
-    redoDeg1 = logical(ip.Results.RecomputeDegree1) || redoC21S21;
+    redoCS21 = ip.Results.RecomputeC21S21;
+    redoDeg1 = logical(ip.Results.RecomputeDegree1) || redoCS21;
     frame = ip.Results.Frame;
     doRot = logical(ip.Results.RotationFeedback);
     timelim = ip.Results.TimeRange;
@@ -221,7 +265,7 @@ function varargout = parseinputs(inputs)
 
     varargout = ...
         {prod, ocnDom, lndDom, L, Lout, ...
-         giaMdl, redoDeg1, redoC21S21, timelim, doRot, frame, unit, ...
+         giaMdl, redoDeg1, redoCS21, timelim, doRot, frame, unit, ...
          ocnKernel, outputFmt, timeFmt, beQuiet, forceNew, saveData, callChain};
 end
 
