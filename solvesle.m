@@ -4,9 +4,9 @@
 % The ocean function is assumed constant.
 %
 % Syntax
-%   [rslLoad, [], gmsl, []] = SOLVESLE(forcing, [], L, ocean)
-%   [rslLoad, rslLoadStd, gmsl, gmslStd] = SOLVESLE(forcing, forcingStd, L, ocean)
-%   rslLoad = SOLVESLE(__, "Name", Value)
+%   [rslSd, [], gmsl, []] = SOLVESLE(forcing, [], L, ocean)
+%   [rslSd, rslSdStd, gmsl, gmslStd] = SOLVESLE(forcing, forcingStd, L, ocean)
+%   rslSd = SOLVESLE(__, "Name", Value)
 %
 % Input arguments
 %   forcing - SH coefficients of the forcing
@@ -65,14 +65,14 @@
 %       Unit: m
 %
 % Output arguments
-%   rslLoad - SH coefficients of the mass load from the forcing
+%   rslSd - SH coefficients of the mass load from the forcing
 %       Note this value is only physical in the ocean domain.
 %       Unit: kg/m^2 (SD, equivalent to mm of fresh water)
 %       The dimension should be the same as the input forcing.
-%   rslLoadStd - Standard deviation of the mass load coefficients
+%   rslSdStd - Standard deviation of the mass load coefficients
 %       When the standard deviation of the forcing is not provided, this
 %       output is empty.
-%       The data type and dimension should be the same as rslLoad.
+%       The data type and dimension should be the same as rslSd.
 %   gmsl - Barystatic sea level from the forcing
 %       Since the ocean domain is the true global ocean, the GMSL is not
 %       comparible with values reported in latitude-bounded oceans.
@@ -104,16 +104,16 @@
 %   2024/11/20, En-Chi Lee (williameclee@arizona.edu)
 %
 % Last modified by
-%   2026/10/25, En-Chi Lee (williameclee@arizona.edu)
+%   2026/10/26, En-Chi Lee (williameclee@arizona.edu)
 
 function varargout = solvesle(varargin)
     %% Initialisation
     % Load all missing variables and convert to correct formats
 
     % Parse input arguments
-    [forcingLoadPlm, forcingLoadStdPlm, includesDO, computeError, ...
-         L, ocean, frame, loveNumSrc, doRotationFeedback, maxIter, ...
-         oceanKernel, ~, kernelOrder, initRslPlm, beQuiet, tol] = ...
+    [forcSdPlm, forcSdStdPlm, inclDO, doError, ...
+         L, ocean, frame, loveNumSrc, doRotation, maxIter, ...
+         ocnKernel, ~, kernelOrder, initRslPlm, beQuiet, tol] = ...
         parseinputs(varargin{:});
 
     % Create progress bar
@@ -124,32 +124,32 @@ function varargout = solvesle(varargin)
     end
 
     % Load the ocean kernel if not provided
-    if isempty(oceanKernel)
+    if isempty(ocnKernel)
 
         if ~beQuiet
             waitbar(0, wbar, 'Computing ocean kernel');
         end
 
-        oceanKernel = kernelcp_new(L, ocean, "BeQuiet", true);
+        ocnKernel = kernelcp_new(L, ocean, "BeQuiet", true);
     end
 
     % Multiplying a constant field by the ocean mask gives this column.
     % Use the same geometry for localization, mass balance and ocean area.
-    oceanFunPlms = oceanKernel(:, 1);
-    oceanArea = oceanFunPlms(1);
+    ocnFunPlms = ocnKernel(:, 1);
+    ocnArea = ocnFunPlms(1);
 
-    if ~isfinite(oceanArea) || oceanArea <= 0
+    if ~isfinite(ocnArea) || ocnArea <= 0
         error('ULMO:solvesle:InvalidOceanArea', ...
         'OceanKernel must have a finite, positive ocean area in (1,1).');
     end
 
-    if computeError
+    if doError
         % The mass adjustment correlates the constant term with the other
         % harmonics. Apply that constraint before squaring the operator.
-        oceanWghts = oceanFunPlms / oceanArea;
-        cstredOceanKernel = oceanKernel - oceanWghts * oceanKernel(1, :);
-        cstredOceanKernel(:, 1) = 0;
-        cstredOceanKernelSq = cstredOceanKernel .^ 2;
+        ocnWghts = ocnFunPlms / ocnArea;
+        cstredOcnKernel = ocnKernel - ocnWghts * ocnKernel(1, :);
+        cstredOcnKernel(:, 1) = 0;
+        cstredOceanKernelSq = cstredOcnKernel .^ 2;
         clear cstredOceanKernel
     end
 
@@ -161,13 +161,13 @@ function varargout = solvesle(varargin)
     kernelOrder = kernelOrder(:);
 
     % Flatten the SH arrays to 2D
-    forcingLoadPlm = ensureplmdegree(forcingLoadPlm, L, 'traditional');
-    forcingLoadStdPlm = ensureplmdegree(forcingLoadStdPlm, L, 'traditional');
+    forcSdPlm = ensureplmdegree(forcSdPlm, L, 'traditional');
+    forcSdStdPlm = ensureplmdegree(forcSdStdPlm, L, 'traditional');
 
-    forcingLoadPlm = reshape(forcingLoadPlm, [], size(forcingLoadPlm, 3));
-    forcingLoadStdPlm = reshape(forcingLoadStdPlm, [], size(forcingLoadStdPlm, 3));
-    forcingLoadPlms = forcingLoadPlm(kernelOrder, :);
-    forcingLoadStdPlms = forcingLoadStdPlm(kernelOrder, :);
+    forcSdPlm = reshape(forcSdPlm, [], size(forcSdPlm, 3));
+    forcSdStdPlm = reshape(forcSdStdPlm, [], size(forcSdStdPlm, 3));
+    forcSdPlms = forcSdPlm(kernelOrder, :);
+    forcSdStdPlms = forcSdStdPlm(kernelOrder, :);
 
     if ~isempty(initRslPlm)
         initRslPlm = ensureplmdegree(initRslPlm, L, 'traditional');
@@ -208,7 +208,7 @@ function varargout = solvesle(varargin)
     sleKernel = spdiags(3 / EARTH_DENSITY * llnFactors ./ (2 * degrees + 1), 0, ...
         numel(degrees), numel(degrees));
 
-    if doRotationFeedback
+    if doRotation
         % Rotation potential
         c00c20Factor = 2/3 * EARTH_RADIUS ^ 2 * EARTH_ANGULAR_VELOCITY ^ 2 ...
             * (- (1 + llnGeoid2) / POLAR_INERTIA) * 8 * pi / 3 * EARTH_RADIUS ^ 4;
@@ -232,33 +232,33 @@ function varargout = solvesle(varargin)
     % Solve the SLE iteratively
 
     % Initial guess
-    gmsl =- forcingLoadPlms(1, :) / oceanFunPlms(1, :) / WATER_DENSITY;
+    gmsl =- forcSdPlms(1, :) / ocnFunPlms(1, :) / WATER_DENSITY;
 
     if ~isempty(initRslPlm)
         rslPlms = initRslPlms;
     else
-        rslPlms = oceanFunPlms * gmsl;
+        rslPlms = ocnFunPlms * gmsl;
     end
 
-    rslOceanPlms = rslPlms;
+    rslOcnPlms = rslPlms;
 
-    if computeError
+    if doError
         % Carry variances through the iteration (to avoid taking square roots repeatedly); convert to STD only at output.
-        forcingVarPlms = forcingLoadStdPlms .^ 2;
-        targetOceanVar = forcingVarPlms(1, :) / WATER_DENSITY ^ 2;
+        forcVarPlms = forcSdStdPlms .^ 2;
+        targetOcnVar = forcVarPlms(1, :) / WATER_DENSITY ^ 2;
         sleKernelSq = sleKernel .^ 2;
-        oceanWghtsSq = oceanWghts .^ 2;
-        oceanMeanWghtsSq = oceanKernel(1, 2:end) .^ 2;
-        rslOceanVarPlms = oceanWghtsSq * targetOceanVar;
+        ocnWghtsSq = ocnWghts .^ 2;
+        ocnMeanWghtsSq = ocnKernel(1, 2:end) .^ 2;
+        rslOcnVarPlms = ocnWghtsSq * targetOcnVar;
     end
 
     converged = false;
-    maxAbsChange = Inf;
+    maxChange = Inf;
     prevStd = [];
 
     for iIter = 1:maxIter
         prevRslPlms = rslPlms;
-        prevRslOceanPlms = rslOceanPlms;
+        prevRslOcnPlms = rslOcnPlms;
 
         if ~beQuiet
             waitbar(iIter / maxIter, wbar, ...
@@ -270,36 +270,36 @@ function varargout = solvesle(varargin)
 
         end
 
-        loadPlms = forcingLoadPlms + rslOceanPlms * WATER_DENSITY;
+        sdPlms = forcSdPlms + rslOcnPlms * WATER_DENSITY;
 
-        rslPlms = sleKernel * loadPlms;
-        rslOceanPlms = oceanKernel * rslPlms;
+        rslPlms = sleKernel * sdPlms;
+        rslOcnPlms = ocnKernel * rslPlms;
 
         % Add a constant sea-level offset and its complete ocean footprint.
         % Keep the iterated field equal to oceanKernel * the returned field.
-        massOffset = (-forcingLoadPlms(1, :) / WATER_DENSITY ...
-            - rslOceanPlms(1, :)) / oceanArea;
+        massOffset = (-forcSdPlms(1, :) / WATER_DENSITY ...
+            - rslOcnPlms(1, :)) / ocnArea;
         rslPlms(1, :) = rslPlms(1, :) + massOffset;
-        rslOceanPlms = rslOceanPlms + oceanFunPlms * massOffset;
+        rslOcnPlms = rslOcnPlms + ocnFunPlms * massOffset;
 
         % Require convergence of both returned and localized coefficients.
-        maxAbsChange = max(absoluteiterationchange(rslPlms, prevRslPlms), ...
-            absoluteiterationchange(rslOceanPlms, prevRslOceanPlms));
+        maxChange = max(absoluteiterationchange(rslPlms, prevRslPlms), ...
+            absoluteiterationchange(rslOcnPlms, prevRslOcnPlms));
 
-        if computeError
-            loadVarPlms = forcingVarPlms + WATER_DENSITY ^ 2 * rslOceanVarPlms;
-            rslVarPlms = sleKernelSq * loadVarPlms;
-            rslOceanVarPlms = cstredOceanKernelSq * rslVarPlms ...
-                + oceanWghtsSq * targetOceanVar;
-            rslOceanVarPlms(1, :) = targetOceanVar;
-            rslVarPlms(1, :) = (targetOceanVar ...
-                + oceanMeanWghtsSq * rslVarPlms(2:end, :)) / oceanArea ^ 2;
-            crntStd = sqrt([rslVarPlms; rslOceanVarPlms]);
+        if doError
+            sdVarPlms = forcVarPlms + WATER_DENSITY ^ 2 * rslOcnVarPlms;
+            rslVarPlms = sleKernelSq * sdVarPlms;
+            rslOcnVarPlms = cstredOceanKernelSq * rslVarPlms ...
+                + ocnWghtsSq * targetOcnVar;
+            rslOcnVarPlms(1, :) = targetOcnVar;
+            rslVarPlms(1, :) = (targetOcnVar ...
+                + ocnMeanWghtsSq * rslVarPlms(2:end, :)) / ocnArea ^ 2;
+            crntStd = sqrt([rslVarPlms; rslOcnVarPlms]);
 
             if isempty(prevStd)
-                maxAbsChange = Inf;
+                maxChange = Inf;
             else
-                maxAbsChange = max(maxAbsChange, absoluteiterationchange(crntStd, prevStd));
+                maxChange = max(maxChange, absoluteiterationchange(crntStd, prevStd));
             end
 
             prevStd = crntStd;
@@ -310,9 +310,9 @@ function varargout = solvesle(varargin)
 
         end
 
-        if any(~isfinite(rslPlms), 'all') || any(~isfinite(rslOceanPlms), 'all')
+        if any(~isfinite(rslPlms), 'all') || any(~isfinite(rslOcnPlms), 'all')
             error('ULMO:solvesle:NonFiniteIterate', 'SLE coefficients became nonfinite.');
-        elseif tol > 0 && maxAbsChange <= tol
+        elseif tol > 0 && maxChange <= tol
             converged = true;
             break
         end
@@ -322,7 +322,7 @@ function varargout = solvesle(varargin)
     if tol > 0 && ~converged
         error('ULMO:solvesle:NonConvergence', ...
             'SLE did not converge in %d iterations (maximum absolute change %.6g; tolerance %.6g).', ...
-            maxIter, maxAbsChange, tol);
+            maxIter, maxChange, tol);
     end
 
     %% Post-processing
@@ -330,62 +330,62 @@ function varargout = solvesle(varargin)
         waitbar(1, wbar, 'Post-processing results');
     end
 
-    rslLoadPlms = rslPlms * WATER_DENSITY;
-    gmsl = rslOceanPlms(1, :) ./ oceanFunPlms(1, :) * 1e3; % m -> mm (= kg/m^2)
+    rslSdPlms = rslPlms * WATER_DENSITY;
+    gmsl = rslOcnPlms(1, :) ./ ocnFunPlms(1, :) * 1e3; % m -> mm (= kg/m^2)
 
-    if isvector(rslLoadPlms)
-        rslLoadPlm = zeros([addmup(L), 2]);
-        rslLoadPlm(kernelOrder) = rslLoadPlms;
+    if isvector(rslSdPlms)
+        rslSdPlm = zeros([addmup(L), 2]);
+        rslSdPlm(kernelOrder) = rslSdPlms;
     else
-        rslLoadPlm = zeros([addmup(L) * 2, size(rslLoadPlms, 2)]);
-        rslLoadPlm(kernelOrder, :) = rslLoadPlms;
-        rslLoadPlm = ...
-            reshape(rslLoadPlm, [addmup(L), 2, size(rslLoadPlms, 2)]);
+        rslSdPlm = zeros([addmup(L) * 2, size(rslSdPlms, 2)]);
+        rslSdPlm(kernelOrder, :) = rslSdPlms;
+        rslSdPlm = ...
+            reshape(rslSdPlm, [addmup(L), 2, size(rslSdPlms, 2)]);
     end
 
-    if includesDO
+    if inclDO
         [order, degree] = addmon(L);
 
-        if isvector(rslLoadPlms)
-            rslLoadPlm = [degree, order, rslLoadPlm];
+        if isvector(rslSdPlms)
+            rslSdPlm = [degree, order, rslSdPlm];
         else
-            degree = repmat(degree, [1, 1, size(rslLoadPlm, 3)]);
-            order = repmat(order, [1, 1, size(rslLoadPlm, 3)]);
-            rslLoadPlm = cat(2, degree, order, rslLoadPlm);
+            degree = repmat(degree, [1, 1, size(rslSdPlm, 3)]);
+            order = repmat(order, [1, 1, size(rslSdPlm, 3)]);
+            rslSdPlm = cat(2, degree, order, rslSdPlm);
         end
 
     end
 
-    if ~computeError
-        varargout = {rslLoadPlm, [], gmsl(:), []};
+    if ~doError
+        varargout = {rslSdPlm, [], gmsl(:), []};
         return
     end
 
     % Post-process the standard deviation
-    rslLoadStdPlms = sqrt(rslVarPlms) * WATER_DENSITY;
-    gmslStd = sqrt(targetOceanVar) / oceanArea * 1e3; % m -> mm
+    rslSdStdPlms = sqrt(rslVarPlms) * WATER_DENSITY;
+    gmslStd = sqrt(targetOcnVar) / ocnArea * 1e3; % m -> mm
 
-    if isvector(rslLoadStdPlms)
-        rslLoadStdPlm = zeros([addmup(L), 2]);
-        rslLoadStdPlm(kernelOrder) = rslLoadStdPlms;
+    if isvector(rslSdStdPlms)
+        rslSdStdPlm = zeros([addmup(L), 2]);
+        rslSdStdPlm(kernelOrder) = rslSdStdPlms;
     else
-        rslLoadStdPlm = zeros([addmup(L) * 2, size(rslLoadStdPlms, 2)]);
-        rslLoadStdPlm(kernelOrder, :) = rslLoadStdPlms;
-        rslLoadStdPlm = ...
-            reshape(rslLoadStdPlm, [addmup(L), 2, size(rslLoadStdPlms, 2)]);
+        rslSdStdPlm = zeros([addmup(L) * 2, size(rslSdStdPlms, 2)]);
+        rslSdStdPlm(kernelOrder, :) = rslSdStdPlms;
+        rslSdStdPlm = ...
+            reshape(rslSdStdPlm, [addmup(L), 2, size(rslSdStdPlms, 2)]);
     end
 
-    if includesDO
+    if inclDO
 
-        if isvector(rslLoadStdPlms)
-            rslLoadStdPlm = [degree, order, rslLoadStdPlm];
+        if isvector(rslSdStdPlms)
+            rslSdStdPlm = [degree, order, rslSdStdPlm];
         else
-            rslLoadStdPlm = cat(2, degree, order, rslLoadStdPlm);
+            rslSdStdPlm = cat(2, degree, order, rslSdStdPlm);
         end
 
     end
 
-    varargout = {rslLoadPlm, rslLoadStdPlm, gmsl(:), gmslStd(:)};
+    varargout = {rslSdPlm, rslSdStdPlm, gmsl(:), gmslStd(:)};
 end
 
 %% Subfunctions
@@ -416,74 +416,75 @@ function varargout = parseinputs(varargin)
     addParameter(ip, 'InitialRSL', [], @(x) isnumeric(x));
     addParameter(ip, 'BeQuiet', false, @(x) (isnumeric(x) || islogical(x)) && isscalar(x));
     parse(ip, varargin{:});
-    forcingPlm = squeeze(ip.Results.ForcingPlm);
-    forcingStdPlm = squeeze(ip.Results.ForcingStdPlm);
+    forcPlm = squeeze(ip.Results.ForcingPlm);
+    forcStdPlm = squeeze(ip.Results.ForcingStdPlm);
     L = ip.Results.L;
-    ocean = ip.Results.Ocean;
+    ocnDom = ip.Results.Ocean;
     frame = upper(ip.Results.frame);
     loveNumSrc = char(ip.Results.LoveNumSource);
-    doRotationFeedback = ip.Results.RotationFeedback;
+    doRotation = ip.Results.RotationFeedback;
     maxIter = ip.Results.maxIter;
-    oceanKernel = ip.Results.OceanKernel;
-    oceanFunSph = ip.Results.OceanFunction;
+    ocnKernel = ip.Results.OceanKernel;
+    ocnFunPlm = ip.Results.OceanFunction;
     kernelOrder = ip.Results.KernelOrder;
     initRslPlm = ip.Results.InitialRSL;
     beQuiet = logical(ip.Results.BeQuiet);
 
     if strcmpi(loveNumSrc, "Wahr")
-        error("Wahr's (and slepian's) love numbers are only provided for loading gravitational potential, which would not be sufficient for solving the SLE. Consider using ISSM (preferred) or ALMA3 love numbers instead.");
+        error(['Wahr''s (and slepian''s) love numbers are only provided for loading gravitational potential, which would not be sufficient for solving the SLE. ', ...
+               'Consider using ISSM (preferred) or ALMA3 love numbers instead.']);
     end
 
     % Check input sizes
-    includesDO = size(forcingPlm, 2) == 4;
+    inclDO = size(forcPlm, 2) == 4;
 
-    if isempty(forcingStdPlm)
-        forcingStdPlm = zeros(size(forcingPlm));
-        computeError = false;
+    if isempty(forcStdPlm)
+        forcStdPlm = zeros(size(forcPlm));
+        doError = false;
     else
 
-        if ~isequal(size(forcingStdPlm), size(forcingPlm))
+        if ~isequal(size(forcStdPlm), size(forcPlm))
             error( ...
                 sprintf('%s:InvalidInput:InputSizeNotMatch', upper(mfilename)), ...
                 'Input size of FORCINGSTDPLM ([%s]) does not match FORCINGPLM ([%s])', ...
-                strjoin(string(size(forcingStdPlm)), ', '), ...
-                strjoin(string(size(forcingPlm)), ', '));
+                strjoin(string(size(forcStdPlm)), ', '), ...
+                strjoin(string(size(forcPlm)), ', '));
         end
 
-        computeError = true;
+        doError = true;
 
     end
 
-    if ~isempty(initRslPlm) && ~isequal(size(initRslPlm), size(forcingPlm))
+    if ~isempty(initRslPlm) && ~isequal(size(initRslPlm), size(forcPlm))
         error( ...
             sprintf('%s:InvalidInput:InputSizeNotMatch', upper(mfilename)), ...
             'Input size of INITIAL RSL ([%s]) does not match FORCINGPLM ([%s])', ...
             strjoin(string(size(initRslPlm)), ', '), ...
-            strjoin(string(size(forcingPlm)), ', '));
+            strjoin(string(size(forcPlm)), ', '));
     end
 
     % Find the degree of the spherical harmonic coefficients
-    if includesDO
+    if inclDO
 
         if isempty(L)
-            L = max(forcingPlm(:, 1, 1));
+            L = max(forcPlm(:, 1, 1));
         end
 
-        forcingPlm = forcingPlm(:, 3:4, :);
-        forcingStdPlm = forcingStdPlm(:, 3:4, :);
+        forcPlm = forcPlm(:, 3:4, :);
+        forcStdPlm = forcStdPlm(:, 3:4, :);
 
         if ~isempty(initRslPlm)
             initRslPlm = initRslPlm(:, 3:4, :);
         end
 
     elseif isempty(L)
-        L = finddegree(forcingPlm(:, :, 1));
+        L = finddegree(forcPlm(:, :, 1));
     end
 
     varargout = ...
-        {forcingPlm, forcingStdPlm, includesDO, computeError, ...
-         L, ocean, frame, loveNumSrc, doRotationFeedback, maxIter, ...
-         oceanKernel, oceanFunSph, kernelOrder, initRslPlm, beQuiet, ip.Results.Tolerance};
+        {forcPlm, forcStdPlm, inclDO, doError, ...
+         L, ocnDom, frame, loveNumSrc, doRotation, maxIter, ...
+         ocnKernel, ocnFunPlm, kernelOrder, initRslPlm, beQuiet, ip.Results.Tolerance};
 end
 
 % Find the degree of the spherical harmonic coefficients based on the

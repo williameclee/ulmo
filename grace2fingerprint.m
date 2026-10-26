@@ -51,13 +51,13 @@
 
 function [rslLoadPlmt, rslLoadStdPlmt, dates] = grace2fingerprint(varargin)
     %% Parsing inputs
-    [product, oceanDomain, landDomain, L, Loutput, ...
-         giaModel, doGia, redoDeg1, redoC21S21, timelim, doRotation, frame, unit, ...
-         outputFmt, timeFmt, beQuiet, forceNew, saveData, oceanKernel, callChain] = parseinputs(varargin);
+    [prod, ocnDom, lndDom, L, Lout, ...
+         giaMdl, doGia, redoDeg1, redoC21S21, timelim, doRot, frame, unit, ...
+         ocnKernel, outputFmt, timeFmt, beQuiet, forceNew, saveData, callChain] = parseinputs(varargin);
 
     %% Data locating
     filepath = findoutputpath( ...
-        product, L, oceanDomain, landDomain, frame, giaModel, doRotation, redoDeg1, redoC21S21);
+        prod, L, ocnDom, lndDom, frame, giaMdl, doRot, redoDeg1, redoC21S21);
 
     vars = {'rslLoadPlmt', 'rslLoadStdPlmt', 'dates'};
 
@@ -65,12 +65,12 @@ function [rslLoadPlmt, rslLoadStdPlmt, dates] = grace2fingerprint(varargin)
         data = load(filepath, vars{:});
 
         if beQuiet <= 1
-            fprintf('[ULMO>%s] Loaded <a href="matlab: fprintf(''%s\\n'');open(''%s'')">precomputed fingerprint</a>.\n', ...
-                callchaintext(callChain), filepath, filepath);
+            fprintf('[ULMO>%s] Loaded %s.\n', ...
+                callchaintext(callChain), filehref(filepath, 'fingerprint'));
         end
 
         [rslLoadPlmt, rslLoadStdPlmt, dates] = ...
-            formatoutput(data.rslLoadPlmt, data.rslLoadStdPlmt, data.dates, timelim, L, Loutput, unit, ...
+            formatoutput(data.rslLoadPlmt, data.rslLoadStdPlmt, data.dates, timelim, L, Lout, unit, ...
             outputFmt, timeFmt);
 
         return
@@ -79,85 +79,82 @@ function [rslLoadPlmt, rslLoadStdPlmt, dates] = grace2fingerprint(varargin)
 
     %% Solving the sea level equation
     [rslLoadPlmt, rslLoadStdPlmt, dates] = ...
-        grace2fingerprintCore(product, oceanDomain, landDomain, L, giaModel, doGia, redoDeg1, redoC21S21, doRotation, oceanKernel, beQuiet);
+        grace2fingerprintCore(prod, ocnDom, lndDom, L, giaMdl, doGia, redoDeg1, redoC21S21, doRot, ocnKernel, beQuiet);
 
     %% Saving and returning data
     if saveData
         save(filepath, vars{:}, '-v7.3');
 
         if beQuiet <= 1
-            fprintf('[ULMO>%s] Saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">fingerprint</a>.\n', ...
-                callchaintext(callChain), filepath, filepath);
+            fprintf('[ULMO>%s] Saved %s.\n', ...
+                callchaintext(callChain), filehref(filepath, 'fingerprint'));
         end
 
     end
 
     [rslLoadPlmt, rslLoadStdPlmt, dates] = ...
-        formatoutput(rslLoadPlmt, rslLoadStdPlmt, dates, timelim, L, Loutput, unit, ...
+        formatoutput(rslLoadPlmt, rslLoadStdPlmt, dates, timelim, L, Lout, unit, ...
         outputFmt, timeFmt);
 
 end
 
 %% Subfunctions
 % Heart of the programme
-function [rslLoadPlmt, rslLoadStdPlmt, dates] = ...
-        grace2fingerprintCore(product, oceanDomain, landDomain, Lsle, giaModel, doGia, redoDeg1, redoC21S21, doRotation, oceanKernel, beQuiet)
+function [rslSdPlmt, rslSdStdPlmt, dates] = ...
+        grace2fingerprintCore(prod, ocnDom, lndDom, Lsle, giaMdl, doGia, redoDeg1, redoC21S21, doRotation, ocnKernel, beQuiet)
     %% Loading data
     deg1Args = false;
-    Ldata = product{3};
+    Ldata = prod{3};
 
     if redoDeg1
-        deg1Args = {"Lsle", Lsle, "GIAModel", giaModel, "OceanDomain", oceanDomain, "Unit", 'SD', "IncludeC21S21", redoC21S21};
+        deg1Args = {"Lsle", Lsle, "GIAModel", giaMdl, "OceanDomain", ocnDom, "Unit", 'SD', "IncludeC21S21", redoC21S21};
     end
 
-    [gracePlmt, graceStdPlmt, dates] = ...
-        grace2plmt_new(product{:}, "RecomputeDegree1", deg1Args, "Unit", 'SD', ...
+    [sdPlmt, sdStdPlmt, dates] = ...
+        grace2plmt_new(prod{:}, "RecomputeDegree1", deg1Args, "Unit", 'SD', ...
         "OutputFormat", 'timefirst', "TimeFormat", 'datetime', ...
         "BeQuiet", beQuiet);
-    gracePlmt = ensureplmdegree(gracePlmt, Ldata);
-    graceStdPlmt = ensureplmdegree(graceStdPlmt, Ldata);
+    sdPlmt = ensureplmdegree(sdPlmt, Ldata);
+    sdStdPlmt = ensureplmdegree(sdStdPlmt, Ldata);
 
     % Load GIA model
     if doGia
-        giaPlmt = gia2plmt(dates, giaModel, "L", Ldata, ...
+        giaPlmt = gia2plmt(dates, giaMdl, "L", Ldata, ...
             "OutputFormat", 'timefirst', "BeQuiet", beQuiet);
-        gracePlmt(:, 4:end, 3:4) = gracePlmt(:, 4:end, 3:4) - giaPlmt(:, 4:end, 3:4);
+        % GSM degree-1 fields should be GIA-free (see Sun et al., 2016)
+        sdPlmt(:, 4:end, 3:4) = sdPlmt(:, 4:end, 3:4) - giaPlmt(:, 4:end, 3:4);
     end
 
-    gracePlmt = permute(gracePlmt, [2, 3, 1]); % timefirst -> traditional
-    graceStdPlmt = permute(graceStdPlmt, [2, 3, 1]); % timefirst -> traditional
+    sdPlmt = permute(sdPlmt, [2, 3, 1]); % timefirst -> traditional
+    sdStdPlmt = permute(sdStdPlmt, [2, 3, 1]); % timefirst -> traditional
 
     %% Data preprocessing
-    if isempty(oceanKernel)
-        oceanKernel = kernelcp_new(Lsle, oceanDomain, ...
+    if isempty(ocnKernel)
+        ocnKernel = kernelcp_new(Lsle, ocnDom, ...
             "BeQuiet", beQuiet);
     end
 
-    if ((isnumeric(landDomain) || ischar(landDomain) || islogical(landDomain)) && ...
-            isscalar(landDomain) && isnan(landDomain))
-        forcingPlmt = localise(gracePlmt, "L", Lsle, "K", oceanKernel, ...
+    if ((isnumeric(lndDom) || ischar(lndDom) || islogical(lndDom)) && ...
+            isscalar(lndDom) && isnan(lndDom))
+        forcPlmt = localise(sdPlmt, "L", Lsle, "K", ocnKernel, ...
             "Inverse", true);
-        forcingStdPlmt = localise(graceStdPlmt, "L", Lsle, "K", oceanKernel, ...
+        forcStdPlmt = localise(sdStdPlmt, "L", Lsle, "K", ocnKernel, ...
             "Inverse", true, "IsError", true);
     else
-        landKernel = kernelcp_new(Ldata, landDomain, ...
+        lndKernel = kernelcp_new(Ldata, lndDom, ...
             "rotb", true, "BeQuiet", beQuiet);
-        forcingPlmt = localise(gracePlmt, "L", Ldata, "K", landKernel);
-        forcingStdPlmt = localise(graceStdPlmt, "L", Ldata, "K", landKernel, "IsError", true);
+        forcPlmt = localise(sdPlmt, "L", Ldata, "K", lndKernel);
+        forcStdPlmt = localise(sdStdPlmt, "L", Ldata, "K", lndKernel, "IsError", true);
     end
 
-    forcingPlmt = ensureplmdegree(forcingPlmt, Lsle, 'traditional');
-    forcingStdPlmt = ensureplmdegree(forcingStdPlmt, Lsle, 'traditional');
+    forcPlmt = ensureplmdegree(forcPlmt, Lsle, 'traditional');
+    forcStdPlmt = ensureplmdegree(forcStdPlmt, Lsle, 'traditional');
 
-    [~, ~, ~, ~, ~, oceanFunPlm] = ...
-        geoboxcap(Lsle, oceanDomain, "BeQuiet", beQuiet);
-
-    [rslLoadPlmt, rslLoadStdPlmt] = ...
-        solvesle(forcingPlmt, forcingStdPlmt, Lsle, oceanDomain, ...
-        "RotationFeedback", doRotation, ...
-        "OceanKernel", oceanKernel, "OceanFunction", oceanFunPlm);
-    rslLoadPlmt = rslLoadPlmt(:, 3:4, :);
-    rslLoadStdPlmt = rslLoadStdPlmt(:, 3:4, :);
+    [rslSdPlmt, rslSdStdPlmt] = ...
+        solvesle(forcPlmt, forcStdPlmt, Lsle, ocnDom, ...
+        "RotationFeedback", doRotation, "OceanKernel", ocnKernel);
+    rslSdPlmt = rslSdPlmt(:, 3:4, :);
+    rslSdStdPlmt = rslSdStdPlmt(:, 3:4, :);
 end
 
 % Parse input arguments
@@ -200,16 +197,16 @@ function varargout = parseinputs(inputs)
     addParameter(ip, 'CallChain', {}, @iscell);
     parse(ip, inputs{:});
 
-    product = ip.Results.Product;
+    prod = ip.Results.Product;
     L = round(ip.Results.L);
-    Loutput = round(ip.Results.Truncation);
-    oceanDomain = ip.Results.OceanDomain;
-    landDomain = ip.Results.LandDomain;
-    giaModel = ip.Results.GIA;
-    RecomputeC21S21 = ip.Results.RecomputeC21S21;
-    redoDeg1 = logical(ip.Results.RecomputeDegree1) || RecomputeC21S21;
+    Lout = round(ip.Results.Truncation);
+    ocnDom = ip.Results.OceanDomain;
+    lndDom = ip.Results.LandDomain;
+    giaMdl = ip.Results.GIA;
+    redoC21S21 = ip.Results.RecomputeC21S21;
+    redoDeg1 = logical(ip.Results.RecomputeDegree1) || redoC21S21;
     frame = ip.Results.Frame;
-    doRotation = logical(ip.Results.RotationFeedback);
+    doRot = logical(ip.Results.RotationFeedback);
     timelim = ip.Results.TimeRange;
     unit = ip.Results.Unit;
     outputFmt = ip.Results.OutputFormat;
@@ -219,17 +216,17 @@ function varargout = parseinputs(inputs)
     saveData = logical(ip.Results.SaveData);
     callChain = [ip.Results.CallChain, {mfilename}];
 
-    oceanKernel = ip.Results.OceanKernel;
+    ocnKernel = ip.Results.OceanKernel;
 
-    if islogical(giaModel) && ~giaModel
+    if islogical(giaMdl) && ~giaMdl
         doGia = false;
     else
         doGia = true;
 
-        if islogical(giaModel)
-            giaModel = 'ice6gd';
+        if islogical(giaMdl)
+            giaMdl = 'ice6gd';
         else
-            giaModel = lower(giaModel);
+            giaMdl = lower(giaMdl);
         end
 
     end
@@ -239,118 +236,118 @@ function varargout = parseinputs(inputs)
     end
 
     varargout = ...
-        {product, oceanDomain, landDomain, L, Loutput, ...
-         giaModel, doGia, redoDeg1, RecomputeC21S21, timelim, doRotation, frame, unit, ...
-         outputFmt, timeFmt, beQuiet, forceNew, saveData, oceanKernel, callChain};
+        {prod, ocnDom, lndDom, L, Lout, ...
+         giaMdl, doGia, redoDeg1, redoC21S21, timelim, doRot, frame, unit, ...
+         ocnKernel, outputFmt, timeFmt, beQuiet, forceNew, saveData, callChain};
 end
 
 % Get the output path
-function filepath = ...
-        findoutputpath(product, L, oceanDomain, landDomain, frame, giaModel, doRotation, redoDeg1, redoC21S21)
-    productName = sprintf("%s%s%d", product{:});
+function outPath = ...
+        findoutputpath(prod, L, ocnDom, lndDom, frame, giaMdl, doRot, redoDeg1, redoC21S21)
+    prodFlag = sprintf("%s%s%d", prod{:});
 
-    switch class(oceanDomain)
+    switch class(ocnDom)
         case 'GeoDomain'
-            oceanName = oceanDomain.Id;
+            ocnFlag = ocnDom.Id;
         case 'char'
-            oceanName = capitalise(oceanDomain);
+            ocnFlag = capitalise(ocnDom);
         case 'cell'
-            oceanName = sprintf('%s%d', capitalise(oceanDomain{1}), oceanDomain{2});
+            ocnFlag = sprintf('%s%d', capitalise(ocnDom{1}), ocnDom{2});
         case 'numeric'
-            oceanName = sprintf('%s', hash(oceanDomain, 'sha1'));
+            ocnFlag = sprintf('%s', hash(ocnDom, 'sha1'));
     end
 
-    if ~((isnumeric(landDomain) || ischar(landDomain) || islogical(landDomain)) && ...
-            isscalar(landDomain) && isnan(landDomain))
+    if ~((isnumeric(lndDom) || ischar(lndDom) || islogical(lndDom)) && ...
+            isscalar(lndDom) && isnan(lndDom))
 
-        switch class(landDomain)
+        switch class(lndDom)
             case 'GeoDomain'
-                landName = landDomain.Id;
+                lndFlag = lndDom.Id;
             case 'char'
-                landName = capitalise(landDomain);
+                lndFlag = capitalise(lndDom);
             case 'cell'
-                landName = sprintf('%s%d', capitalise(landDomain{1}), landDomain{2});
+                lndFlag = sprintf('%s%d', capitalise(lndDom{1}), lndDom{2});
             case 'numeric'
-                landName = sprintf('%s', hash(landDomain, 'sha1'));
+                lndFlag = sprintf('%s', hash(lndDom, 'sha1'));
         end
 
-        landName = sprintf('_%s', landName);
+        lndFlag = sprintf('_%s', lndFlag);
     else
-        landName = '';
+        lndFlag = '';
 
     end
 
     if strcmpi(frame, 'CF')
-        frameName = '';
+        frameFlag = '';
     else
-        frameName = sprintf('-%s', frame);
+        frameFlag = sprintf('-%s', frame);
     end
 
-    if islogical(giaModel) && ~giaModel
-        giaName = '';
+    if islogical(giaMdl) && ~giaMdl
+        giaFlag = '';
     else
-        giaName = sprintf('-%s', giaModel);
+        giaFlag = sprintf('-%s', giaMdl);
     end
 
-    if doRotation
-        rotationName = '';
+    if doRot
+        rotFlag = '';
     else
-        rotationName = '-NRot';
+        rotFlag = '-NRot';
     end
 
     if redoDeg1 && ~redoC21S21
-        redoName = '-Rdeg1';
+        redoFlag = '-Rdeg1';
     elseif redoDeg1 && redoC21S21
-        redoName = '-Rdeg1CS21';
+        redoFlag = '-Rdeg1CS21';
     else
-        redoName = '';
+        redoFlag = '';
     end
 
-    filefolder = fullfile(getenv('IFILES'), 'FINGERPRINT');
+    outFolder = fullfile(getenv('IFILES'), 'FINGERPRINT');
 
-    if ~exist(filefolder, 'dir')
-        mkdir(filefolder);
+    if ~exist(outFolder, 'dir')
+        mkdir(outFolder);
     end
 
-    filename = sprintf('%s%s-Ls%d-%s%s%s%s%s.mat', ...
-        productName, giaName, L, oceanName, landName, frameName, rotationName, redoName);
-    filepath = fullfile(filefolder, filename);
+    outFile = sprintf('%s%s-Ls%d-%s%s%s%s%s.mat', ...
+        prodFlag, giaFlag, L, ocnFlag, lndFlag, frameFlag, rotFlag, redoFlag);
+    outPath = fullfile(outFolder, outFile);
 end
 
 % Format the output
-function [rslLoadPlmt, rslLoadStdPlmt, dates] = ...
-        formatoutput(rslLoadPlmt, rslLoadStdPlmt, dates, timelim, L, Loutput, unit, ...
+function [rslPlmt, rslStdPlmt, dates] = ...
+        formatoutput(rslPlmt, rslStdPlmt, dates, timelim, L, Lout, unit, ...
         outputFmt, timeFmt)
 
-    rslLoadPlmt = convertgravity(rslLoadPlmt, 'SD', unit, ...
+    rslPlmt = convertgravity(rslPlmt, 'SD', unit, ...
         "InputFormat", 'lmcosi', "TimeDim", 'timefirst');
-    rslLoadStdPlmt = convertgravity(rslLoadStdPlmt, 'SD', unit, ...
+    rslStdPlmt = convertgravity(rslStdPlmt, 'SD', unit, ...
         "InputFormat", 'lmcosi', "TimeDim", 'timefirst');
 
     if ~isempty(timelim)
         isValidTime = dates >= timelim(1) & dates <= timelim(2);
-        rslLoadPlmt = rslLoadPlmt(:, :, isValidTime);
-        rslLoadStdPlmt = rslLoadStdPlmt(:, :, isValidTime);
+        rslPlmt = rslPlmt(:, :, isValidTime);
+        rslStdPlmt = rslStdPlmt(:, :, isValidTime);
         dates = dates(isValidTime);
     end
 
-    if ~isempty(Loutput) && Loutput < L
-        rslLoadPlmt = rslLoadPlmt(1:addmup(Loutput), :, :);
-        rslLoadStdPlmt = rslLoadStdPlmt(1:addmup(Loutput), :, :);
-    elseif isempty(Loutput)
-        Loutput = L;
+    if ~isempty(Lout) && Lout < L
+        rslPlmt = rslPlmt(1:addmup(Lout), :, :);
+        rslStdPlmt = rslStdPlmt(1:addmup(Lout), :, :);
+    elseif isempty(Lout)
+        Lout = L;
     end
 
-    [order, degree] = addmon(Loutput);
-    degree = repmat(degree, [1, 1, size(rslLoadPlmt, 3)]);
-    order = repmat(order, [1, 1, size(rslLoadPlmt, 3)]);
+    [order, degree] = addmon(Lout);
+    degree = repmat(degree, [1, 1, size(rslPlmt, 3)]);
+    order = repmat(order, [1, 1, size(rslPlmt, 3)]);
 
-    rslLoadPlmt = cat(2, degree, order, rslLoadPlmt);
-    rslLoadStdPlmt = cat(2, degree, order, rslLoadStdPlmt);
+    rslPlmt = cat(2, degree, order, rslPlmt);
+    rslStdPlmt = cat(2, degree, order, rslStdPlmt);
 
     if strcmpi(outputFmt, 'timefirst')
-        rslLoadPlmt = permute(rslLoadPlmt, [3, 1, 2]);
-        rslLoadStdPlmt = permute(rslLoadStdPlmt, [3, 1, 2]);
+        rslPlmt = permute(rslPlmt, [3, 1, 2]);
+        rslStdPlmt = permute(rslStdPlmt, [3, 1, 2]);
     end
 
     if strcmpi(timeFmt, 'datenum')

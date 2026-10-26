@@ -128,14 +128,13 @@
 function varargout = solvedegree1(varargin)
     %% Initialisation
     % Parse inputs
-    [pcenter, rlevel, Ldata, Lused, Lsle, giaModel, oceanDomain, ...
-         inclC20, inclC30, inclC21S21, mthd, timelim, unit, ...
-         forceNew, saveData, beQuiet, onlyId, callChain, iterOpts] = ...
+    [prod, Lused, Lsle, giaMdl, ocnDom, ...
+         inclC20, inclC30, inclC21S21, mthd, timelim, unit, iterOpts, ...
+         onlyId, forceNew, saveData, beQuiet, callChain] = ...
         parseinputs(varargin);
 
     [dataPath, ~, outputId] = ...
-        getoutputfile(pcenter, rlevel, Ldata, giaModel, ...
-        inclC20, inclC30, inclC21S21, Lused, Lsle, oceanDomain, mthd);
+        getoutputfile(prod, giaMdl, inclC20, inclC30, inclC21S21, Lused, Lsle, ocnDom, mthd);
 
     if onlyId
         varargout = {outputId};
@@ -149,40 +148,40 @@ function varargout = solvedegree1(varargin)
         data = load(dataPath, vars{:});
 
         if beQuiet <= 1
-            fprintf('[ULMO>%s] Loaded <a href="matlab: fprintf(''%s\\n'');open(''%s'')">recomputed degree-1 data</a>.\n', ...
-                callchaintext(callChain), dataPath, dataPath);
+            fprintf('[ULMO>%s] Loaded %s.\n', ...
+                callchaintext(callChain), filehref(dataPath, 'recomputed degree-1 data'));
         end
 
         varargout = formatoutput(data.coeffs, data.coeffStds, data.dates, timelim, unit, nargout, [inclC20, inclC30, inclC21S21], ...
-            {pcenter, rlevel, Ldata}, beQuiet);
+            prod, beQuiet);
 
         return
 
     end
 
     [coeffs, coeffStds, dates] = ...
-        solvedegree1Core(pcenter, rlevel, Ldata, Lused, Lsle, ...
-        giaModel, inclC20, inclC30, inclC21S21, oceanDomain, mthd, beQuiet, iterOpts);
+        solvedegree1Core(prod, Lused, Lsle, ...
+        giaMdl, inclC20, inclC30, inclC21S21, ocnDom, mthd, beQuiet, iterOpts);
 
     if saveData
         save(dataPath, 'coeffs', 'coeffStds', 'dates')
 
         if beQuiet <= 1
-            fprintf('[ULMO>%s] Saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">recomputed degree-1 data</a>.\n', ...
-                callchaintext(callChain), dataPath, dataPath);
+            fprintf('[ULMO>%s] Saved %s.\n', ...
+                callchaintext(callChain), filehref(dataPath, 'recomputed degree-1 data'));
         end
 
     end
 
     varargout = formatoutput(coeffs, coeffStds, dates, timelim, unit, nargout, [inclC20, inclC30, inclC21S21], ...
-        {pcenter, rlevel, Ldata}, beQuiet);
+        prod, beQuiet);
 
 end
 
 %% Subfunctions
 % Heart of the programme
 function [coeffs, coeffStds, dates] = ...
-        solvedegree1Core(pcenter, rlevel, Ldata, Ltruncation, Lsle, giaModel, includeC20, includeC30, includeC21S21, oceanDomain, method, beQuiet, iterOpts)
+        solvedegree1Core(prod, Lused, Lsle, giaMdl, inclC20, inclC30, inclC21S21, ocnDom, mthd, beQuiet, iterOpts)
     %% Loading data
     if ~beQuiet
         wbar = waitbar(0, 'Loading GRACE data', ...
@@ -190,16 +189,16 @@ function [coeffs, coeffStds, dates] = ...
         cleanup = onCleanup(@() deleteWaitbar(wbar));
     end
 
-    [sdPlmt, sdStdPlmt, dates] = grace2plmt_new(pcenter, rlevel, Ldata, ...
+    [sdPlmt, sdStdPlmt, dates] = grace2plmt_new(prod{:}, ...
         "Unit", 'SD', "OutputFormat", 'timefirst', "TimeFormat", 'datetime', ...
         "BeQuiet", beQuiet);
-    sdPlmt = ensureplmdegree(sdPlmt, Ltruncation);
+    sdPlmt = ensureplmdegree(sdPlmt, Lused);
     sdPlmt = ensureplmdegree(sdPlmt, Lsle);
-    sdStdPlmt = ensureplmdegree(sdStdPlmt, Ltruncation);
+    sdStdPlmt = ensureplmdegree(sdStdPlmt, Lused);
     sdStdPlmt = ensureplmdegree(sdStdPlmt, Lsle);
 
     % Remove GIA signal for l >= 2 (Sun et al., 2016)
-    giaPlmt = gia2plmt(dates, giaModel, "L", Lsle, ...
+    giaPlmt = gia2plmt(dates, giaMdl, "L", Lsle, ...
         "OutputFormat", 'timefirst', "BeQuiet", beQuiet);
     sdPlmt(:, 4:end, 3:4) = sdPlmt(:, 4:end, 3:4) - giaPlmt(:, 4:end, 3:4);
     % Ignore STD of GIA for now
@@ -218,21 +217,21 @@ function [coeffs, coeffStds, dates] = ...
     sdStdPlmt = permute(sdStdPlmt, [2, 3, 1]); % timefirst -> traditional
 
     % Number of simultaneously estimated low-degree coefficients
-    nCoeffs = 3 + includeC20 + includeC30 + 2 * includeC21S21; % Degree 1 and optional degree-2/3 terms
+    nCoeffs = 3 + inclC20 + inclC30 + 2 * inclC21S21; % Degree 1 and optional degree-2/3 terms
 
     % Precompute kernels
-    [coeffLocs, coeffIds] = lowdegreecoefficients(includeC20, includeC30, includeC21S21);
+    [coeffLocs, coeffIds] = lowdegreecoefficients(inclC20, inclC30, inclC21S21);
 
     % Note: Converting to SINGLE does not work because it is not compatible with the sparse SLE kernel
-    oceanKernelSle = kernelcp_new(Lsle, oceanDomain, ...
+    ocnKernelSle = kernelcp_new(Lsle, ocnDom, ...
         "BeQuiet", beQuiet);
-    landKernelSle = eye(size(oceanKernelSle)) - oceanKernelSle;
+    lndKernelSle = eye(size(ocnKernelSle)) - ocnKernelSle;
     coeffsKernel = nan([nCoeffs, nCoeffs]);
 
     for iCoeff = 1:nCoeffs
 
         for jCoeff = 1:nCoeffs
-            coeffsKernel(iCoeff, jCoeff) = oceanKernelSle(coeffIds(iCoeff), coeffIds(jCoeff));
+            coeffsKernel(iCoeff, jCoeff) = ocnKernelSle(coeffIds(iCoeff), coeffIds(jCoeff));
         end
 
     end
@@ -242,11 +241,11 @@ function [coeffs, coeffStds, dates] = ...
     % Set unknown coefficients to 0
     sdPlmt = putcoeffs(sdPlmt, 0, coeffLocs);
     sdStdPlmt = putcoeffs(sdStdPlmt, 0, coeffLocs);
-    knownOceanSdCoeffs = extractcoeffs( ...
-        localise(sdPlmt, "L", Lsle, "K", oceanKernelSle), ...
+    knownOcnSdCoeffs = extractcoeffs( ...
+        localise(sdPlmt, "L", Lsle, "K", ocnKernelSle), ...
         coeffLocs);
-    knownOceanSdCoeffStds = extractcoeffs( ...
-        localise(sdStdPlmt, "L", Lsle, "K", oceanKernelSle, "IsError", true), ...
+    knownOcnSdCoeffStds = extractcoeffs( ...
+        localise(sdStdPlmt, "L", Lsle, "K", ocnKernelSle, "IsError", true), ...
         coeffLocs);
 
     %% Solving the degree-1 coefficients
@@ -270,34 +269,34 @@ function [coeffs, coeffStds, dates] = ...
 
         end
 
-        landPlmt = localise(sdPlmt, "L", Lsle, "K", landKernelSle);
-        landStdPlmt = localise(sdStdPlmt, "L", Lsle, "K", landKernelSle, "IsError", true);
+        lndPlmt = localise(sdPlmt, "L", Lsle, "K", lndKernelSle);
+        lndStdPlmt = localise(sdStdPlmt, "L", Lsle, "K", lndKernelSle, "IsError", true);
 
-        switch method
+        switch mthd
             case 'fingerprint'
-                [oceanPlmt, oceanStdPlmt] = ...
-                    solvesle(landPlmt, landStdPlmt, Lsle, oceanDomain, ...
-                    "OceanKernel", oceanKernelSle, "KernelOrder", kernelOrder, ...
+                [ocnPlmt, ocnStdPlmt] = ...
+                    solvesle(lndPlmt, lndStdPlmt, Lsle, ocnDom, ...
+                    "OceanKernel", ocnKernelSle, "KernelOrder", kernelOrder, ...
                     "InitialRSL", sdPlmt / 1000, ... % kg/m^2 -> m
                     "RotationFeedback", true, "MaxIter", iterOpts.SleMaxIter, ...
                     "Tolerance", iterOpts.SleTolerance, "BeQuiet", true);
-                oceanPlmt = localise(oceanPlmt, "L", Lsle, "K", oceanKernelSle);
-                oceanStdPlmt = localise(oceanStdPlmt, "L", Lsle, "K", oceanKernelSle, "IsError", true);
-                oceanCoeffs = extractcoeffs(oceanPlmt, coeffLocs);
-                oceanCoeffStds = extractcoeffs(oceanStdPlmt, coeffLocs);
+                ocnPlmt = localise(ocnPlmt, "L", Lsle, "K", ocnKernelSle);
+                ocnStdPlmt = localise(ocnStdPlmt, "L", Lsle, "K", ocnKernelSle, "IsError", true);
+                ocnCoeffs = extractcoeffs(ocnPlmt, coeffLocs);
+                ocnCoeffStds = extractcoeffs(ocnStdPlmt, coeffLocs);
             case 'uniform'
-                oceanArea = oceanKernelSle(1, 1);
-                barystaticLoad = squeeze(-landPlmt(1, 3, :) / oceanArea);
-                oceanCoeffs = barystaticLoad' .* oceanKernelSle(coeffIds, 1);
-                barystaticLoadStd = squeeze(-landStdPlmt(1, 3, :) / oceanArea);
-                oceanCoeffStds = barystaticLoadStd' .* oceanKernelSle(coeffIds, 1);
+                ocnArea = ocnKernelSle(1, 1);
+                eustatic = squeeze(-lndPlmt(1, 3, :) / ocnArea);
+                ocnCoeffs = eustatic' .* ocnKernelSle(coeffIds, 1);
+                eustaticStd = squeeze(-lndStdPlmt(1, 3, :) / ocnArea);
+                ocnCoeffStds = eustaticStd' .* ocnKernelSle(coeffIds, 1);
         end
 
-        coeffs = coeffsKernel \ (oceanCoeffs - knownOceanSdCoeffs);
+        coeffs = coeffsKernel \ (ocnCoeffs - knownOcnSdCoeffs);
         sdPlmt = putcoeffs(sdPlmt, coeffs, coeffLocs);
         % STD
         coeffStds = sqrt((coeffsKernel \ eye(nCoeffs)) .^ 2 * ...
-            (oceanCoeffStds .^ 2 + knownOceanSdCoeffStds .^ 2));
+            (ocnCoeffStds .^ 2 + knownOcnSdCoeffStds .^ 2));
         sdStdPlmt = putcoeffs(sdStdPlmt, coeffStds, coeffLocs);
 
         if any(~isfinite(coeffs), 'all') || any(~isfinite(coeffStds), 'all')
@@ -402,82 +401,82 @@ function varargout = parseinputs(inputs)
     pcenter = ip.Results.Pcenter;
     rlevel = ip.Results.Rlevel;
     Ldata = ip.Results.Ldata;
-    Ltruncation = conddefval(ip.Results.Ltruncation, Ldata);
+    Lused = conddefval(ip.Results.Ltruncation, Ldata);
     Lsle = ip.Results.Lsle;
-    giaModel = ip.Results.GiaModel;
-    oceanDomain = ip.Results.OceanDomain;
-    includeC20 = logical(ip.Results.IncludeC20);
-    includeC30 = logical(ip.Results.IncludeC30);
-    includeC21S21 = ip.Results.IncludeC21S21;
-    method = ip.Results.Method;
+    giaMdl = ip.Results.GiaModel;
+    ocnDom = ip.Results.OceanDomain;
+    inclC20 = logical(ip.Results.IncludeC20);
+    inclC30 = logical(ip.Results.IncludeC30);
+    inclC21S21 = ip.Results.IncludeC21S21;
+    mthd = ip.Results.Method;
     timelim = ip.Results.TimeRange;
     unit = ip.Results.Unit;
+    onlyId = logical(ip.Results.OnlyId);
     forceNew = logical(ip.Results.ForceNew);
     saveData = logical(ip.Results.SaveData);
     beQuiet = double(ip.Results.BeQuiet) * 2;
-    onlyId = logical(ip.Results.OnlyId);
     callChain = [ip.Results.CallChain, {mfilename}];
 
     iterOpts = struct('MaxIter', ip.Results.MaxIter, ...
         'Tolerance', ip.Results.Tolerance, 'SleMaxIter', ip.Results.SleMaxIter, ...
         'SleTolerance', ip.Results.SleTolerance);
 
-    if ~isempty(regexp(lower(giaModel), '^ice[-]?6g[_-]?d$', 'once'))
-        giaModel = 'ICE6GD';
-    elseif contains(lower(giaModel), 'caron')
-        giaModel = replace(giaModel, 'caron', 'Caron');
-    elseif contains(lower(giaModel), 'paulson')
-        giaModel = replace(giaModel, 'paulson', 'Paulson');
+    if ~isempty(regexp(lower(giaMdl), '^ice[-]?6g[_-]?d$', 'once'))
+        giaMdl = 'ICE6GD';
+    elseif contains(lower(giaMdl), 'caron')
+        giaMdl = replace(giaMdl, 'caron', 'Caron');
+    elseif contains(lower(giaMdl), 'paulson')
+        giaMdl = replace(giaMdl, 'paulson', 'Paulson');
     end
 
     varargout = ...
-        {pcenter, rlevel, Ldata, Ltruncation, Lsle, giaModel, oceanDomain, ...
-         includeC20, includeC30, includeC21S21, method, timelim, unit, ...
-         forceNew, saveData, beQuiet, onlyId, callChain, iterOpts};
+        {{pcenter, rlevel, Ldata}, Lused, Lsle, giaMdl, ocnDom, ...
+          inclC20, inclC30, inclC21S21, mthd, timelim, unit, iterOpts, ...
+          onlyId, forceNew, saveData, beQuiet, callChain};
 end
 
 % Get the input and output file names
-function [outputPath, outputFile, deg1Id] = ...
-        getoutputfile(pcenter, rlevel, Ldata, giaModel, ...
-        includeC20, includeC30, includeC21S21, Ltruncation, Lsle, oceanDomain, method)
-    outputFolder = fullfile(getenv('GRACEDATA'), 'Degree1', 'new');
+function [outPath, outFile, deg1Flag] = ...
+        getoutputfile(prod, giaMdl, ...
+        inclC20, inclC30, inclC21S21, Lused, Lsle, ocnDom, mthd)
+    outFolder = fullfile(getenv('GRACEDATA'), 'Degree1', 'new');
 
-    if ~exist(outputFolder, 'dir')
-        mkdir(outputFolder);
+    if ~exist(outFolder, 'dir')
+        mkdir(outFolder);
     end
 
-    includeC20Flag = '';
+    inclC20Flag = '';
 
-    if includeC20 && includeC30
-        includeC20Flag = '-WC2030';
-    elseif includeC20
-        includeC20Flag = '-WC20';
-    elseif includeC30
-        includeC20Flag = '-WC30';
+    if inclC20 && inclC30
+        inclC20Flag = '-WC2030';
+    elseif inclC20
+        inclC20Flag = '-WC20';
+    elseif inclC30
+        inclC20Flag = '-WC30';
     end
 
-    if includeC21S21
-        includeC20Flag = [includeC20Flag, '-WC21S21'];
+    if inclC21S21
+        inclC20Flag = [inclC20Flag, '-WC21S21'];
     end
 
-    switch method
+    switch mthd
         case 'fingerprint'
-            methodFlag = '';
+            mthdFlag = '';
         case 'uniform'
-            methodFlag = '-uniform';
+            mthdFlag = '-uniform';
     end
 
-    productId = sprintf('%s%s%d', pcenter, rlevel, Ldata);
-    deg1Id = sprintf('%s%s-Ld%d_Ls%d-%s%s', ...
-        giaModel, includeC20Flag, ...
-        Ltruncation, Lsle, oceanDomain.Id, methodFlag);
-    outputFile = sprintf('%s_%s-SD.mat', productId, deg1Id);
+    prodFlag = sprintf('%s%s%d', prod{:});
+    deg1Flag = sprintf('%s%s-Ld%d_Ls%d-%s%s', ...
+        giaMdl, inclC20Flag, ...
+        Lused, Lsle, ocnDom.Id, mthdFlag);
+    outFile = sprintf('%s_%s-SD.mat', prodFlag, deg1Flag);
 
-    outputPath = fullfile(outputFolder, outputFile);
+    outPath = fullfile(outFolder, outFile);
 end
 
 % Format the output
-function output = formatoutput(coeffs, coeffStds, dates, timelim, unit, nOut, includeC2030, product, beQuiet)
+function out = formatoutput(coeffs, coeffStds, dates, timelim, unit, nOut, includeC2030, product, beQuiet)
     [coeffLocs, ~, degrees] = lowdegreecoefficients(includeC2030(1), includeC2030(2), includeC2030(3));
 
     for iCoeff = 1:numel(degrees)
@@ -495,7 +494,7 @@ function output = formatoutput(coeffs, coeffStds, dates, timelim, unit, nOut, in
     end
 
     if nOut <= 3
-        output = {coeffs, coeffStds, dates};
+        out = {coeffs, coeffStds, dates};
         return
     end
 
@@ -507,7 +506,7 @@ function output = formatoutput(coeffs, coeffStds, dates, timelim, unit, nOut, in
         gracePlmt(:, coeffLocs(iCoeff, 1), 2 + coeffLocs(iCoeff, 2)) = coeffs(:, iCoeff);
     end
 
-    output = {coeffs, coeffStds, dates, gracePlmt, coeffLocs};
+    out = {coeffs, coeffStds, dates, gracePlmt, coeffLocs};
 
 end
 
