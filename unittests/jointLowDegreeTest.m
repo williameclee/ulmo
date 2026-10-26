@@ -2,9 +2,6 @@
 %
 % Created by
 %   2026/10/26, En-Chi Lee (williameclee@gmail.com)
-%
-% Last modified
-%   2026/10/26, En-Chi Lee (williameclee@gmail.com)
 
 classdef jointLowDegreeTest < matlab.unittest.TestCase
 
