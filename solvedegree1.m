@@ -98,6 +98,8 @@
 %   contributions from every input harmonic to that ocean mass constraint.
 %   Fingerprint land setup applies I-K without storing a full land kernel;
 %   diagonal variances are propagated in bounded row blocks.
+%   Fixed variance projections omit input columns that are exactly zero at
+%   every epoch. Signal projections retain all harmonics, including GIA.
 %   Cached solutions are assumed converged at sufficiently small tolerances;
 %   iteration settings are not part of cache filenames. Use ForceNew=true
 %   for other settings and SaveData=false to preserve an existing cache.
@@ -244,28 +246,32 @@ function [coeffs, coeffStds, dates] = ...
     sdStdPlmt = putcoeffs(sdStdPlmt, 0, coeffLocs);
     knownSdPlms = packcoeffs(sdPlmt, kernelOrder);
     knownVarPlms = packcoeffs(sdStdPlmt, kernelOrder) .^ 2;
+    % Padding and known zero errors need no fixed-variance projection.
+    % Retain any column with a nonzero variance at at least one epoch.
+    knownVarIds = find(any(knownVarPlms ~= 0, 2));
+    knownVarPlms = knownVarPlms(knownVarIds, :);
     % Only the jointly estimated coefficients enter the ocean constraint.
     knownOcnCoeffs = coeffOcnKernel * knownSdPlms;
-    knownOcnCoeffVars = coeffOcnKernelSq * knownVarPlms;
+    knownOcnCoeffVars = coeffOcnKernelSq(:, knownVarIds) * knownVarPlms;
 
     % Only the estimated coefficients change between outer iterations.
     % Keep the fixed land signal and variance, plus their update columns.
     % Uniform loading retains only the C00 row; fingerprints need all rows.
     if strcmp(mthd, 'uniform')
         knownLndSdPlms = lndKernelSle * knownSdPlms;
-        knownLndVarPlms = (lndKernelSle .^ 2) * knownVarPlms;
+        knownLndVarPlms = (lndKernelSle(:, knownVarIds) .^ 2) * knownVarPlms;
         coeffLndKernel = lndKernelSle(:, coeffIds);
         clear lndKernelSle
     else
         knownLndSdPlms = knownSdPlms - ocnKernelSle * knownSdPlms;
-        knownLndVarPlms = landvariance(ocnKernelSle, knownVarPlms);
+        knownLndVarPlms = landvariance(ocnKernelSle, knownVarPlms, knownVarIds);
         coeffLndKernel = -ocnKernelSle(:, coeffIds);
         diagIds = sub2ind(size(coeffLndKernel), coeffIds, 1:nCoeffs);
         coeffLndKernel(diagIds) = coeffLndKernel(diagIds) + 1;
     end
 
     coeffLndKernelSq = coeffLndKernel .^ 2;
-    clear knownSdPlms knownVarPlms
+    clear knownSdPlms knownVarPlms knownVarIds
 
     %% Solving the degree-1 coefficients
     maxIter = iterOpts.MaxIter;
@@ -537,17 +543,24 @@ function out = formatoutput(coeffs, coeffStds, dates, timelim, unit, nOut, inclu
 
 end
 
-% Propagate diagonal variances through I-K without a full land kernel.
-function lndVars = landvariance(ocnKernel, vars)
+% Propagate retained input variances through every output row of I-K.
+function lndVars = landvariance(ocnKernel, vars, inputIds)
     nCoeffs = size(ocnKernel, 1);
-    lndVars = zeros(size(vars));
-    % Each double-precision block occupies about 64 MiB at degree 180.
+    lndVars = zeros(nCoeffs, size(vars, 2));
+
+    if isempty(inputIds)
+        return
+    end
+
+    % With all input columns, each block is about 64 MiB at degree 180.
     blockRows = 256;
 
     for first = 1:blockRows:nCoeffs
         rows = first:min(first + blockRows - 1, nCoeffs);
-        block = -ocnKernel(rows, :);
-        diagIds = sub2ind(size(block), 1:numel(rows), rows);
+        block = -ocnKernel(rows, inputIds);
+        % Identity entries use global harmonic indices, not subset positions.
+        inBlock = inputIds >= first & inputIds <= rows(end);
+        diagIds = sub2ind(size(block), inputIds(inBlock) - first + 1, find(inBlock));
         block(diagIds) = block(diagIds) + 1;
         lndVars(rows, :) = (block .^ 2) * vars;
     end

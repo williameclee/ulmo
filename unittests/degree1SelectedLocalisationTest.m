@@ -9,6 +9,8 @@
 % including GIA above the input truncation degree and nonzero input C00.
 % Fingerprint cases at degrees 15, 16 and 23 exercise full and partial
 % 256-row variance blocks against the original full-field calculation.
+% Padded-input cases check exact variance support across epochs, empty
+% support, tiny nonzero uncertainties, and higher-degree GIA signals.
 %
 % Created by
 %   2026/10/26, OpenAI Codex
@@ -25,6 +27,7 @@ classdef degree1SelectedLocalisationTest < matlab.unittest.TestCase
         kernelCase = {'original', 'dense', 'denseZeroStd'}
         inputDegree = {2, 3}
         fingerprintDegree = {15, 16, 23}
+        varianceSupport = {'empty', 'mixed', 'tiny'}
     end
 
     methods (TestClassSetup)
@@ -72,6 +75,77 @@ classdef degree1SelectedLocalisationTest < matlab.unittest.TestCase
     end
 
     methods (Test)
+
+        function paddedVariancesPreserveFullSignal(testCase, method, epochCount, varianceSupport)
+            global JOINT_LOW_DEGREE_FIXTURE
+            L = 16;
+            [order, degree] = addmon(L);
+            meta = repmat([degree, order], 1, 1, epochCount);
+            values = zeros(numel(degree), 2, epochCount);
+            values(1:10, :, :) = reshape(sin(1:20 * epochCount), 10, 2, epochCount);
+            sigma = zeros(size(values));
+
+            if ~strcmp(varianceSupport, 'empty')
+                scale = 0.2;
+
+                if strcmp(varianceSupport, 'tiny')
+                    scale = 1e-100;
+                end
+
+                sigma(1, 1, :) = scale;
+                sigma(6, 2, :) = 2 * scale; % S22 is not jointly estimated.
+
+                if epochCount > 1
+                    % The first epoch alone must not determine retained columns.
+                    sigma(:, :, 1) = 0;
+                    sigma(6, 2, 2) = 0;
+                    sigma(1, 1, 3) = 0;
+                end
+
+            end
+
+            p = cat(2, meta, values);
+            s = cat(2, meta, sigma);
+            giaValues = zeros(size(values));
+            giaValues(end, 2, :) = reshape(1:epochCount, 1, 1, []);
+            gia = cat(2, meta, giaValues);
+            dates = datetime(2003, (1:epochCount)', 15);
+            indices = 1:(L + 1)^2;
+            K = 0.6 * eye(numel(indices)) ...
+                + 0.001 * (sin(indices' * indices) + cos(indices' + indices));
+            K(1, end) = -0.04; K(end, 1) = K(1, end);
+            % The reader supplies degree 3; estimation truncates it to 2,
+            % then pads it to 16 before subtracting the degree-16 GIA field.
+            JOINT_LOW_DEGREE_FIXTURE = struct('p', permute(p(1:10, :, :), [3, 1, 2]), ...
+                's', permute(s(1:10, :, :), [3, 1, 2]), ...
+                'gia', permute(gia, [3, 1, 2]), 'dates', dates, 'kernel', K);
+            p(degree > 2, 3:4, :) = 0;
+            s(degree > 2, 3:4, :) = 0;
+            locs = [2, 1; 3, 1; 3, 2; 4, 1; 7, 1; 5, 1; 5, 2];
+            ids = [2, 3, 4, 5, 10, 6, 7];
+            [expected, expectedStd] = fullFieldReference(p, s, gia, ...
+                locs, ids, method, 0, 4);
+            [actual, actualStd, actualDates] = solvedegree1( ...
+                'CSR', 'RL06', 3, 2, L, 'ICE6GD', GeoDomain('alloceans'), ...
+                'IncludeC20', true, 'IncludeC30', true, 'IncludeC21S21', true, ...
+                'Method', method, 'Tolerance', 0, 'MaxIter', 4, ...
+                'ForceNew', true, 'SaveData', false, 'BeQuiet', true);
+            testCase.verifyEqual(actual, expected, 'AbsTol', 1e-10);
+            % Relative tolerance detects accidental removal of tiny variances.
+            testCase.verifyEqual(actualStd, expectedStd, 'RelTol', 1e-11);
+            testCase.verifyEqual(actualDates, dates);
+
+            if strcmp(varianceSupport, 'empty')
+                testCase.verifyEqual(actualStd, zeros(epochCount, 7));
+            else
+                testCase.verifyGreaterThan(max(actualStd, [], 'all'), 0);
+            end
+
+            if epochCount > 1
+                testCase.verifyEqual(actualStd(1, :), zeros(1, 7));
+            end
+
+        end
 
         function fingerprintMatchesAcrossVarianceBlocks(testCase, fingerprintDegree, epochCount, adaptive)
             global JOINT_LOW_DEGREE_FIXTURE
