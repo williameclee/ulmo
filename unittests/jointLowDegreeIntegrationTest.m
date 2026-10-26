@@ -17,6 +17,7 @@ classdef jointLowDegreeIntegrationTest < matlab.unittest.TestCase
         unit = {'SD', 'POT', 'GRAV'}
         filtered = {false, true}
         dateCase = {'reordered', 'extra'}
+        missingDateCase = {'shifted', 'shorter'}
     end
 
     methods (TestMethodSetup)
@@ -70,6 +71,70 @@ classdef jointLowDegreeIntegrationTest < matlab.unittest.TestCase
     end
 
     methods (Test)
+
+        function realSolverPreservesDates(testCase, dateCase)
+            % Exercise date matching without replacing either reader or solver.
+            global JOINT_LOW_DEGREE_FIXTURE
+            testCase.seedGraceCache('SD');
+            f = JOINT_LOW_DEGREE_FIXTURE;
+            coeffs = f.coeffs;
+            coeffStds = f.coeffStds;
+            dates = f.dates;
+            order = [3, 1, 2];
+
+            if strcmp(dateCase, 'extra')
+                coeffs(4, :) = 100 + (1:7);
+                coeffStds(4, :) = 1 + (1:7) / 100;
+                dates(4) = datetime(2003, 4, 15);
+                order = [4, 3, 1, 2];
+            end
+
+            coeffs = coeffs(order, :);
+            coeffStds = coeffStds(order, :);
+            dates = dates(order);
+            testCase.seedJointCache(coeffs, coeffStds, dates);
+            opts = solverOptions(true, true);
+            [actual, actualStd, actualDates, field, locs] = ...
+                solvedegree1({'CSR', 'RL06', 3}, opts{:});
+            testCase.verifyEqual(actual, coeffs);
+            testCase.verifyEqual(actualStd, coeffStds);
+            testCase.verifyEqual(actualDates, dates);
+            testCase.verifyEqual(locs, f.locs);
+            expectedField = f.p;
+            expectedStd = f.s;
+
+            for k = 1:7
+                expectedField(:, f.locs(k, 1), 2 + f.locs(k, 2)) = f.coeffs(:, k);
+                expectedStd(:, f.locs(k, 1), 2 + f.locs(k, 2)) = f.coeffStds(:, k);
+            end
+
+            testCase.verifyEqual(field, expectedField);
+            [readerField, readerStd, readerDates] = readJoint();
+            testCase.verifyEqual(readerField, expectedField);
+            testCase.verifyEqual(readerStd, expectedStd);
+            testCase.verifyEqual(readerDates, f.dates);
+        end
+
+        function realSolverRejectsMissingDates(testCase, missingDateCase)
+            % Detect missing coverage even when both caches have the same row count.
+            global JOINT_LOW_DEGREE_FIXTURE
+            testCase.seedGraceCache('SD');
+            f = JOINT_LOW_DEGREE_FIXTURE;
+            coeffs = f.coeffs;
+            coeffStds = f.coeffStds;
+            dates = f.dates;
+
+            if strcmp(missingDateCase, 'shifted')
+                dates = dates + calmonths(1);
+            else
+                dates(2) = [];
+                coeffs(2, :) = [];
+                coeffStds(2, :) = [];
+            end
+
+            testCase.seedJointCache(coeffs, coeffStds, dates);
+            testCase.verifyError(@() readJoint(), 'ULMO:MissingLowDegreeDates');
+        end
 
         function insertsCoefficientsByDate(testCase, dateCase)
             global JOINT_LOW_DEGREE_FIXTURE
@@ -203,6 +268,13 @@ classdef jointLowDegreeIntegrationTest < matlab.unittest.TestCase
     end
 
     methods (Access = private)
+
+        function seedJointCache(testCase, coeffs, coeffStds, dates)
+            domain = GeoDomain('alloceans');
+            filename = sprintf('CSRRL063_ICE6GD-WC20C30C21S21-Ld3_Ls3-%s-uniform-SD.mat', domain.Id);
+            save(fullfile(testCase.Folder, 'Degree1', 'new', filename), ...
+                'coeffs', 'coeffStds', 'dates');
+        end
 
         function installFixtures(testCase, group)
             import matlab.unittest.fixtures.PathFixture

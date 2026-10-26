@@ -153,7 +153,7 @@ function varargout = solvesle(varargin)
         cstredOcnKernel = ocnKernel - ocnWghts * ocnKernel(1, :);
         cstredOcnKernel(:, 1) = 0;
         cstredOceanKernelSq = cstredOcnKernel .^ 2;
-        clear cstredOceanKernel
+        clear cstredOcnKernel
     end
 
     % Load the permutation order from cosi -> flat

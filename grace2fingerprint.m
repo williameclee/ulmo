@@ -311,12 +311,6 @@ function outPath = ...
         frameFlag = sprintf('-%s', frame);
     end
 
-    if islogical(giaMdl) && ~giaMdl
-        giaFlag = '';
-    else
-        giaFlag = sprintf('-%s', giaMdl);
-    end
-
     if doRot
         rotFlag = '';
     else
@@ -337,8 +331,8 @@ function outPath = ...
         mkdir(outFolder);
     end
 
-    outFile = sprintf('%s%s-Ls%d-%s%s%s%s%s.mat', ...
-        prodFlag, giaFlag, L, ocnFlag, lndFlag, frameFlag, rotFlag, redoFlag);
+    outFile = sprintf('%s-%s-Ls%d-%s%s%s%s%s.mat', ...
+        prodFlag, giaMdl, L, ocnFlag, lndFlag, frameFlag, rotFlag, redoFlag);
     outPath = fullfile(outFolder, outFile);
 end
 

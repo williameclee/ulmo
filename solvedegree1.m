@@ -83,6 +83,8 @@
 %       Size: (N, 1).
 %   gracePlmt - GRACE field with the estimated coefficients inserted.
 %       The four columns are degree, order, cosine and sine coefficients.
+%       Uses the GRACE reader's epoch order; coeffs, coeffStds and dates
+%       retain the solved epoch order. Every GRACE epoch must have an estimate.
 %       Size: (N, addmup(Ldata), 4).
 %       Unit: selected Unit for coefficient columns.
 %   coeffLocs - Locations corresponding to columns of coeffs.
@@ -484,12 +486,16 @@ function out = formatoutput(coeffs, coeffStds, dates, timelim, unit, nOut, inclu
         return
     end
 
-    [gracePlmt, ~, dates] = grace2plmt_new(product, ...
+    [gracePlmt, ~, graceDates] = grace2plmt_new(product, ...
         "Unit", unit, "TimeRange", timelim, "OutputFormat", 'timefirst', "TimeFormat", 'datetime', ...
         "BeQuiet", beQuiet);
 
+    [matched, dateIdx] = ismember(graceDates, dates);
+    assert(all(matched), 'ULMO:MissingLowDegreeDates', ...
+    'Joint coefficient estimates do not cover all GRACE dates.');
+
     for iCoeff = 1:size(coeffLocs, 1)
-        gracePlmt(:, coeffLocs(iCoeff, 1), 2 + coeffLocs(iCoeff, 2)) = coeffs(:, iCoeff);
+        gracePlmt(:, coeffLocs(iCoeff, 1), 2 + coeffLocs(iCoeff, 2)) = coeffs(dateIdx, iCoeff);
     end
 
     out = {coeffs, coeffStds, dates, gracePlmt, coeffLocs};
