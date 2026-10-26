@@ -3,6 +3,8 @@
 % retains full-field localisation before selecting coefficients. All optional
 % coefficient combinations, both methods, and fixed/adaptive outer loops are
 % checked, including uncertainties, GIA restoration and output ordering.
+% Dense signed kernels and zero uncertainties also exercise reusable land
+% forcing against full localisation at every reference iteration.
 %
 % Created by
 %   2026/10/26, OpenAI Codex
@@ -16,6 +18,7 @@ classdef degree1SelectedLocalisationTest < matlab.unittest.TestCase
         method = {'fingerprint', 'uniform'}
         epochCount = {1, 3}
         adaptive = {false, true}
+        kernelCase = {'original', 'dense', 'denseZeroStd'}
     end
 
     methods (TestClassSetup)
@@ -64,18 +67,33 @@ classdef degree1SelectedLocalisationTest < matlab.unittest.TestCase
 
     methods (Test)
 
-        function matchesFullFieldReference(testCase, includeC20, includeC30, includeC21S21, method, epochCount, adaptive)
+        function matchesFullFieldReference(testCase, includeC20, includeC30, includeC21S21, method, epochCount, adaptive, kernelCase)
             global JOINT_LOW_DEGREE_FIXTURE
             [order, degree] = addmon(3);
             meta = repmat([degree, order], 1, 1, epochCount);
             values = reshape(sin(1:20 * epochCount), 10, 2, epochCount);
             sigma = reshape(1:20 * epochCount, 10, 2, epochCount) / 100;
+
+            if strcmp(kernelCase, 'denseZeroStd')
+                sigma(:) = 0;
+            elseif strcmp(kernelCase, 'dense') && epochCount > 1
+                % A zero-variance epoch must not inherit another epoch's errors.
+                sigma(:, :, 1) = 0;
+            end
+
             gia = cat(2, meta, values / 7);
             p = cat(2, meta, values);
             s = cat(2, meta, sigma);
             dates = datetime(2003, (1:epochCount)', 15);
             JOINT_LOW_DEGREE_FIXTURE = struct('p', permute(p, [3, 1, 2]), ...
                 's', permute(s, [3, 1, 2]), 'gia', permute(gia, [3, 1, 2]), 'dates', dates);
+
+            if ~strcmp(kernelCase, 'original')
+                indices = 1:16;
+                JOINT_LOW_DEGREE_FIXTURE.kernel = .6 * eye(16) ...
+                    + .002 * (sin(indices' * indices) + cos(indices' + indices));
+            end
+
             locs = [2, 1; 3, 1; 3, 2]; ids = [2, 3, 4];
 
             if includeC20
@@ -94,6 +112,11 @@ classdef degree1SelectedLocalisationTest < matlab.unittest.TestCase
                 tolerance = 1e-6; limit = 100;
             else
                 tolerance = 0; limit = 3;
+
+                if ~strcmp(kernelCase, 'original')
+                    limit = 12;
+                end
+
             end
 
             [expected, expectedStd] = fullFieldReference(p, s, gia, locs, ids, method, tolerance, limit);
@@ -105,6 +128,9 @@ classdef degree1SelectedLocalisationTest < matlab.unittest.TestCase
                 'ForceNew', true, 'SaveData', false, 'BeQuiet', true);
             testCase.verifyEqual(actual, expected, 'AbsTol', 1e-10);
             testCase.verifyEqual(actualStd, expectedStd, 'AbsTol', 1e-10);
+            testCase.verifyTrue(all(isfinite(actual), 'all'));
+            testCase.verifyTrue(all(isfinite(actualStd), 'all'));
+            testCase.verifyGreaterThanOrEqual(actualStd, zeros(size(actualStd)));
             testCase.verifyEqual(actualDates, dates);
             testCase.verifyEqual(actualLocs, locs);
 
