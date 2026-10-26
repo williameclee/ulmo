@@ -4,7 +4,7 @@
 %   2026/10/25, En-Chi Lee (williameclee@gmail.com)
 %
 % Last modified
-%   2026/10/25, En-Chi Lee (williameclee@gmail.com)
+%   2026/10/26, En-Chi Lee (williameclee@gmail.com)
 
 classdef degree1ConvergenceTest < matlab.unittest.TestCase
 
@@ -83,6 +83,28 @@ classdef degree1ConvergenceTest < matlab.unittest.TestCase
             testCase.verifyEqual(a, b, 'AbsTol', 1e-7); testCase.verifyEqual(sa, sb, 'AbsTol', 1e-7);
         end
 
+        function jointFingerprintMatchesLongRun(testCase)
+            % Exercise merged joint-coefficient support through both solver loops.
+            opts = {"IncludeC21S21", true, "Method", 'fingerprint'};
+            [a, sa] = runSolver(opts{:});
+            [b, sb] = runSolver(opts{:}, "Tolerance", 0, "MaxIter", 100, ...
+                "SleTolerance", 0, "SleMaxIter", 100);
+            testCase.verifySize(a, [3, 5]);
+            testCase.verifyEqual(a, b, 'AbsTol', 1e-5);
+            testCase.verifyEqual(sa, sb, 'AbsTol', 1e-5);
+        end
+
+        function jointFirstUpdateIgnoresImportedUnknowns(testCase)
+            global DEGREE1_CONVERGENCE_FIXTURE
+            opts = {"IncludeC21S21", true, "Tolerance", 0, "MaxIter", 1};
+            [a, sa] = runSolver(opts{:});
+            DEGREE1_CONVERGENCE_FIXTURE.x([2:4, 6:7], :) = 1e8;
+            DEGREE1_CONVERGENCE_FIXTURE.sigma([2:4, 6:7], :) = 1e7;
+            [b, sb] = runSolver(opts{:});
+            testCase.verifyEqual(a, b, 'AbsTol', 1e-14);
+            testCase.verifyEqual(sa, sb, 'AbsTol', 1e-14);
+        end
+
         function innerCapFailureDoesNotSave(testCase)
             testCase.verifyError(@() ...
                 runSolver("Method", 'fingerprint', "SleMaxIter", 1, ...
@@ -97,35 +119,73 @@ classdef degree1ConvergenceTest < matlab.unittest.TestCase
             testCase.verifyEmpty(dir(fullfile(testCase.Folder, 'Degree1', 'new', '*.mat')));
         end
 
-        function toleranceSettingsHaveSeparateCaches(testCase)
-            a = runSolver("OnlyId", true); b = runSolver("OnlyId", true, "Tolerance", 1e-8);
-            c = runSolver("OnlyId", true, "SleTolerance", 1e-10);
-            d = runSolver("OnlyId", true, "MaxIter", 50);
-            testCase.verifyEqual(numel(unique({a, b, c, d})), 4);
-            testCase.verifyTrue(contains(a, 'zero-absolute-v3'));
+        function iterationSettingsShareCache(testCase)
+            % Cached solutions are assumed converged at sufficiently small tolerances.
+            settings = {{"Tolerance", 1e-8}, {"SleTolerance", 1e-10}, ...
+                            {"MaxIter", 50}, {"SleMaxIter", 80}};
+            cachePattern = fullfile(testCase.Folder, 'Degree1', 'new', '*.mat');
+
+            for joint = [false, true]
+                opts = {"IncludeC21S21", joint, "SaveData", true};
+                runSolver(opts{:});
+                files = dir(cachePattern);
+                % Degree-1-only and joint solutions must have distinct caches.
+                testCase.assertNumElements(files, 1 + double(joint));
+
+                for k = 1:numel(settings)
+                    runSolver(opts{:}, "ForceNew", true, settings{k}{:});
+                    actual = dir(cachePattern);
+                    testCase.verifyEqual({actual.name}, {files.name});
+                end
+
+            end
+
+        end
+
+        function forceNewAppliesChangedIterationSettings(testCase)
+            % Unusual settings take effect only when explicitly bypassing the cache.
+            for joint = [false, true]
+                opts = {"IncludeC21S21", joint};
+                [coeffs, coeffStds, dates] = runSolver(opts{:}, "Tolerance", 1e-10, "SaveData", true);
+                limited = {"Tolerance", 1e-15, "MaxIter", 1};
+                [actual, actualStd, actualDates] = runSolver(opts{:}, limited{:});
+                testCase.verifyEqual(actual, coeffs);
+                testCase.verifyEqual(actualStd, coeffStds);
+                testCase.verifyEqual(actualDates, dates);
+                testCase.verifyError(@() runSolver(opts{:}, limited{:}, ...
+                    "ForceNew", true, "SaveData", true), 'ULMO:solvedegree1:NonConvergence');
+                % A failed fresh run must leave the converged cache intact.
+                [actual, actualStd] = runSolver(opts{:});
+                testCase.verifyEqual(actual, coeffs);
+                testCase.verifyEqual(actualStd, coeffStds);
+            end
+
         end
 
         function ignoresLegacyGadCache(testCase)
-            [expected, expectedStd, dates] = runSolver();
-            id = runSolver("OnlyId", true);
-            testCase.verifyFalse(startsWith(id, 'GAD-'));
+            [expected, expectedStd, dates] = runSolver("SaveData", true);
+            files = dir(fullfile(testCase.Folder, 'Degree1', 'new', '*.mat'));
+            testCase.assertNumElements(files, 1);
+            testCase.verifyFalse(contains(files.name, '_GAD-'));
+            cachePath = fullfile(files.folder, files.name);
+            legacyPath = fullfile(files.folder, strrep(files.name, 'CSRRL062_', 'CSRRL062_GAD-'));
+            movefile(cachePath, legacyPath);
             coeffs = ones(size(expected)) * 1e6;
             coeffStds = coeffs;
-            legacyPath = fullfile(testCase.Folder, 'Degree1', 'new', ...
-                ['CSRRL062_GAD-', id, '-SD.mat']);
             save(legacyPath, 'coeffs', 'coeffStds', 'dates');
             [actual, actualStd] = runSolver("SaveData", true);
             testCase.verifyEqual(actual, expected);
             testCase.verifyEqual(actualStd, expectedStd);
             testCase.verifyTrue(isfile(legacyPath));
+            testCase.verifyTrue(isfile(cachePath));
         end
 
         function reusesGsmCache(testCase)
-            [coeffs, coeffStds, dates] = runSolver();
-            id = runSolver("OnlyId", true);
+            [coeffs, coeffStds, dates] = runSolver("SaveData", true);
+            files = dir(fullfile(testCase.Folder, 'Degree1', 'new', '*.mat'));
+            testCase.assertNumElements(files, 1);
             coeffs(:) = 42;
-            cachePath = fullfile(testCase.Folder, 'Degree1', 'new', ...
-                ['CSRRL062_', id, '-SD.mat']);
+            cachePath = fullfile(files.folder, files.name);
             save(cachePath, 'coeffs', 'coeffStds', 'dates');
             testCase.verifyEqual(runSolver(), coeffs);
         end

@@ -1,145 +1,131 @@
-%% SOLVEDEGREE1 - Solves for the geocentre motion from GRACE observations.
-% Recomputes the GRACE degree-1 surface mass density coefficients based on
-% Sun et al. (2016) with the specified GIA model.
-% Estimates remain GSM-like: the solver does not add GAC or subtract GAD.
-% Restore GAD separately downstream when constructing ocean-mass signals.
+%% SOLVEDEGREE1 - Jointly estimates low-degree GRACE coefficients.
+% Estimates degree 1 and optional C20, C30, C21 and S21 using an ocean
+% constraint and the specified GIA model, following Sun et al. (2016).
 %
 % Syntax
-%   [coeffs, coeffStd, dates] = SOLVEDEGREE1(...
-%       pcenter, rlevel, Ldata, Lsle, GIAModel, oceanDomain)
-%   [__] = SOLVEDEGREE1(__, ...
-%       "IncludeC20", includeC20, "TimeRange", timelim)
-%   [__] = SOLVEDEGREE1(__, ...
-%       "ForceNew", forceNew, "SaveData", saveData, "BeQuiet", beQuiet)
-%   [__, gracePlmt] = SOLVEDEGREE1(__)
+%   [coeffs, coeffStds, dates] = solvedegree1()
+%   [coeffs, coeffStds, dates] = solvedegree1(product, "Name", value)
+%   [coeffs, coeffStds, dates] = solvedegree1(Pcenter, Rlevel, Ldata, ...
+%       Ltruncation, Lsle, GiaModel, OceanDomain)
+%   [coeffs, coeffStds, dates, gracePlmt, coeffLocs] = solvedegree1(__)
+%   [coeffs, coeffStds, dates] = solvedegree1(__, "IncludeC21S21", true)
 %
 % Input arguments
-%   Pcenter - Data centre
-%       - 'CSR': Center for Space Research
-%       - 'GFZ': GeoForschungsZentrum Potsdam
-%       - 'JPL': Jet Propulsion Laboratory
-%       The default data centre is 'CSR'.
-%       When the first argument is a cell array, it is interpreted as
-%       {Pcenter, Rlevel, Ldata}.
-%       Data type: CHAR
-%   Rlevel - Release level of the solution
-%       Either 'RL04','RL05', or 'RL06' (or numbers).
-%       The default release level is 'RL06'.
-%       Currently, only RL06 is guaranteed to work.
-%       Data type: CHAR | [NUMERIC]
-%   Ldata - Bandwidth of the date product
-%       In the case where there are more than one product from a data
-%       centre (such as BA 60 or BB 96 standard L2 products) this allows
-%       you to choose between them.
-%       The default L is 60.
-%       Data type: [NUMERIC]
-%   Ltruncation - Bandwidth to truncate the date product
-%       The default option is no truncation.
-%       Data type: [NUMERIC]
-%   Lsle - Bandwidth used to solve the sea level equation
-%       The default Lsle is 96.
-%       Data type: [NUMERIC]
-%   GiaModel - Name of GIA model
-%       The default GIA model is 'ice6gd'.
-%       Data type: CHAR
-%   OceanDomain - Ocean domain
-%       The input format should be whatever KERNELCP_NEW accepts, e.g. a
-%       GeoDomain object.
-%       The default ocean domain is the global ocean (ALLOCEANS) with a
-%       0.5° buffer.
-%   IncludeC20 - Whether to also recompute C20
-%       The default option is false, as C20 is usually replaced with SLR
-%       values.
-%       Data type: LOGICAL
-%   Method - Method to solve the sea level equation
-%       - 'fingerprint': Solve the sea level equation using the fingerprint
-%           method (see SOLVESLE).
-%       - 'uniform': Assume a uniform barystatic load over the ocean
-%           domain.
-%       The default method is 'fingerprint'.
-%       Data type: CHAR
-%   Unit - Unit of the output
-%       - 'GRAV': Surface gravity (this is POT in SLEPIAN_ALPHA).
-%       - 'POT': Geopotential field (surface gravity * equatorial radius).
-%       - 'SD': Surface mass density.
-%       The default field is 'SD'.
-%       Data type: CHAR
-%   Tolerance (name-value) - Absolute tolerance.
-%       Estimated coefficient and standard-deviation vectors are checked
-%       separately; every coefficient in every epoch must pass.
-%       Set 0 to use exactly MaxIter steps.
-%       Default absolute tolerance is 1e-6 kg/m^2 = 1e-6 mm.
-%   MaxIter (name-value) - Maximum number of the outer iteration.
-%       Default number of iterations is 100.
+%   Pcenter (optional) - GRACE data centre.
+%       Options: 'CSR', 'GFZ' or 'JPL'. Alternatively, pass the cell array
+%       product = {Pcenter, Rlevel, Ldata} as the first argument.
+%       Default centre: 'CSR'.
+%   Rlevel (optional) - Release name.
+%       Options: 'RL04', 'RL05' or 'RL06'. Available data and corrections
+%       depend on the release.
+%       Default release level: 'RL06'.
+%   Ldata (optional) - Product bandwidth.
+%       Default bandwidth: 60.
+%   Ltruncation (optional) - Input truncation degree.
+%       Default truncation: Ldata (no truncation).
+%   Lsle (optional) - SLE bandwidth.
+%       Default bandwidth: 96.
+%   GiaModel (optional) - GIA model name.
+%       Default model: 'ice6gd'.
+%   OceanDomain (optional) - GeoDomain used for the ocean constraint.
+%       Default domain: GeoDomain('alloceans', "Buffer", 0.5).
+%   IncludeC20 (name-value) - Also estimate C20.
+%       Default option: false.
+%   IncludeC30 (name-value) - Also estimate C30.
+%       Default option: false.
+%   IncludeC21S21 (name-value) - Also estimate C21 and S21 jointly.
+%       Scalar logical.
+%       Default option: false.
+%   Method (name-value) - Method used for the ocean constraint.
+%       'fingerprint': use SOLVESLE; 'uniform': use a uniform ocean load.
+%       Default method: 'fingerprint'.
+%   TimeRange (name-value) - Inclusive start and end dates for the output.
+%       Size: (1, 2) or (2, 1).
+%       Default range: [] (all dates).
+%   Unit (name-value) - Output coefficient unit.
+%       'SD': surface mass density in kg/m^2, equivalent to mm of fresh
+%       water. 'GRAV' and 'POT' follow the CONVERTGRAVITY conventions.
+%       Default unit: 'SD'.
+%   Tolerance (name-value) - Outer absolute tolerance.
+%       Checks coefficients and standard deviations at every epoch.
+%       Set 0 for exactly MaxIter steps.
+%       Unit: kg/m^2.
+%       Default tolerance: 1e-6.
+%   MaxIter (name-value) - Maximum outer iterations.
+%       Default iteration limit: 100.
 %   SleTolerance (name-value) - Inner SLE absolute tolerance.
-%       Set 0 to use exactly SleMaxIter steps.
-%       Default absolute tolerance is 1e-6 mm.
-%   SleMaxIter (name-value) - Maximum number of inner SLE iterations.
-%       Default number of iterations is 100.
-%   ForceNew - Logical flag to force reprocess of the data
-%       The default option is false.
-%       Data type: LOGICAL
-%	SaveData - Logical flag to save the data
-%		- true: Save the data to disk.
-%		- false: Do not save the data to disk.
-%		The default option is true.
-%		Data types: LOGICAL
-%	BeQuiet - Logical flag to print messages
-%		- true: Suppress all messages.
-%		- false: Print all messages (usually for debugging).
-%		The default option is false.
-%		Data types: LOGICAL
+%       Set 0 for exactly SleMaxIter steps.
+%       Unit: m.
+%       Default tolerance: 1e-9.
+%   SleMaxIter (name-value) - Maximum inner SLE iterations.
+%       Default iteration limit: 100.
+%   ForceNew (name-value) - Whether to bypass the coefficient cache.
+%       Default option: false.
+%   SaveData (name-value) - Whether to save computed coefficients.
+%       Default option: true.
+%   BeQuiet (name-value) - Whether to report progress.
+%       false: messages and waitbar; 0.5: messages only; true: silent.
+%       Default reporting level: 0.5.
 %
 % Output arguments
-%   coeffs - C10, C11, S11 (and maybe C20) surface mass density
-%       coefficients
-%   dates - dates of the coefficients
-%       In DATETIME format.
-%   gracePlmt - GRACE SH coefficients with the recomputed coefficients
+%   coeffs - Estimated coefficients.
+%       Column order: C10, C11, S11, optional C20, optional C30, then
+%       optional C21, S21. N is the number of dates and
+%       K = 3 + IncludeC20 + IncludeC30 + 2 * IncludeC21S21.
+%       Size: (N, K).
+%       Unit: selected Unit; 'SD' uses kg/m^2.
+%   coeffStds - Formal standard deviations.
+%       Uses the same coefficient order as coeffs. GIA uncertainty is
+%       not included.
+%       Size: (N, K).
+%       Unit: same as coeffs.
+%   dates - Coefficient epochs as a datetime column vector.
+%       Size: (N, 1).
+%   gracePlmt - GRACE field with the estimated coefficients inserted.
+%       The four columns are degree, order, cosine and sine coefficients.
+%       Uses the GRACE reader's epoch order; coeffs, coeffStds and dates
+%       retain the solved epoch order. Every GRACE epoch must have an estimate.
+%       Size: (N, addmup(Ldata), 4).
+%       Unit: selected Unit for coefficient columns.
+%   coeffLocs - Locations corresponding to columns of coeffs.
+%       Each row is [lmcosi row, cosine/sine selector (1/2)].
+%       Size: (K, 2).
 %
-% Example
-%   coeffs = SOLVEDEGREE1('CSR', 'RL06', 60, 96, ...
-%       'ice6gd', GeoDomain('alloceans', "Buffer", 2))
-%   coeffs = SOLVEDEGREE1('CSR', 'RL06', 45, 180, ...
-%       'ice6gd', GeoDomain('alloceans', "Buffer", 2), ...
-%       "IncludeC20", true)
-%
-% See also
-%   SOLVESLE, GRACE2PLMT
+% Notes
+%   GIA is removed for degrees >= 2 during estimation and restored for
+%   estimated coefficients of those degrees. Degree 1 remains GIA-free.
+%   Cached solutions are assumed converged at sufficiently small tolerances;
+%   iteration settings are not part of cache filenames. Use ForceNew=true
+%   for other settings and SaveData=false to preserve an existing cache.
 %
 % References
-%   Sun, Y., Ditmar, P., and Riva, R. E. M. (2015). Observed changes
-%       in the Earth’s dynamic oblateness from GRACE data and
-%       geophysical models. Journal of Geodesy, 90(1):81-89. doi:
-%       10.1007/s00190-015-0852-y.
-%   Sun, Y., Riva, R. E. M., and Ditmar, P. (2016). Optimizing
-%       estimates of annual variations and trends in geocenter
-%       motion and J2  from a combination of GRACE data and
-%       geophysical models. Journal of Geophysical Research: Solid
-%       Earth, 121(11):8352-8370. doi: 10.1002/2016JB013073.
+%   Sun, Y, Ditmar, P, and Riva, REM. (2015). Observed changes
+%       in the Earth's dynamic oblateness from GRACE data and geophysical
+%       models. Journal of Geodesy, 90:81-89. doi: 10.1007/s00190-015-0852-y.
+%   Sun, Y, Riva, REM, and Ditmar, P. (2016). Optimizing estimates
+%       of annual variations and trends in geocenter motion and J2 from a
+%       combination of GRACE data and geophysical models. Journal of
+%       Geophysical Research: Solid Earth, 121(11):8352-8370.
+%       doi: 10.1002/2016JB013073.
 %
-% Author
+% See also
+%   GRACE2PLMT_NEW, GRACE2FINGERPRINT, SOLVESLE
+%
+% Created by
 %   2025/03/18, En-Chi Lee (williameclee@arizona.edu)
 %
-% Last modified by
-%   2026/10/25, En-Chi Lee (williameclee@arizona.edu)
+% Last modified
+%   2026/10/26, En-Chi Lee (williameclee@arizona.edu)
 
 function varargout = solvedegree1(varargin)
     %% Initialisation
     % Parse inputs
-    [pcenter, rlevel, Ldata, Ltruncation, Lsle, giaModel, oceanDomain, ...
-         includeC20, includeC30, method, timelim, unit, ...
-         forceNew, saveData, beQuiet, onlyId, callChain, intpOpts] = ...
+    [prod, Lused, Lsle, giaMdl, ocnDom, ...
+         inclC20, inclC30, inclCS21, mthd, timelim, unit, iterOpts, ...
+         forceNew, saveData, beQuiet, callChain] = ...
         parseinputs(varargin);
 
-    [dataPath, ~, outputId] = ...
-        getoutputfile(pcenter, rlevel, Ldata, giaModel, ...
-        includeC20, includeC30, Ltruncation, Lsle, oceanDomain, method, intpOpts);
-
-    if onlyId
-        varargout = {outputId};
-        return
-    end
+    dataPath = getoutputfile(prod, giaMdl, inclC20, inclC30, inclCS21, Lused, Lsle, ocnDom, mthd);
 
     vars = {'coeffs', 'coeffStds', 'dates'};
 
@@ -148,40 +134,41 @@ function varargout = solvedegree1(varargin)
         data = load(dataPath, vars{:});
 
         if beQuiet <= 1
-            fprintf('[ULMO>%s] Loaded <a href="matlab: fprintf(''%s\\n'');open(''%s'')">recomputed degree-1 data</a>.\n', ...
-                callchaintext(callChain), dataPath, dataPath);
+            fprintf('[ULMO>%s] Loaded %s.\n', ...
+                callchaintext(callChain), filehref(dataPath, 'recomputed degree-1 data'));
         end
 
-        varargout = formatoutput(data.coeffs, data.coeffStds, data.dates, timelim, unit, nargout, [includeC20, includeC30], ...
-            {pcenter, rlevel, Ldata}, beQuiet);
+        varargout = formatoutput(data.coeffs, data.coeffStds, data.dates, ...
+            timelim, unit, nargout, [inclC20, inclC30, inclCS21], ...
+            prod, beQuiet);
 
         return
 
     end
 
     [coeffs, coeffStds, dates] = ...
-        solvedegree1Core(pcenter, rlevel, Ldata, Ltruncation, Lsle, ...
-        giaModel, includeC20, includeC30, oceanDomain, method, beQuiet, intpOpts);
+        solvedegree1Core(prod, Lused, Lsle, ...
+        giaMdl, inclC20, inclC30, inclCS21, ocnDom, mthd, beQuiet, iterOpts);
 
     if saveData
         save(dataPath, 'coeffs', 'coeffStds', 'dates')
 
         if beQuiet <= 1
-            fprintf('[ULMO>%s] Saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">recomputed degree-1 data</a>.\n', ...
-                callchaintext(callChain), dataPath, dataPath);
+            fprintf('[ULMO>%s] Saved %s.\n', ...
+                callchaintext(callChain), filehref(dataPath, 'recomputed degree-1 data'));
         end
 
     end
 
-    varargout = formatoutput(coeffs, coeffStds, dates, timelim, unit, nargout, [includeC20, includeC30], ...
-        {pcenter, rlevel, Ldata}, beQuiet);
+    varargout = formatoutput(coeffs, coeffStds, dates, timelim, unit, nargout, ...
+        [inclC20, inclC30, inclCS21], prod, beQuiet);
 
 end
 
 %% Subfunctions
 % Heart of the programme
 function [coeffs, coeffStds, dates] = ...
-        solvedegree1Core(pcenter, rlevel, Ldata, Ltruncation, Lsle, giaModel, includeC20, includeC30, oceanDomain, method, beQuiet, iterOpts)
+        solvedegree1Core(prod, Lused, Lsle, giaMdl, inclC20, inclC30, inclC21S21, ocnDom, mthd, beQuiet, iterOpts)
     %% Loading data
     if ~beQuiet
         wbar = waitbar(0, 'Loading GRACE data', ...
@@ -189,18 +176,18 @@ function [coeffs, coeffStds, dates] = ...
         cleanup = onCleanup(@() deleteWaitbar(wbar));
     end
 
-    [gracePlmt, graceStdPlmt, dates] = grace2plmt_new(pcenter, rlevel, Ldata, ...
+    [sdPlmt, sdStdPlmt, dates] = grace2plmt_new(prod{:}, ...
         "Unit", 'SD', "OutputFormat", 'timefirst', "TimeFormat", 'datetime', ...
         "BeQuiet", beQuiet);
-    gracePlmt = ensureplmdegree(gracePlmt, Ltruncation);
-    gracePlmt = ensureplmdegree(gracePlmt, Lsle);
-    graceStdPlmt = ensureplmdegree(graceStdPlmt, Ltruncation);
-    graceStdPlmt = ensureplmdegree(graceStdPlmt, Lsle);
+    sdPlmt = ensureplmdegree(sdPlmt, Lused);
+    sdPlmt = ensureplmdegree(sdPlmt, Lsle);
+    sdStdPlmt = ensureplmdegree(sdStdPlmt, Lused);
+    sdStdPlmt = ensureplmdegree(sdStdPlmt, Lsle);
 
     % Remove GIA signal for l >= 2 (Sun et al., 2016)
-    giaPlmt = gia2plmt(dates, giaModel, "L", Lsle, ...
+    giaPlmt = gia2plmt(dates, giaMdl, "L", Lsle, ...
         "OutputFormat", 'timefirst', "BeQuiet", beQuiet);
-    gracePlmt(:, 4:end, 3:4) = gracePlmt(:, 4:end, 3:4) - giaPlmt(:, 4:end, 3:4);
+    sdPlmt(:, 4:end, 3:4) = sdPlmt(:, 4:end, 3:4) - giaPlmt(:, 4:end, 3:4);
     % Ignore STD of GIA for now
 
     %% Preparing/preallocating variables
@@ -213,36 +200,25 @@ function [coeffs, coeffStds, dates] = ...
 
     end
 
-    gracePlmt = permute(gracePlmt, [2, 3, 1]); % timefirst -> traditional
-    graceStdPlmt = permute(graceStdPlmt, [2, 3, 1]); % timefirst -> traditional
+    sdPlmt = permute(sdPlmt, [2, 3, 1]); % timefirst -> traditional
+    sdStdPlmt = permute(sdStdPlmt, [2, 3, 1]); % timefirst -> traditional
 
-    % Whether to also reestimate C20 and C30
-    nCoeffs = 3 + includeC20 + includeC30; % C10, C11, S11, (C20), (C30)
+    % Number of simultaneously estimated low-degree coefficients
+    nCoeffs = 3 + inclC20 + inclC30 + 2 * inclC21S21; % Degree 1 and optional degree-2/3 terms
 
     % Precompute kernels
-    coeffLocs = [2, 1; 3, 1; 3, 2];
-    coeffIds = [2, 3, 4];
-
-    if includeC20
-        coeffLocs = [coeffLocs; 4, 1];
-        coeffIds = [coeffIds, 5];
-    end
-
-    if includeC30
-        coeffLocs = [coeffLocs; 7, 1];
-        coeffIds = [coeffIds, 10];
-    end
+    [coeffLocs, coeffIds] = lowdegreecoefficients(inclC20, inclC30, inclC21S21);
 
     % Note: Converting to SINGLE does not work because it is not compatible with the sparse SLE kernel
-    oceanKernelSle = kernelcp_new(Lsle, oceanDomain, ...
+    ocnKernelSle = kernelcp_new(Lsle, ocnDom, ...
         "BeQuiet", beQuiet);
-    landKernelSle = eye(size(oceanKernelSle)) - oceanKernelSle;
+    lndKernelSle = eye(size(ocnKernelSle)) - ocnKernelSle;
     coeffsKernel = nan([nCoeffs, nCoeffs]);
 
     for iCoeff = 1:nCoeffs
 
         for jCoeff = 1:nCoeffs
-            coeffsKernel(iCoeff, jCoeff) = oceanKernelSle(coeffIds(iCoeff), coeffIds(jCoeff));
+            coeffsKernel(iCoeff, jCoeff) = ocnKernelSle(coeffIds(iCoeff), coeffIds(jCoeff));
         end
 
     end
@@ -250,21 +226,21 @@ function [coeffs, coeffStds, dates] = ...
     kernelOrder = kernelorder(Lsle);
 
     % Set unknown coefficients to 0
-    gracePlmt = putcoeffs(gracePlmt, 0, coeffLocs);
-    graceStdPlmt = putcoeffs(graceStdPlmt, 0, coeffLocs);
-    oceanCoeffsNoUnkown = extractcoeffs( ...
-        localise(gracePlmt, "L", Lsle, "K", oceanKernelSle), ...
+    sdPlmt = putcoeffs(sdPlmt, 0, coeffLocs);
+    sdStdPlmt = putcoeffs(sdStdPlmt, 0, coeffLocs);
+    knownOcnSdCoeffs = extractcoeffs( ...
+        localise(sdPlmt, "L", Lsle, "K", ocnKernelSle), ...
         coeffLocs);
-    oceanCoeffStdsNoUnkown = extractcoeffs( ...
-        localise(graceStdPlmt, "L", Lsle, "K", oceanKernelSle, "IsError", true), ...
+    knownOcnSdCoeffStds = extractcoeffs( ...
+        localise(sdStdPlmt, "L", Lsle, "K", ocnKernelSle, "IsError", true), ...
         coeffLocs);
 
     %% Solving the degree-1 coefficients
     maxIter = iterOpts.MaxIter;
     tol = iterOpts.Tolerance;
     converged = false;
-    coeffs = extractcoeffs(gracePlmt, coeffLocs);
-    coeffStds = extractcoeffs(graceStdPlmt, coeffLocs);
+    coeffs = extractcoeffs(sdPlmt, coeffLocs);
+    coeffStds = extractcoeffs(sdStdPlmt, coeffLocs);
 
     for iIter = 1:maxIter
         prevCoeffs = coeffs;
@@ -280,35 +256,35 @@ function [coeffs, coeffStds, dates] = ...
 
         end
 
-        landPlmt = localise(gracePlmt, "L", Lsle, "K", landKernelSle);
-        landStdPlmt = localise(graceStdPlmt, "L", Lsle, "K", landKernelSle, "IsError", true);
+        lndPlmt = localise(sdPlmt, "L", Lsle, "K", lndKernelSle);
+        lndStdPlmt = localise(sdStdPlmt, "L", Lsle, "K", lndKernelSle, "IsError", true);
 
-        switch method
+        switch mthd
             case 'fingerprint'
-                [oceanPlmt, oceanStdPlmt] = ...
-                    solvesle(landPlmt, landStdPlmt, Lsle, oceanDomain, ...
-                    "OceanKernel", oceanKernelSle, "KernelOrder", kernelOrder, ...
-                    "InitialRSL", gracePlmt / 1000, ... % kg/m^2 -> m
+                [ocnPlmt, ocnStdPlmt] = ...
+                    solvesle(lndPlmt, lndStdPlmt, Lsle, ocnDom, ...
+                    "OceanKernel", ocnKernelSle, "KernelOrder", kernelOrder, ...
+                    "InitialRSL", sdPlmt / 1000, ... % kg/m^2 -> m
                     "RotationFeedback", true, "MaxIter", iterOpts.SleMaxIter, ...
                     "Tolerance", iterOpts.SleTolerance, "BeQuiet", true);
-                oceanPlmt = localise(oceanPlmt, "L", Lsle, "K", oceanKernelSle);
-                oceanStdPlmt = localise(oceanStdPlmt, "L", Lsle, "K", oceanKernelSle, "IsError", true);
-                oceanCoeffs = extractcoeffs(oceanPlmt, coeffLocs);
-                oceanCoeffStds = extractcoeffs(oceanStdPlmt, coeffLocs);
+                ocnPlmt = localise(ocnPlmt, "L", Lsle, "K", ocnKernelSle);
+                ocnStdPlmt = localise(ocnStdPlmt, "L", Lsle, "K", ocnKernelSle, "IsError", true);
+                ocnCoeffs = extractcoeffs(ocnPlmt, coeffLocs);
+                ocnCoeffStds = extractcoeffs(ocnStdPlmt, coeffLocs);
             case 'uniform'
-                oceanArea = oceanKernelSle(1, 1);
-                barystaticLoad = squeeze(-landPlmt(1, 3, :) / oceanArea);
-                oceanCoeffs = barystaticLoad' .* oceanKernelSle(coeffIds, 1);
-                barystaticLoadStd = squeeze(-landStdPlmt(1, 3, :) / oceanArea);
-                oceanCoeffStds = barystaticLoadStd' .* oceanKernelSle(coeffIds, 1);
+                ocnArea = ocnKernelSle(1, 1);
+                eustatic = squeeze(-lndPlmt(1, 3, :) / ocnArea);
+                ocnCoeffs = eustatic' .* ocnKernelSle(coeffIds, 1);
+                eustaticStd = squeeze(-lndStdPlmt(1, 3, :) / ocnArea);
+                ocnCoeffStds = eustaticStd' .* ocnKernelSle(coeffIds, 1);
         end
 
-        coeffs = coeffsKernel \ (oceanCoeffs - oceanCoeffsNoUnkown);
-        gracePlmt = putcoeffs(gracePlmt, coeffs, coeffLocs);
+        coeffs = coeffsKernel \ (ocnCoeffs - knownOcnSdCoeffs);
+        sdPlmt = putcoeffs(sdPlmt, coeffs, coeffLocs);
         % STD
         coeffStds = sqrt((coeffsKernel \ eye(nCoeffs)) .^ 2 * ...
-            (oceanCoeffStds .^ 2 + oceanCoeffStdsNoUnkown .^ 2));
-        graceStdPlmt = putcoeffs(graceStdPlmt, coeffStds, coeffLocs);
+            (ocnCoeffStds .^ 2 + knownOcnSdCoeffStds .^ 2));
+        sdStdPlmt = putcoeffs(sdStdPlmt, coeffStds, coeffLocs);
 
         if any(~isfinite(coeffs), 'all') || any(~isfinite(coeffStds), 'all')
             error('ULMO:solvedegree1:NonFiniteIterate', ...
@@ -339,18 +315,10 @@ function [coeffs, coeffStds, dates] = ...
         waitbar(1, wbar, 'Postprocessing results');
     end
 
-    % Restore GIA signal for C20
-    if includeC20 && includeC30
-        coeffs(:, 4) = coeffs(:, 4) + ...
-            squeeze(giaPlmt(:, 4, 3));
-        coeffs(:, 5) = coeffs(:, 5) + ...
-            squeeze(giaPlmt(:, 7, 3));
-    elseif includeC20
-        coeffs(:, 4) = coeffs(:, 4) + ...
-            squeeze(giaPlmt(:, 4, 3));
-    elseif includeC30
-        coeffs(:, 5) = coeffs(:, 5) + ...
-            squeeze(giaPlmt(:, 7, 3));
+    % Restore the GIA signal for every estimated coefficient of degree >= 2.
+    for iCoeff = 4:nCoeffs
+        coeffs(:, iCoeff) = coeffs(:, iCoeff) + ...
+            squeeze(giaPlmt(:, coeffLocs(iCoeff, 1), 2 + coeffLocs(iCoeff, 2)));
     end
 
 end
@@ -388,6 +356,7 @@ function varargout = parseinputs(inputs)
         @(x) islogical(x) || isnumeric(x));
     addOptional(ip, 'IncludeC30', dfOpt.IncludeC30, ...
         @(x) islogical(x) || isnumeric(x));
+    addParameter(ip, 'IncludeC21S21', false, @(x) islogical(x) && isscalar(x));
     addOptional(ip, 'Method', dfOpt.Method, ...
         @(x) ischar(validatestring(x, {'fingerprint', 'uniform'})));
     addOptional(ip, 'TimeRange', [], ...
@@ -406,12 +375,10 @@ function varargout = parseinputs(inputs)
         @(x) (isnumeric(x) || islogical(x)) && isscalar(x));
     addParameter(ip, 'BeQuiet', 0.5, ...
         @(x) (isnumeric(x) || islogical(x)) && isscalar(x));
-    addParameter(ip, 'OnlyId', false, ...
-        @(x) (isnumeric(x) || islogical(x)) && isscalar(x));
     addParameter(ip, 'CallChain', {}, @iscell);
 
     if ~isempty(inputs) && iscell(inputs{1})
-        inputs = [inputs{1}{:}, inputs(2:end)];
+        inputs = [inputs{1}, inputs(2:end)];
     end
 
     parse(ip, inputs{:});
@@ -419,108 +386,92 @@ function varargout = parseinputs(inputs)
     pcenter = ip.Results.Pcenter;
     rlevel = ip.Results.Rlevel;
     Ldata = ip.Results.Ldata;
-    Ltruncation = conddefval(ip.Results.Ltruncation, Ldata);
+    Lused = conddefval(ip.Results.Ltruncation, Ldata);
     Lsle = ip.Results.Lsle;
-    giaModel = ip.Results.GiaModel;
-    oceanDomain = ip.Results.OceanDomain;
-    includeC20 = logical(ip.Results.IncludeC20);
-    includeC30 = logical(ip.Results.IncludeC30);
-    method = ip.Results.Method;
+    giaMdl = ip.Results.GiaModel;
+    ocnDom = ip.Results.OceanDomain;
+    inclC20 = logical(ip.Results.IncludeC20);
+    inclC30 = logical(ip.Results.IncludeC30);
+    inclC21S21 = ip.Results.IncludeC21S21;
+    mthd = ip.Results.Method;
     timelim = ip.Results.TimeRange;
     unit = ip.Results.Unit;
     forceNew = logical(ip.Results.ForceNew);
     saveData = logical(ip.Results.SaveData);
     beQuiet = double(ip.Results.BeQuiet) * 2;
-    onlyId = logical(ip.Results.OnlyId);
     callChain = [ip.Results.CallChain, {mfilename}];
 
     iterOpts = struct('MaxIter', ip.Results.MaxIter, ...
         'Tolerance', ip.Results.Tolerance, 'SleMaxIter', ip.Results.SleMaxIter, ...
         'SleTolerance', ip.Results.SleTolerance);
 
-    if ~isempty(regexp(lower(giaModel), '^ice[-]?6g[_-]?d$', 'once'))
-        giaModel = 'ICE6GD';
-    elseif contains(lower(giaModel), 'caron')
-        giaModel = replace(giaModel, 'caron', 'Caron');
-    elseif contains(lower(giaModel), 'paulson')
-        giaModel = replace(giaModel, 'paulson', 'Paulson');
+    if ~isempty(regexp(lower(giaMdl), '^ice[-]?6g[_-]?d$', 'once'))
+        giaMdl = 'ICE6GD';
+    elseif contains(lower(giaMdl), 'caron')
+        giaMdl = replace(giaMdl, 'caron', 'Caron');
+    elseif contains(lower(giaMdl), 'paulson')
+        giaMdl = replace(giaMdl, 'paulson', 'Paulson');
     end
 
     varargout = ...
-        {pcenter, rlevel, Ldata, Ltruncation, Lsle, giaModel, oceanDomain, ...
-         includeC20, includeC30, method, timelim, unit, ...
-         forceNew, saveData, beQuiet, onlyId, callChain, iterOpts};
+        {{pcenter, rlevel, Ldata}, Lused, Lsle, giaMdl, ocnDom, ...
+          inclC20, inclC30, inclC21S21, mthd, timelim, unit, iterOpts, ...
+          forceNew, saveData, beQuiet, callChain};
 end
 
 % Get the input and output file names
-function [outputPath, outputFile, deg1Id] = ...
-        getoutputfile(pcenter, rlevel, Ldata, giaModel, ...
-        includeC20, includeC30, Ltruncation, Lsle, oceanDomain, method, iterOpts)
-    outputFolder = fullfile(getenv('GRACEDATA'), 'Degree1', 'new');
+function outPath = ...
+        getoutputfile(prod, giaMdl, ...
+        inclC20, inclC30, inclC21S21, Lused, Lsle, ocnDom, mthd)
+    outFolder = fullfile(getenv('GRACEDATA'), 'Degree1', 'new');
 
-    if ~exist(outputFolder, 'dir')
-        mkdir(outputFolder);
+    if ~exist(outFolder, 'dir')
+        mkdir(outFolder);
     end
 
-    includeC20Flag = '';
+    moreCoeffFlag = '';
 
-    if includeC20 && includeC30
-        includeC20Flag = '-WC2030';
-    elseif includeC20
-        includeC20Flag = '-WC20';
-    elseif includeC30
-        includeC20Flag = '-WC30';
+    if inclC20
+        moreCoeffFlag = [moreCoeffFlag, 'C20'];
     end
 
-    switch method
+    if inclC30
+        moreCoeffFlag = [moreCoeffFlag, 'C30'];
+    end
+
+    if inclC21S21
+        moreCoeffFlag = [moreCoeffFlag, 'C21S21'];
+    end
+
+    if ~isempty(moreCoeffFlag)
+        moreCoeffFlag = ['-W', moreCoeffFlag];
+    end
+
+    switch mthd
         case 'fingerprint'
-            methodFlag = '';
+            mthdFlag = '';
         case 'uniform'
-            methodFlag = '-uniform';
+            mthdFlag = '-uniform';
     end
 
-    productId = sprintf('%s%s%d', pcenter, rlevel, Ldata);
-    deg1Id = sprintf('%s%s-Ld%d_Ls%d-%s%s', ...
-        giaModel, includeC20Flag, ...
-        Ltruncation, Lsle, oceanDomain.Id, methodFlag);
+    prodFlag = sprintf('%s%s%d', prod{:});
+    deg1Flag = sprintf('%s%s-Ld%d_Ls%d-%s%s', ...
+        giaMdl, moreCoeffFlag, ...
+        Lused, Lsle, ocnDom.Id, mthdFlag);
+    outFile = sprintf('%s_%s-SD.mat', prodFlag, deg1Flag);
 
-    % Separate zero-start adaptive solutions from legacy and other tolerances.
-    deg1Id = sprintf('%s-zero-absolute-v3-t%.17g-n%d-st%.17g-sn%d', deg1Id, ...
-        iterOpts.Tolerance, iterOpts.MaxIter, ...
-        iterOpts.SleTolerance, iterOpts.SleMaxIter);
-    outputFile = sprintf('%s_%s-SD.mat', productId, deg1Id);
-
-    outputPath = fullfile(outputFolder, outputFile);
+    outPath = fullfile(outFolder, outFile);
 end
 
 % Format the output
-function output = formatoutput(coeffs, coeffStds, dates, timelim, unit, nOut, includeC2030, product, beQuiet)
-    coeffs(:, 1:3) = convertgravity(coeffs(:, 1:3), 'SD', unit, ...
-        "InputFormat", 'L', "L", 1);
-    coeffStds(:, 1:3) = convertgravity(coeffStds(:, 1:3), 'SD', unit, ...
-        "InputFormat", 'L', "L", 1);
+function out = formatoutput(coeffs, coeffStds, dates, timelim, unit, nOut, includeC2030, product, beQuiet)
+    [coeffLocs, ~, degrees] = lowdegreecoefficients(includeC2030(1), includeC2030(2), includeC2030(3));
 
-    if size(coeffs, 2) == 4
-
-        if includeC2030(1)
-            L = 2;
-        else
-            L = 3;
-        end
-
-        coeffs(:, 4) = convertgravity(coeffs(:, 4), 'SD', unit, ...
-            "InputFormat", 'L', "L", L);
-        coeffStds(:, 4) = convertgravity(coeffStds(:, 4), 'SD', unit, ...
-            "InputFormat", 'L', "L", L);
-    elseif size(coeffs, 2) == 5
-        coeffs(:, 4) = convertgravity(coeffs(:, 4), 'SD', unit, ...
-            "InputFormat", 'L', "L", 2);
-        coeffStds(:, 4) = convertgravity(coeffStds(:, 4), 'SD', unit, ...
-            "InputFormat", 'L', "L", 2);
-        coeffs(:, 5) = convertgravity(coeffs(:, 5), 'SD', unit, ...
-            "InputFormat", 'L', "L", 3);
-        coeffStds(:, 5) = convertgravity(coeffStds(:, 5), 'SD', unit, ...
-            "InputFormat", 'L', "L", 3);
+    for iCoeff = 1:numel(degrees)
+        coeffs(:, iCoeff) = convertgravity(coeffs(:, iCoeff), 'SD', unit, ...
+            "InputFormat", 'L', "L", degrees(iCoeff));
+        coeffStds(:, iCoeff) = convertgravity(coeffStds(:, iCoeff), 'SD', unit, ...
+            "InputFormat", 'L', "L", degrees(iCoeff));
     end
 
     if ~isempty(timelim)
@@ -531,23 +482,23 @@ function output = formatoutput(coeffs, coeffStds, dates, timelim, unit, nOut, in
     end
 
     if nOut <= 3
-        output = {coeffs, coeffStds, dates};
+        out = {coeffs, coeffStds, dates};
         return
     end
 
-    [gracePlmt, ~, dates] = grace2plmt_new(product, ...
+    [gracePlmt, ~, graceDates] = grace2plmt_new(product, ...
         "Unit", unit, "TimeRange", timelim, "OutputFormat", 'timefirst', "TimeFormat", 'datetime', ...
         "BeQuiet", beQuiet);
 
-    gracePlmt(:, 2, 3) = coeffs(:, 1);
-    gracePlmt(:, 3, 3) = coeffs(:, 2);
-    gracePlmt(:, 3, 4) = coeffs(:, 3);
+    [matched, dateIdx] = ismember(graceDates, dates);
+    assert(all(matched), 'ULMO:MissingLowDegreeDates', ...
+    'Joint coefficient estimates do not cover all GRACE dates.');
 
-    if size(coeffs, 2) == 4
-        gracePlmt(:, 4, 3) = coeffs(:, 4);
+    for iCoeff = 1:size(coeffLocs, 1)
+        gracePlmt(:, coeffLocs(iCoeff, 1), 2 + coeffLocs(iCoeff, 2)) = coeffs(dateIdx, iCoeff);
     end
 
-    output = {coeffs, coeffStds, dates, gracePlmt};
+    out = {coeffs, coeffStds, dates, gracePlmt, coeffLocs};
 
 end
 

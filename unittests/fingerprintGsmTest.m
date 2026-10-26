@@ -1,8 +1,11 @@
-%% fingerprintGsmTest - Checks GSM forcing.
+%% fingerprintGsmTest - Checks GIA-corrected GSM forcing.
 % Uses synthetic readers and an SLE boundary observer; it does not test SLE physics.
 %
 % Created by
 %   2026/10/25, En-Chi Lee (williameclee@gmail.com)
+%
+% Last modified
+%   2026/10/26, En-Chi Lee (williameclee@gmail.com)
 
 classdef fingerprintGsmTest < matlab.unittest.TestCase
 
@@ -45,6 +48,9 @@ classdef fingerprintGsmTest < matlab.unittest.TestCase
             global DEGREE1_CONVERGENCE_FIXTURE
             DEGREE1_CONVERGENCE_FIXTURE = struct( ...
                 'x', reshape(sin(1:27), 9, 3), 'sigma', ones(9, 3) * .1);
+            % Include nonzero low-degree GIA to catch accidental correction of degree 1.
+            DEGREE1_CONVERGENCE_FIXTURE.gia = zeros(3, 6, 4);
+            DEGREE1_CONVERGENCE_FIXTURE.gia(:, :, 3:4) = reshape(1:36, 3, 6, 2) / 100;
             testCase.assertEqual(which('grace2fingerprint'), fullfile(repo, 'grace2fingerprint.m'));
         end
 
@@ -52,7 +58,54 @@ classdef fingerprintGsmTest < matlab.unittest.TestCase
 
     methods (Test)
 
-        function preservesGsmForcing(testCase, regional)
+        function forwardsJointOptions(testCase, redoDegree1)
+            global DEGREE1_CONVERGENCE_FIXTURE
+            runFingerprint('RecomputeDegree1', redoDegree1, ...
+                'RecomputeC21S21', true, 'SaveData', false);
+            args = DEGREE1_CONVERGENCE_FIXTURE.degree1Args;
+            testCase.assertClass(args, 'cell');
+            opts = struct(args{:});
+            testCase.verifyTrue(opts.IncludeC21S21);
+            testCase.verifyEqual(opts.Lsle, 2);
+            testCase.verifyEqual(opts.GIAModel, 'synthetic');
+            testCase.verifyEqual(opts.Unit, 'SD');
+            testCase.verifyEqual(opts.OceanDomain.Id, GeoDomain('alloceans').Id);
+        end
+
+        function separatesAndReusesFingerprintCaches(testCase)
+            global DEGREE1_CONVERGENCE_FIXTURE
+            % Give each mode distinct forcing, then prove its own cache is reused.
+            modes = {{'RecomputeDegree1', false}, {'RecomputeDegree1', true}, ...
+                         {'RecomputeC21S21', true}};
+            expected = cell(1, 3);
+            expectedStd = cell(1, 3);
+            pattern = fullfile(testCase.Folder, 'FINGERPRINT', '*.mat');
+
+            for k = 1:3
+                DEGREE1_CONVERGENCE_FIXTURE.x(:) = k;
+                [expected{k}, expectedStd{k}] = runFingerprint(modes{k}{:}, 'SaveData', true);
+                testCase.verifyNumElements(dir(pattern), k);
+                args = DEGREE1_CONVERGENCE_FIXTURE.degree1Args;
+                if k == 1
+                    testCase.verifyFalse(args);
+                else
+                    opts = struct(args{:});
+                    testCase.verifyEqual(opts.IncludeC21S21, k == 3);
+                end
+            end
+
+            reads = DEGREE1_CONVERGENCE_FIXTURE.readCount;
+            DEGREE1_CONVERGENCE_FIXTURE.x(:) = 999;
+            for k = 1:3
+                [actual, actualStd] = runFingerprint(modes{k}{:});
+                testCase.verifyEqual(actual, expected{k});
+                testCase.verifyEqual(actualStd, expectedStd{k});
+            end
+            testCase.verifyEqual(DEGREE1_CONVERGENCE_FIXTURE.readCount, reads);
+        end
+
+        function appliesGiaToHigherDegreeForcing(testCase, regional)
+            global DEGREE1_CONVERGENCE_FIXTURE
             args = {};
 
             if regional
@@ -60,7 +113,12 @@ classdef fingerprintGsmTest < matlab.unittest.TestCase
             end
 
             [actual, actualStd] = runFingerprint(args{:}, "SaveData", false);
-            [p, s] = grace2plmt_new();
+            [p, s, dates] = grace2plmt_new();
+            testCase.verifyEqual(DEGREE1_CONVERGENCE_FIXTURE.giaModel, 'synthetic');
+            testCase.verifyEqual(DEGREE1_CONVERGENCE_FIXTURE.giaDates, dates);
+            % Only degrees >= 2 are corrected; formal GRACE errors are unchanged.
+            p(:, 4:end, 3:4) = p(:, 4:end, 3:4) - ...
+                DEGREE1_CONVERGENCE_FIXTURE.gia(:, 4:end, 3:4);
             K = kernelcp_new();
 
             if ~regional
@@ -79,7 +137,7 @@ end
 
 function varargout = runFingerprint(varargin)
     [varargout{1:nargout}] = grace2fingerprint({'CSR', 'RL06', 2}, 2, ...
-        GeoDomain('alloceans'), "GIA", false, "RotationFeedback", false, ...
+        GeoDomain('alloceans'), "GIA", 'synthetic', "RotationFeedback", false, ...
         "OutputFormat", 'traditional', "TimeFormat", 'datetime', ...
         "BeQuiet", true, varargin{:});
 end
