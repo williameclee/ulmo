@@ -232,8 +232,8 @@ function [coeffs, coeffStds, dates] = ...
     sdPlmt = putcoeffs(sdPlmt, 0, coeffLocs);
     sdStdPlmt = putcoeffs(sdStdPlmt, 0, coeffLocs);
     % Only the jointly estimated coefficients enter the ocean constraint.
-    knownOcnSdCoeffs = coeffOcnKernel * packcoeffs(sdPlmt, kernelOrder);
-    knownOcnSdCoeffStds = sqrt(coeffOcnKernelSq * packcoeffs(sdStdPlmt, kernelOrder) .^ 2);
+    knownOcnCoeffs = coeffOcnKernel * packcoeffs(sdPlmt, kernelOrder);
+    knownOcnCoeffVars = coeffOcnKernelSq * packcoeffs(sdStdPlmt, kernelOrder) .^ 2;
 
     %% Solving the degree-1 coefficients
     maxIter = iterOpts.MaxIter;
@@ -268,20 +268,20 @@ function [coeffs, coeffStds, dates] = ...
                     "RotationFeedback", true, "MaxIter", iterOpts.SleMaxIter, ...
                     "Tolerance", iterOpts.SleTolerance, "BeQuiet", true);
                 ocnCoeffs = coeffOcnKernel * packcoeffs(ocnPlmt, kernelOrder);
-                ocnCoeffStds = sqrt(coeffOcnKernelSq * packcoeffs(ocnStdPlmt, kernelOrder) .^ 2);
+                ocnCoeffVars = coeffOcnKernelSq * packcoeffs(ocnStdPlmt, kernelOrder) .^ 2;
             case 'uniform'
                 ocnArea = ocnKernelSle(1, 1);
                 eustatic = squeeze(-lndPlmt(1, 3, :) / ocnArea);
                 ocnCoeffs = eustatic' .* ocnKernelSle(coeffIds, 1);
                 eustaticStd = squeeze(-lndStdPlmt(1, 3, :) / ocnArea);
-                ocnCoeffStds = eustaticStd' .* ocnKernelSle(coeffIds, 1);
+                ocnCoeffVars = (eustaticStd' .* ocnKernelSle(coeffIds, 1)) .^ 2;
         end
 
-        coeffs = coeffsKernel \ (ocnCoeffs - knownOcnSdCoeffs);
+        coeffs = coeffsKernel \ (ocnCoeffs - knownOcnCoeffs);
         sdPlmt = putcoeffs(sdPlmt, coeffs, coeffLocs);
         % STD
         coeffStds = sqrt((coeffsKernel \ eye(nCoeffs)) .^ 2 * ...
-            (ocnCoeffStds .^ 2 + knownOcnSdCoeffStds .^ 2));
+            (ocnCoeffVars + knownOcnCoeffVars));
         sdStdPlmt = putcoeffs(sdStdPlmt, coeffStds, coeffLocs);
 
         if any(~isfinite(coeffs), 'all') || any(~isfinite(coeffStds), 'all')
