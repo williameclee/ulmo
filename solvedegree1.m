@@ -441,18 +441,22 @@ function outPath = ...
         mkdir(outFolder);
     end
 
-    inclC20Flag = '';
+    moreCoeffFlag = '';
 
-    if inclC20 && inclC30
-        inclC20Flag = '-WC2030';
-    elseif inclC20
-        inclC20Flag = '-WC20';
-    elseif inclC30
-        inclC20Flag = '-WC30';
+    if inclC20
+        moreCoeffFlag = [moreCoeffFlag, 'C20'];
+    end
+
+    if inclC30
+        moreCoeffFlag = [moreCoeffFlag, 'C30'];
     end
 
     if inclC21S21
-        inclC20Flag = [inclC20Flag, '-WC21S21'];
+        moreCoeffFlag = [moreCoeffFlag, 'C21S21'];
+    end
+
+    if ~isempty(moreCoeffFlag)
+        moreCoeffFlag = ['-W', moreCoeffFlag];
     end
 
     switch mthd
@@ -464,7 +468,7 @@ function outPath = ...
 
     prodFlag = sprintf('%s%s%d', prod{:});
     deg1Flag = sprintf('%s%s-Ld%d_Ls%d-%s%s', ...
-        giaMdl, inclC20Flag, ...
+        giaMdl, moreCoeffFlag, ...
         Lused, Lsle, ocnDom.Id, mthdFlag);
     outFile = sprintf('%s_%s-SD.mat', prodFlag, deg1Flag);
 
