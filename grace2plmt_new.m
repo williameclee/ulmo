@@ -118,8 +118,8 @@ function [gracePlmt, graceStdPlmt, dates] = grace2plmt_new(varargin)
         load(outputPath, vars{:})
 
         if beQuiet <= 1
-            fprintf('[ULMO>%s] Loaded <a href="matlab: fprintf(''%s\\n'');open(''%s'')">GRACE data</a>.\n', ...
-                callchaintext(callChain), outputPath, outputPath);
+            fprintf('[ULMO>%s] Loaded %s.\n', ...
+                callchaintext(callChain), filehref(outputPath, 'GRACE data'));
         end
 
     else
@@ -133,8 +133,8 @@ function [gracePlmt, graceStdPlmt, dates] = grace2plmt_new(varargin)
                 vars{:}, 'gravityParam', 'equatorRadius');
 
             if beQuiet <= 1
-                fprintf('[ULMO>%s] Saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">GRACE data</a>.\n', ...
-                    callchaintext(callChain), outputPath, outputPath);
+                fprintf('[ULMO>%s] Saved %s.\n', ...
+                    callchaintext(callChain), filehref(outputPath, 'GRACE data'));
             end
 
         end
@@ -223,16 +223,22 @@ function [gracePlmt, graceStdPlmt, dates, gravityParam, equatorRadius] = ...
     c30corrFailedDates = [];
 
     %% Loop over the months
-    wbar = waitbar(0, 'Reading GRACE data', ...
-        "Name", upper(mfilename), "CreateCancelBtn", 'setappdata(gcbf,''canceling'',1)');
-    cleanup = onCleanup(@() deleteWaitbar(wbar));
+    if ~beQuiet
+        wbar = waitbar(0, 'Reading GRACE data', ...
+            "Name", upper(mfilename), "CreateCancelBtn", 'setappdata(gcbf,''canceling'',1)');
+        cleanup = onCleanup(@() deleteWaitbar(wbar));
+    end
 
     for iDate = 1:nDates
-        waitbar(iDate / nDates, wbar, ...
-            sprintf('Reading GRACE data (%d/%d)', iDate, nDates));
 
-        if getappdata(wbar, 'canceling')
-            error('ULMO:ProcessCancelledByUser', 'GRACE input file reading cancelled');
+        if ~beQuiet
+            waitbar(iDate / nDates, wbar, ...
+                sprintf('Reading GRACE data (%d/%d)', iDate, nDates));
+
+            if getappdata(wbar, 'canceling')
+                error('ULMO:ProcessCancelledByUser', 'GRACE input file reading cancelled');
+            end
+
         end
 
         % load gravity coefficients
@@ -291,19 +297,19 @@ function [gracePlmt, graceStdPlmt, dates, gravityParam, equatorRadius] = ...
     if ~beQuiet
 
         if ~isempty(deg1corrFailedDates)
-            warning(sprintf('%s:NoTNReplacementAvailable', upper(mfilename)), ...
+            warning('ULMO:grace2plmt:NoTNReplacementAvailable', ...
                 'No degree 1 replacement for the following dates:\n%s', ...
                 strjoin(string(deg1corrFailedDates), ', '));
         end
 
         if ~isempty(c20corrFailedDates)
-            warning(sprintf('%s:NoTNReplacementAvailable', upper(mfilename)), ...
+            warning('ULMO:grace2plmt:NoTNReplacementAvailable', ...
                 'No C20 replacement for the following dates:\n%s', ...
                 strjoin(string(c20corrFailedDates), ', '));
         end
 
         if ~isempty(c30corrFailedDates)
-            warning(sprintf('%s:NoTNReplacementAvailable', upper(mfilename)), ...
+            warning('ULMO:grace2plmt:NoTNReplacementAvailable', ...
                 'No C30 replacement for the following dates (likely because C30 replacement is only available for GFO):\n%s', ...
                 strjoin(string(c30corrFailedDates), ', '));
         end
@@ -607,7 +613,7 @@ function [dataFiles, Ldata] = ...
             case 'JPL'
                 dataFiles = ls2cell(fullfile(inputFolder, 'GSM-2_2*-2*_*_JPLEM_0000_0005*'));
             otherwise
-                error(sprintf('%s:LoadData:SolutionDNE', upper(mfilename)), ...
+                error('ULMO:grace2plmt:LoadData:SolutionDNE', ...
                     '%s %s solutions not available', ...
                     upper(Pcenter), Rlevel);
         end
