@@ -2,6 +2,9 @@
 *_test*.m
 *.asv
 
+# Python auxiliary files
+*.pyc
+
 # Temporary files
 gausslegendrecof.mat
 examples/giacomparison_example.mat
