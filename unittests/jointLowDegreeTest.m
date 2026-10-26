@@ -2,6 +2,9 @@
 %
 % Created by
 %   2026/10/26, En-Chi Lee (williameclee@gmail.com)
+%
+% Last modified
+%   2026/10/26, En-Chi Lee (williameclee@gmail.com)
 
 classdef jointLowDegreeTest < matlab.unittest.TestCase
 
@@ -29,23 +32,25 @@ classdef jointLowDegreeTest < matlab.unittest.TestCase
 
         end
 
-        function separateCacheAndConversion(testCase)
+        function cachedJointUnitConversion(testCase)
             folder = tempname;
             mkdir(folder);
             original = getenv('GRACEDATA');
             cleanup = onCleanup(@() restoreFolder(original, folder));
             setenv('GRACEDATA', folder);
             product = {'CSR', 'RL06', 60};
-            baseId = solvedegree1(product, 'OnlyId', true);
-            jointId = solvedegree1(product, 'IncludeC21S21', true, 'OnlyId', true);
-            testCase.verifyNotEqual(baseId, jointId);
+            domain = GeoDomain('alloceans', 'Buffer', 0.5);
+            cacheFolder = fullfile(folder, 'Degree1', 'new');
+            mkdir(cacheFolder);
+            % Seed a known cache fixture to exercise the real unit conversion.
+            cacheName = sprintf('CSRRL0660_ICE6GD-WC21S21-Ld60_Ls96-%s-SD.mat', domain.Id);
             coeffs = [1:5; 6:10];
             coeffStds = ones(2, 5);
             dates = datetime(2003, [1; 2], 15);
-            save(fullfile(folder, 'Degree1', 'new', ['CSRRL0660_', jointId, '-SD.mat']), ...
+            save(fullfile(cacheFolder, cacheName), ...
                 'coeffs', 'coeffStds', 'dates');
             [actual, uncertainty, actualDates] = solvedegree1(product, ...
-                'IncludeC21S21', true, 'Unit', 'GRAV', 'BeQuiet', true);
+                'OceanDomain', domain, 'IncludeC21S21', true, 'Unit', 'GRAV', 'BeQuiet', true);
             expected = [convertgravity(coeffs(:, 1:3), 'SD', 'GRAV', 'InputFormat', 'L', 'L', 1), ...
                             convertgravity(coeffs(:, 4:5), 'SD', 'GRAV', 'InputFormat', 'L', 'L', 2)];
             testCase.verifyEqual(actual, expected, 'RelTol', 1e-14);

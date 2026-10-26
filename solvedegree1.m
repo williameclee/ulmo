@@ -77,6 +77,10 @@
 %       Default number of iterations is 100.
 %   ForceNew - Logical flag to force reprocess of the data
 %       The default option is false.
+%       Cached solutions are assumed converged at sufficiently small tolerances;
+%       iteration settings are not included in the cache filename. Set true
+%       to test different iteration settings in a fresh run. Use SaveData=false
+%       to preserve the existing cache during these experiments.
 %       Data type: LOGICAL
 %	SaveData - Logical flag to save the data
 %		- true: Save the data to disk.
@@ -130,16 +134,10 @@ function varargout = solvedegree1(varargin)
     % Parse inputs
     [prod, Lused, Lsle, giaMdl, ocnDom, ...
          inclC20, inclC30, inclC21S21, mthd, timelim, unit, iterOpts, ...
-         onlyId, forceNew, saveData, beQuiet, callChain] = ...
+         forceNew, saveData, beQuiet, callChain] = ...
         parseinputs(varargin);
 
-    [dataPath, ~, outputId] = ...
-        getoutputfile(prod, giaMdl, inclC20, inclC30, inclC21S21, Lused, Lsle, ocnDom, mthd);
-
-    if onlyId
-        varargout = {outputId};
-        return
-    end
+    dataPath = getoutputfile(prod, giaMdl, inclC20, inclC30, inclC21S21, Lused, Lsle, ocnDom, mthd);
 
     vars = {'coeffs', 'coeffStds', 'dates'};
 
@@ -152,7 +150,8 @@ function varargout = solvedegree1(varargin)
                 callchaintext(callChain), filehref(dataPath, 'recomputed degree-1 data'));
         end
 
-        varargout = formatoutput(data.coeffs, data.coeffStds, data.dates, timelim, unit, nargout, [inclC20, inclC30, inclC21S21], ...
+        varargout = formatoutput(data.coeffs, data.coeffStds, data.dates, ...
+            timelim, unit, nargout, [inclC20, inclC30, inclC21S21], ...
             prod, beQuiet);
 
         return
@@ -388,8 +387,6 @@ function varargout = parseinputs(inputs)
         @(x) (isnumeric(x) || islogical(x)) && isscalar(x));
     addParameter(ip, 'BeQuiet', 0.5, ...
         @(x) (isnumeric(x) || islogical(x)) && isscalar(x));
-    addParameter(ip, 'OnlyId', false, ...
-        @(x) (isnumeric(x) || islogical(x)) && isscalar(x));
     addParameter(ip, 'CallChain', {}, @iscell);
 
     if ~isempty(inputs) && iscell(inputs{1})
@@ -411,7 +408,6 @@ function varargout = parseinputs(inputs)
     mthd = ip.Results.Method;
     timelim = ip.Results.TimeRange;
     unit = ip.Results.Unit;
-    onlyId = logical(ip.Results.OnlyId);
     forceNew = logical(ip.Results.ForceNew);
     saveData = logical(ip.Results.SaveData);
     beQuiet = double(ip.Results.BeQuiet) * 2;
@@ -432,11 +428,11 @@ function varargout = parseinputs(inputs)
     varargout = ...
         {{pcenter, rlevel, Ldata}, Lused, Lsle, giaMdl, ocnDom, ...
           inclC20, inclC30, inclC21S21, mthd, timelim, unit, iterOpts, ...
-          onlyId, forceNew, saveData, beQuiet, callChain};
+          forceNew, saveData, beQuiet, callChain};
 end
 
 % Get the input and output file names
-function [outPath, outFile, deg1Flag] = ...
+function outPath = ...
         getoutputfile(prod, giaMdl, ...
         inclC20, inclC30, inclC21S21, Lused, Lsle, ocnDom, mthd)
     outFolder = fullfile(getenv('GRACEDATA'), 'Degree1', 'new');
