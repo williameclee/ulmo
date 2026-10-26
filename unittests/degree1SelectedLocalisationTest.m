@@ -5,6 +5,8 @@
 % checked, including uncertainties, GIA restoration and output ordering.
 % Dense signed kernels and zero uncertainties also exercise reusable land
 % forcing against full localisation at every reference iteration.
+% Uniform cases retain unestimated high-degree contributions to land C00,
+% including GIA above the input truncation degree and nonzero input C00.
 %
 % Created by
 %   2026/10/26, OpenAI Codex
@@ -19,6 +21,7 @@ classdef degree1SelectedLocalisationTest < matlab.unittest.TestCase
         epochCount = {1, 3}
         adaptive = {false, true}
         kernelCase = {'original', 'dense', 'denseZeroStd'}
+        inputDegree = {2, 3}
     end
 
     methods (TestClassSetup)
@@ -66,6 +69,66 @@ classdef degree1SelectedLocalisationTest < matlab.unittest.TestCase
     end
 
     methods (Test)
+
+        function uniformRetainsUnestimatedHarmonics(testCase, epochCount, adaptive, inputDegree)
+            global JOINT_LOW_DEGREE_FIXTURE
+            [order, degree] = addmon(3);
+            meta = repmat([degree, order], 1, 1, epochCount);
+            values = zeros(10, 2, epochCount);
+            sigma = values;
+            giaValues = values;
+            % C00 and S33 are not among the seven jointly estimated terms.
+            values(1, 1, :) = reshape(1:epochCount, 1, 1, []);
+            values(10, 2, :) = reshape(-3 * (1:epochCount), 1, 1, []);
+            sigma(1, 1, :) = 0.2;
+            sigma(10, 2, :) = 0.7;
+            giaValues(10, 2, :) = reshape(0.4 * (1:epochCount), 1, 1, []);
+
+            if epochCount > 1
+                sigma(:, :, end) = 0;
+            end
+
+            p = cat(2, meta, values);
+            s = cat(2, meta, sigma);
+            gia = cat(2, meta, giaValues);
+            dates = datetime(2003, (1:epochCount)', 15);
+            K = 0.6 * eye(16);
+            K(1, 2:16) = 0.008 * (-1) .^ (2:16);
+            K(1, 16) = -0.08;
+            K(2:16, 1) = K(1, 2:16)';
+            JOINT_LOW_DEGREE_FIXTURE = struct('p', permute(p, [3, 1, 2]), ...
+                's', permute(s, [3, 1, 2]), 'gia', permute(gia, [3, 1, 2]), ...
+                'dates', dates, 'kernel', K);
+            locs = [2, 1; 3, 1; 3, 2; 4, 1; 7, 1; 5, 1; 5, 2];
+            ids = [2, 3, 4, 5, 10, 6, 7];
+            referenceP = p;
+            referenceS = s;
+            referenceP(degree > inputDegree, 3:4, :) = 0;
+            referenceS(degree > inputDegree, 3:4, :) = 0;
+
+            if adaptive
+                tolerance = 1e-6; limit = 100;
+            else
+                tolerance = 0; limit = 12;
+            end
+
+            [expected, expectedStd] = fullFieldReference(referenceP, referenceS, ...
+                gia, locs, ids, 'uniform', tolerance, limit);
+            [actual, actualStd, actualDates] = solvedegree1( ...
+                'CSR', 'RL06', 3, inputDegree, 3, 'ICE6GD', GeoDomain('alloceans'), ...
+                'IncludeC20', true, 'IncludeC30', true, 'IncludeC21S21', true, ...
+                'Method', 'uniform', 'Tolerance', tolerance, 'MaxIter', limit, ...
+                'ForceNew', true, 'SaveData', false, 'BeQuiet', true);
+            testCase.verifyEqual(actual, expected, 'AbsTol', 1e-10);
+            testCase.verifyEqual(actualStd, expectedStd, 'AbsTol', 1e-10);
+            testCase.verifyEqual(actualDates, dates);
+            testCase.verifyGreaterThan(max(abs(actual), [], 'all'), 0);
+
+            if epochCount > 1
+                testCase.verifyEqual(actualStd(end, :), zeros(1, 7));
+            end
+
+        end
 
         function matchesFullFieldReference(testCase, includeC20, includeC30, includeC21S21, method, epochCount, adaptive, kernelCase)
             global JOINT_LOW_DEGREE_FIXTURE

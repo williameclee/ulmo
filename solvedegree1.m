@@ -94,6 +94,8 @@
 % Notes
 %   GIA is removed for degrees >= 2 during estimation and restored for
 %   estimated coefficients of those degrees. Degree 1 remains GIA-free.
+%   The uniform method computes only land C00 and its variance, retaining
+%   contributions from every input harmonic to that ocean mass constraint.
 %   Cached solutions are assumed converged at sufficiently small tolerances;
 %   iteration settings are not part of cache filenames. Use ForceNew=true
 %   for other settings and SaveData=false to preserve an existing cache.
@@ -212,7 +214,16 @@ function [coeffs, coeffStds, dates] = ...
     % Note: Converting to SINGLE does not work because it is not compatible with the sparse SLE kernel
     ocnKernelSle = kernelcp_new(Lsle, ocnDom, ...
         "BeQuiet", beQuiet);
-    lndKernelSle = eye(size(ocnKernelSle)) - ocnKernelSle;
+    if strcmp(mthd, 'uniform')
+        % Uniform ocean loading depends only on the land C00 coefficient.
+        lndKernelSle = -ocnKernelSle(1, :);
+        lndKernelSle(1) = lndKernelSle(1) + 1;
+        uniformOcnScale = ocnKernelSle(coeffIds, 1) / ocnKernelSle(1, 1);
+        uniformOcnScaleSq = uniformOcnScale .^ 2;
+    else
+        lndKernelSle = eye(size(ocnKernelSle)) - ocnKernelSle;
+    end
+
     % Prepare the ocean constraint rows once for signal and variance propagation.
     coeffOcnKernel = ocnKernelSle(coeffIds, :);
     coeffOcnKernelSq = coeffOcnKernel .^ 2;
@@ -237,6 +248,7 @@ function [coeffs, coeffStds, dates] = ...
 
     % Only the estimated coefficients change between outer iterations.
     % Keep the fixed land signal and variance, plus their update columns.
+    % Uniform loading retains only the C00 row; fingerprints need all rows.
     knownLndSdPlms = lndKernelSle * packcoeffs(sdPlmt, kernelOrder);
     knownLndVarPlms = (lndKernelSle .^ 2) * packcoeffs(sdStdPlmt, kernelOrder) .^ 2;
     coeffLndKernel = lndKernelSle(:, coeffIds);
@@ -265,14 +277,13 @@ function [coeffs, coeffStds, dates] = ...
 
         end
 
-        lndPlmt = coeff2lmcosi(knownLndSdPlms + coeffLndKernel * coeffs, ...
-            kernelOrder, sdPlmt);
-        lndStdPlmt = coeff2lmcosi( ...
-            sqrt(knownLndVarPlms + coeffLndKernelSq * coeffStds .^ 2), ...
-            kernelOrder, sdPlmt);
-
         switch mthd
             case 'fingerprint'
+                lndPlmt = coeff2lmcosi(knownLndSdPlms + coeffLndKernel * coeffs, ...
+                    kernelOrder, sdPlmt);
+                lndStdPlmt = coeff2lmcosi( ...
+                    sqrt(knownLndVarPlms + coeffLndKernelSq * coeffStds .^ 2), ...
+                    kernelOrder, sdPlmt);
                 [ocnPlmt, ocnStdPlmt] = ...
                     solvesle(lndPlmt, lndStdPlmt, Lsle, ocnDom, ...
                     "OceanKernel", ocnKernelSle, "KernelOrder", kernelOrder, ...
@@ -282,15 +293,18 @@ function [coeffs, coeffStds, dates] = ...
                 ocnCoeffs = coeffOcnKernel * packcoeffs(ocnPlmt, kernelOrder);
                 ocnCoeffVars = coeffOcnKernelSq * packcoeffs(ocnStdPlmt, kernelOrder) .^ 2;
             case 'uniform'
-                ocnArea = ocnKernelSle(1, 1);
-                eustatic = squeeze(-lndPlmt(1, 3, :) / ocnArea);
-                ocnCoeffs = eustatic' .* ocnKernelSle(coeffIds, 1);
-                eustaticStd = squeeze(-lndStdPlmt(1, 3, :) / ocnArea);
-                ocnCoeffVars = (eustaticStd' .* ocnKernelSle(coeffIds, 1)) .^ 2;
+                lndC00 = knownLndSdPlms + coeffLndKernel * coeffs;
+                lndC00Var = knownLndVarPlms + coeffLndKernelSq * coeffStds .^ 2;
+                ocnCoeffs = -uniformOcnScale * lndC00;
+                ocnCoeffVars = uniformOcnScaleSq * lndC00Var;
         end
 
         coeffs = coeffsKernel \ (ocnCoeffs - knownOcnCoeffs);
-        sdPlmt = putcoeffs(sdPlmt, coeffs, coeffLocs);
+
+        if strcmp(mthd, 'fingerprint')
+            sdPlmt = putcoeffs(sdPlmt, coeffs, coeffLocs);
+        end
+
         % STD
         coeffStds = sqrt((coeffsKernel \ eye(nCoeffs)) .^ 2 * ...
             (ocnCoeffVars + knownOcnCoeffVars));
