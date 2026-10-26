@@ -1,0 +1,11 @@
+%% GRACE2PLMT_NEW - Supplies degree-3 fields for the real joint solver.
+%
+% Created by
+%   2026/10/26, En-Chi Lee (williameclee@gmail.com)
+
+function [p, s, dates] = grace2plmt_new(varargin)
+    global JOINT_LOW_DEGREE_FIXTURE
+    p = JOINT_LOW_DEGREE_FIXTURE.p;
+    s = JOINT_LOW_DEGREE_FIXTURE.s;
+    dates = JOINT_LOW_DEGREE_FIXTURE.dates;
+end

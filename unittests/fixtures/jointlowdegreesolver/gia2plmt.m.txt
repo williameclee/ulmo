@@ -1,0 +1,9 @@
+%% GIA2PLMT - Supplies controllable nonzero GIA for restoration tests.
+%
+% Created by
+%   2026/10/26, En-Chi Lee (williameclee@gmail.com)
+
+function p = gia2plmt(varargin)
+    global JOINT_LOW_DEGREE_FIXTURE
+    p = JOINT_LOW_DEGREE_FIXTURE.gia;
+end

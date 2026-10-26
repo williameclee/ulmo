@@ -58,6 +58,52 @@ classdef fingerprintGsmTest < matlab.unittest.TestCase
 
     methods (Test)
 
+        function forwardsJointOptions(testCase, redoDegree1)
+            global DEGREE1_CONVERGENCE_FIXTURE
+            runFingerprint('RecomputeDegree1', redoDegree1, ...
+                'RecomputeC21S21', true, 'SaveData', false);
+            args = DEGREE1_CONVERGENCE_FIXTURE.degree1Args;
+            testCase.assertClass(args, 'cell');
+            opts = struct(args{:});
+            testCase.verifyTrue(opts.IncludeC21S21);
+            testCase.verifyEqual(opts.Lsle, 2);
+            testCase.verifyEqual(opts.GIAModel, 'synthetic');
+            testCase.verifyEqual(opts.Unit, 'SD');
+            testCase.verifyEqual(opts.OceanDomain.Id, GeoDomain('alloceans').Id);
+        end
+
+        function separatesAndReusesFingerprintCaches(testCase)
+            global DEGREE1_CONVERGENCE_FIXTURE
+            % Give each mode distinct forcing, then prove its own cache is reused.
+            modes = {{'RecomputeDegree1', false}, {'RecomputeDegree1', true}, ...
+                         {'RecomputeC21S21', true}};
+            expected = cell(1, 3);
+            expectedStd = cell(1, 3);
+            pattern = fullfile(testCase.Folder, 'FINGERPRINT', '*.mat');
+
+            for k = 1:3
+                DEGREE1_CONVERGENCE_FIXTURE.x(:) = k;
+                [expected{k}, expectedStd{k}] = runFingerprint(modes{k}{:}, 'SaveData', true);
+                testCase.verifyNumElements(dir(pattern), k);
+                args = DEGREE1_CONVERGENCE_FIXTURE.degree1Args;
+                if k == 1
+                    testCase.verifyFalse(args);
+                else
+                    opts = struct(args{:});
+                    testCase.verifyEqual(opts.IncludeC21S21, k == 3);
+                end
+            end
+
+            reads = DEGREE1_CONVERGENCE_FIXTURE.readCount;
+            DEGREE1_CONVERGENCE_FIXTURE.x(:) = 999;
+            for k = 1:3
+                [actual, actualStd] = runFingerprint(modes{k}{:});
+                testCase.verifyEqual(actual, expected{k});
+                testCase.verifyEqual(actualStd, expectedStd{k});
+            end
+            testCase.verifyEqual(DEGREE1_CONVERGENCE_FIXTURE.readCount, reads);
+        end
+
         function appliesGiaToHigherDegreeForcing(testCase, regional)
             global DEGREE1_CONVERGENCE_FIXTURE
             args = {};

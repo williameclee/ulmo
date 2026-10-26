@@ -1,0 +1,14 @@
+%% SOLVEDEGREE1 - Returns labelled joint estimates for reader date-alignment tests.
+%
+% Created by
+%   2026/10/26, En-Chi Lee (williameclee@gmail.com)
+
+function [c, s, dates, p, locs] = solvedegree1(varargin)
+    global JOINT_LOW_DEGREE_FIXTURE
+    f = JOINT_LOW_DEGREE_FIXTURE;
+    c = f.coeffs;
+    s = f.coeffStds;
+    dates = f.solverDates;
+    p = [];
+    locs = f.locs;
+end
