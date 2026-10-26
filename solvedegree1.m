@@ -265,9 +265,9 @@ function [coeffs, coeffStds, dates] = ...
 
         end
 
-        lndPlmt = unpackcoeffs(knownLndSdPlms + coeffLndKernel * coeffs, ...
+        lndPlmt = coeff2lmcosi(knownLndSdPlms + coeffLndKernel * coeffs, ...
             kernelOrder, sdPlmt);
-        lndStdPlmt = unpackcoeffs( ...
+        lndStdPlmt = coeff2lmcosi( ...
             sqrt(knownLndVarPlms + coeffLndKernelSq * coeffStds .^ 2), ...
             kernelOrder, sdPlmt);
 
@@ -519,12 +519,12 @@ function coeffs = packcoeffs(plm, kernelOrder)
 end
 
 % Restore matching-bandwidth lmcosi coefficients, preserving degree/order columns.
-function plm = unpackcoeffs(coeffs, kernelOrder, plm)
+function plm = coeff2lmcosi(coeffs, kernelOrder, plm)
     nRows = size(plm, 1);
     nEpochs = size(plm, 3);
     vals = zeros(2 * nRows, nEpochs);
     vals(kernelOrder, :) = coeffs;
-    plm(:, 3:4, :) = reshape(vals, nRows, 2, nEpochs);
+    plm(:, end:end - 1, :) = reshape(vals, nRows, 2, nEpochs);
 end
 
 % Just get the coeffs
