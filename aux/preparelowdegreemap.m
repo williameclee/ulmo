@@ -16,14 +16,6 @@
 %   MaxIter (name-value) - Maximum iterations in each SLE system solve.
 %       Default limit: 100.
 %
-%   CacheFolder (name-value) - Directory for numeric response-map caches.
-%       Default folder: "" (disabled). Identity hashes the actual matrices,
-%       coefficient selection, method, tolerance, iteration cap and version.
-%   SaveData (name-value) - Whether to save a newly prepared map.
-%       Default option: true. Existing matching maps can still be loaded.
-%   ForceNew (name-value) - Whether to bypass a matching map cache.
-%       Default option: false.
-%
 % Output arguments
 %   map - Numeric response matrices and index metadata.
 %       D: selected ocean response to a full load, size (U,M).
@@ -31,7 +23,6 @@
 %       T: maps known loads to estimated loads, size (U,M-U).
 %       unknownIds, knownIds: row and column index order for T.
 %       reciprocalCondition: rcond(Dunknown); diagnostics: SLE solve accuracy.
-%       cacheHit: whether a stored map was reused; cacheKey: numeric identity.
 %
 % Notes
 %   For fingerprint loading, D=(O(unknownIds,:)/A)*KF*(I-O).
@@ -54,9 +45,6 @@ function map = preparelowdegreemap(kernels, unknownIds, options)
         options.Method (1, 1) string {mustBeMember(options.Method, ["fingerprint", "uniform"])} = "fingerprint"
         options.RelativeTolerance (1, 1) double {mustBePositive, mustBeFinite, mustBeLessThan(options.RelativeTolerance, 1)} = 1e-12
         options.MaxIter (1, 1) double {mustBeInteger, mustBePositive} = 100
-        options.CacheFolder (1, 1) string = ""
-        options.SaveData (1, 1) logical = true
-        options.ForceNew (1, 1) logical = false
     end
     O = kernels.O;
     M = size(O, 1);
@@ -67,24 +55,6 @@ function map = preparelowdegreemap(kernels, unknownIds, options)
         error('ULMO:preparelowdegreemap:InvalidOceanKernel', 'O must be square with positive finite area.');
     end
     knownIds = setdiff(1:M, unknownIds);
-    cacheKey = "";
-    cacheFile = "";
-    if options.CacheFolder ~= "" && (options.SaveData || isfolder(options.CacheFolder))
-        cacheKey = mapidentity(kernels, unknownIds, options);
-        cacheFile = fullfile(options.CacheFolder, "sle-map-v1-" + cacheKey + ".mat");
-        if ~options.ForceNew && isfile(cacheFile)
-            saved = load(cacheFile, 'map');
-            if isfield(saved, 'map') && isfield(saved.map, 'cacheKey') && ...
-                    saved.map.cacheKey == cacheKey && isequal(saved.map.unknownIds, unknownIds) && ...
-                    isequal(saved.map.knownIds, knownIds) && ...
-                    isequal(size(saved.map.T), [numel(unknownIds), numel(knownIds)]) && ...
-                    all(isfinite(saved.map.T), 'all')
-                map = saved.map;
-                map.cacheHit = true;
-                return
-            end
-        end
-    end
     Orows = O(unknownIds, :);
     diagnostics = struct;
     if options.Method == "uniform"
@@ -112,46 +82,5 @@ function map = preparelowdegreemap(kernels, unknownIds, options)
     end
     map = struct('D', D, 'Dunknown', Dunknown, 'Dknown', Dknown, 'T', T, ...
         'unknownIds', unknownIds, 'knownIds', knownIds, ...
-        'reciprocalCondition', reciprocalCondition, 'diagnostics', diagnostics, ...
-        'cacheHit', false, 'cacheKey', cacheKey);
-    if cacheFile ~= "" && options.SaveData
-        if ~isfolder(options.CacheFolder)
-            mkdir(options.CacheFolder);
-        end
-        temporary = string(tempname(options.CacheFolder)) + ".mat";
-        cleanup = onCleanup(@() removetemporary(temporary));
-        save(temporary, 'map');
-        movefile(temporary, cacheFile, 'f');
-    end
-end
-
-function key = mapidentity(kernels, unknownIds, options)
-    digest = java.security.MessageDigest.getInstance('SHA-256');
-    metadata = struct('Version', 1, 'UnknownIds', unknownIds, ...
-        'Method', options.Method, 'RelativeTolerance', options.RelativeTolerance, ...
-        'MaxIter', options.MaxIter, 'Size', size(kernels.O));
-    digest.update(typecast(uint8(jsonencode(metadata)), 'int8'));
-    % Stream the large matrix, keeping temporary byte arrays bounded.
-    for first = 1:64:size(kernels.O, 2)
-        block = full(kernels.O(:, first:min(first+63, size(kernels.O, 2))));
-        digest.update(typecast(block(:), 'int8'));
-    end
-    if options.Method == "fingerprint"
-        for field = {'response', 'KF'}
-            matrix = kernels.(field{1});
-            header = struct('Field', field{1}, 'Size', size(matrix), 'Count', nnz(matrix));
-            digest.update(typecast(uint8(jsonencode(header)), 'int8'));
-            [i,j,v] = find(matrix);
-            values = [i,j,v];
-            digest.update(typecast(values(:), 'int8'));
-        end
-    end
-    bytes = typecast(digest.digest(), 'uint8');
-    key = string(lower(reshape(dec2hex(bytes, 2).', 1, [])));
-end
-
-function removetemporary(file)
-    if isfile(file)
-        delete(file);
-    end
+        'reciprocalCondition', reciprocalCondition, 'diagnostics', diagnostics);
 end

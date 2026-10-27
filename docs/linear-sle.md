@@ -67,14 +67,16 @@ loading, GIA, coefficient selection, units and dates. Its linear path never
 calls `solvesle`. `Method="uniform"` builds the analytical uniform-ocean map
 without an SLE solve. Both methods support joint C20, C30 and C21/S21 estimates.
 
-Prepared maps can be saved with `CacheFolder`. Cache identities hash the actual
-ocean and response matrices, coefficient selection, method, numerical settings
-and implementation version. `solvedegree1` stores maps under
-`GRACEDATA/Degree1/maps`; they can be reused by different observation products.
-`ForceNew=true` bypasses caches; `SaveData=false` prevents new map/result writes.
-Linear coefficient results use a version/accuracy suffix separate from legacy
-results. Existing coefficient caches retain the usual assumption that source
-observations and model files have not changed; use `ForceNew` after such changes.
+`preparelowdegreemap` builds a map on every call and performs no file I/O.
+The returned map can be reused in memory while the kernels, coefficient
+selection and numerical settings remain fixed.
+
+`solvedegree1` retains its coefficient-result cache. `ForceNew=true` bypasses
+that cache and prepares a fresh map; `SaveData=false` prevents new coefficient
+result writes. Linear coefficient results use a version/accuracy suffix
+separate from legacy results. Existing coefficient caches retain the usual
+assumption that source observations and model files have not changed; use
+`ForceNew` after such changes.
 
 ## Uncertainty and numerical settings
 

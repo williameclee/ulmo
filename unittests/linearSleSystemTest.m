@@ -192,33 +192,10 @@ classdef linearSleSystemTest < matlab.unittest.TestCase
             testCase.verifyError(@() solvesle(args{:}, 'Solver', 'linear'), ...
                 'ULMO:solvesle:FixedStepsRequireIteration');
         end
-        function mapCacheTracksNumericInputs(testCase)
-            k = prepareslekernels(3, ocean());
-            folder = fullfile(testCase.Folder, 'maps');
-            a = preparelowdegreemap(k, 2:4, CacheFolder=folder);
-            b = preparelowdegreemap(k, 2:4, CacheFolder=folder);
-            testCase.verifyFalse(a.cacheHit);
-            testCase.verifyTrue(b.cacheHit);
-            testCase.verifyEqual(a.T,b.T);
-            c = preparelowdegreemap(k, 2:4, CacheFolder=folder, ForceNew=true);
-            testCase.verifyFalse(c.cacheHit);
-            changed = ocean(); changed(16,16) = changed(16,16)+.01;
-            changedK = prepareslekernels(3, changed);
-            d = preparelowdegreemap(changedK, 2:4, CacheFolder=folder, SaveData=false);
-            e = preparelowdegreemap(k, [2:4,6,7], CacheFolder=folder, SaveData=false);
-            g = preparelowdegreemap(k, 2:4, CacheFolder=folder, RelativeTolerance=1e-10, SaveData=false);
-            h = preparelowdegreemap(prepareslekernels(3,ocean(),RotationFeedback=false), ...
-                2:4, CacheFolder=folder, SaveData=false);
-            testCase.verifyFalse(d.cacheHit || e.cacheHit || g.cacheHit || h.cacheHit);
-            testCase.verifyNumElements(unique([a.cacheKey,d.cacheKey,e.cacheKey,g.cacheKey,h.cacheKey]),5);
-            testCase.verifyNumElements(dir(fullfile(folder,'*.mat')),1);
-        end
-        function failedMapDoesNotSave(testCase)
+        function mapFailureIsReported(testCase)
             k = prepareslekernels(3,ocean());
-            folder = fullfile(testCase.Folder,'failed');
-            testCase.verifyError(@() preparelowdegreemap(k,2:4,MaxIter=1,CacheFolder=folder), ...
+            testCase.verifyError(@() preparelowdegreemap(k,2:4,MaxIter=1), ...
                 'ULMO:solveslesystem:NonConvergence');
-            testCase.verifyFalse(isfolder(folder));
         end
         function linearAndLegacyCachesAreSeparate(testCase)
             args = {'CSR','RL06',3,3,3,'ICE6GD',GeoDomain('alloceans'), ...
@@ -230,6 +207,7 @@ classdef linearSleSystemTest < matlab.unittest.TestCase
             testCase.verifyEqual(sum(contains({files.name},'-linear-v1-')),1);
             [b,sb] = solvedegree1(args{:});
             testCase.verifyEqual(a,b); testCase.verifyEqual(sa,sb);
+            testCase.verifyFalse(isfolder(fullfile(testCase.Folder,'Degree1','maps')));
         end
     end
 end

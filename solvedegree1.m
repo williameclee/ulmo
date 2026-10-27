@@ -65,9 +65,8 @@
 %   SleMaxIter (name-value) - Maximum iterations per SLE or response-map solve.
 %       Default iteration limit: 100.
 %   ForceNew (name-value) - Whether to bypass the coefficient cache.
-%       Also bypasses the prepared response-map cache.
 %       Default option: false.
-%   SaveData (name-value) - Whether to save coefficients and prepared maps.
+%   SaveData (name-value) - Whether to save computed coefficients.
 %       Default option: true.
 %   BeQuiet (name-value) - Whether to report progress.
 %       false: messages and waitbar; 0.5: messages only; true: silent.
@@ -106,8 +105,7 @@
 %   Iteration mode retains the previous signal and uncertainty recurrences.
 %   Zero Tolerance or SleTolerance selects iteration if Solver is omitted;
 %   an explicitly linear solver rejects zero iteration tolerances.
-%   Prepared maps are cached by numeric kernel identity and accuracy under
-%   GRACEDATA/Degree1/maps, so other data products can reuse the same map.
+%   A response map is prepared for each fresh coefficient calculation.
 %   Linear coefficient caches have a version and accuracy suffix and never
 %   reuse legacy results. Legacy iteration settings share a cache; use ForceNew=true for
 %   other settings and SaveData=false to preserve an existing cache.
@@ -162,7 +160,7 @@ function varargout = solvedegree1(varargin)
 
     [coeffs, coeffStds, dates] = ...
         solvedegree1Core(prod, Lused, Lsle, ...
-        giaMdl, inclC20, inclC30, inclCS21, ocnDom, mthd, beQuiet, iterOpts, forceNew, saveData);
+        giaMdl, inclC20, inclC30, inclCS21, ocnDom, mthd, beQuiet, iterOpts);
 
     if saveData
         save(dataPath, 'coeffs', 'coeffStds', 'dates')
@@ -181,7 +179,7 @@ end
 
 % Heart of the programme
 function [coeffs, coeffStds, dates] = ...
-        solvedegree1Core(prod, Lused, Lsle, giaMdl, inclC20, inclC30, inclC21S21, ocnDom, mthd, beQuiet, iterOpts, forceNew, saveData)
+        solvedegree1Core(prod, Lused, Lsle, giaMdl, inclC20, inclC30, inclC21S21, ocnDom, mthd, beQuiet, iterOpts)
     %% Initialisation
     if ~beQuiet
         wbar = waitbar(0, 'Loading GRACE data', ...
@@ -214,9 +212,7 @@ function [coeffs, coeffStds, dates] = ...
             kernels = struct('O', O);
         end
         map = preparelowdegreemap(kernels, coeffIds, Method=string(mthd), ...
-            RelativeTolerance=iterOpts.RelativeTolerance, MaxIter=iterOpts.SleMaxIter, ...
-            CacheFolder=fullfile(getenv('GRACEDATA'), 'Degree1', 'maps'), ...
-            SaveData=saveData, ForceNew=forceNew);
+            RelativeTolerance=iterOpts.RelativeTolerance, MaxIter=iterOpts.SleMaxIter);
         known = packcoeffs(sdPlmt, kerOrder);
         knownStd = packcoeffs(sdStdPlmt, kerOrder);
         coeffs = map.T * known(map.knownIds, :);
