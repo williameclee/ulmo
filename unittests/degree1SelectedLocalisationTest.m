@@ -61,8 +61,8 @@ classdef degree1SelectedLocalisationTest < matlab.unittest.TestCase
             Earth = struct('GM_EGM96', 3.986004415e14, 'a_EGM96', 6378136.3);
             save(fullfile(folder.Folder, 'EARTHMODELS', 'CONSTANTS', 'Earth.mat'), 'Earth');
             mkdir(fullfile(folder.Folder, 'LOVENUMS'));
-            loadinggravitationalpotential = [0; .021; - .3; repmat(-.2, 21, 1)];
-            loadingverticaldisplacement = [0; - .269; - .6; repmat(-.4, 21, 1)];
+            loadinggravitationalpotential = [0; .021; - .3; repmat(- .2, 21, 1)];
+            loadingverticaldisplacement = [0; - .269; - .6; repmat(- .4, 21, 1)];
             tidalgravitationalpotential = [0; 0; .3; repmat(.1, 21, 1)];
             tidalverticaldisplacement = [0; 0; .6; repmat(.2, 21, 1)];
             save(fullfile(folder.Folder, 'LOVENUMS', 'lovenumbers-ISSM.mat'), ...
@@ -76,13 +76,13 @@ classdef degree1SelectedLocalisationTest < matlab.unittest.TestCase
 
     methods (Test)
 
-        function paddedVariancesPreserveFullSignal(testCase, method, epochCount, varianceSupport)
+        function paddedVariancesPreserveFullSignal(testCase, mthd, epochCnt, varianceSupport)
             global JOINT_LOW_DEGREE_FIXTURE
             L = 16;
             [order, degree] = addmon(L);
-            meta = repmat([degree, order], 1, 1, epochCount);
-            values = zeros(numel(degree), 2, epochCount);
-            values(1:10, :, :) = reshape(sin(1:20 * epochCount), 10, 2, epochCount);
+            meta = repmat([degree, order], 1, 1, epochCnt);
+            values = zeros(numel(degree), 2, epochCnt);
+            values(1:10, :, :) = reshape(sin(1:20 * epochCnt), 10, 2, epochCnt);
             sigma = zeros(size(values));
 
             if ~strcmp(varianceSupport, 'empty')
@@ -95,7 +95,7 @@ classdef degree1SelectedLocalisationTest < matlab.unittest.TestCase
                 sigma(1, 1, :) = scale;
                 sigma(6, 2, :) = 2 * scale; % S22 is not jointly estimated.
 
-                if epochCount > 1
+                if epochCnt > 1
                     % The first epoch alone must not determine retained columns.
                     sigma(:, :, 1) = 0;
                     sigma(6, 2, 2) = 0;
@@ -107,10 +107,10 @@ classdef degree1SelectedLocalisationTest < matlab.unittest.TestCase
             p = cat(2, meta, values);
             s = cat(2, meta, sigma);
             giaValues = zeros(size(values));
-            giaValues(end, 2, :) = reshape(1:epochCount, 1, 1, []);
+            giaValues(end, 2, :) = reshape(1:epochCnt, 1, 1, []);
             gia = cat(2, meta, giaValues);
-            dates = datetime(2003, (1:epochCount)', 15);
-            indices = 1:(L + 1)^2;
+            dates = datetime(2003, (1:epochCnt)', 15);
+            indices = 1:(L + 1) ^ 2;
             K = 0.6 * eye(numel(indices)) ...
                 + 0.001 * (sin(indices' * indices) + cos(indices' + indices));
             K(1, end) = -0.04; K(end, 1) = K(1, end);
@@ -123,26 +123,26 @@ classdef degree1SelectedLocalisationTest < matlab.unittest.TestCase
             s(degree > 2, 3:4, :) = 0;
             locs = [2, 1; 3, 1; 3, 2; 4, 1; 7, 1; 5, 1; 5, 2];
             ids = [2, 3, 4, 5, 10, 6, 7];
-            [expected, expectedStd] = fullFieldReference(p, s, gia, ...
-                locs, ids, method, 0, 4);
-            [actual, actualStd, actualDates] = solvedegree1( ...
+            [expc, expcStd] = fullFieldReference(p, s, gia, ...
+                locs, ids, mthd, 0, 4);
+            [actl, actlStd, actlDates] = solvedegree1( ...
                 'CSR', 'RL06', 3, 2, L, 'ICE6GD', GeoDomain('alloceans'), ...
                 'IncludeC20', true, 'IncludeC30', true, 'IncludeC21S21', true, ...
-                'Method', method, 'Tolerance', 0, 'MaxIter', 4, ...
+                'Method', mthd, 'Tolerance', 0, 'MaxIter', 4, ...
                 'ForceNew', true, 'SaveData', false, 'BeQuiet', true);
-            testCase.verifyEqual(actual, expected, 'AbsTol', 1e-10);
+            testCase.verifyEqual(actl, expc, 'AbsTol', 1e-10);
             % Relative tolerance detects accidental removal of tiny variances.
-            testCase.verifyEqual(actualStd, expectedStd, 'RelTol', 1e-11);
-            testCase.verifyEqual(actualDates, dates);
+            testCase.verifyEqual(actlStd, expcStd, 'RelTol', 1e-11);
+            testCase.verifyEqual(actlDates, dates);
 
             if strcmp(varianceSupport, 'empty')
-                testCase.verifyEqual(actualStd, zeros(epochCount, 7));
+                testCase.verifyEqual(actlStd, zeros(epochCnt, 7));
             else
-                testCase.verifyGreaterThan(max(actualStd, [], 'all'), 0);
+                testCase.verifyGreaterThan(max(actlStd, [], 'all'), 0);
             end
 
-            if epochCount > 1
-                testCase.verifyEqual(actualStd(1, :), zeros(1, 7));
+            if epochCnt > 1
+                testCase.verifyEqual(actlStd(1, :), zeros(1, 7));
             end
 
         end
@@ -164,9 +164,9 @@ classdef degree1SelectedLocalisationTest < matlab.unittest.TestCase
             s = cat(2, meta, sigma);
             gia = cat(2, meta, values / 7);
             dates = datetime(2003, (1:epochCount)', 15);
-            indices = 1:(L + 1)^2;
-            K = 0.6 * eye(numel(indices)) ...
-                + 0.001 * (sin(indices' * indices) + cos(indices' + indices));
+            idxs = 1:(L + 1) ^ 2;
+            K = 0.6 * eye(numel(idxs)) ...
+                + 0.001 * (sin(idxs' * idxs) + cos(idxs' + idxs));
             JOINT_LOW_DEGREE_FIXTURE = struct('p', permute(p, [3, 1, 2]), ...
                 's', permute(s, [3, 1, 2]), 'gia', permute(gia, [3, 1, 2]), ...
                 'dates', dates, 'kernel', K);
@@ -174,51 +174,53 @@ classdef degree1SelectedLocalisationTest < matlab.unittest.TestCase
             ids = [2, 3, 4, 5, 10, 6, 7];
 
             if adaptive
-                tolerance = 1e-6; limit = 100;
+                tol = 1e-6;
+                lim = 100;
             else
-                tolerance = 0; limit = 12;
+                tol = 0;
+                lim = 12;
             end
 
-            [expected, expectedStd] = fullFieldReference(p, s, gia, ...
-                locs, ids, 'fingerprint', tolerance, limit);
-            [actual, actualStd, actualDates] = solvedegree1( ...
+            [expc, expcStd] = fullFieldReference(p, s, gia, ...
+                locs, ids, 'fingerprint', tol, lim);
+            [actl, actlStd, actlDates] = solvedegree1( ...
                 'CSR', 'RL06', L, L, L, 'ICE6GD', GeoDomain('alloceans'), ...
                 'IncludeC20', true, 'IncludeC30', true, 'IncludeC21S21', true, ...
-                'Method', 'fingerprint', 'Tolerance', tolerance, 'MaxIter', limit, ...
+                'Method', 'fingerprint', 'Tolerance', tol, 'MaxIter', lim, ...
                 'ForceNew', true, 'SaveData', false, 'BeQuiet', true);
-            testCase.verifyEqual(actual, expected, 'AbsTol', 1e-10);
-            testCase.verifyEqual(actualStd, expectedStd, 'AbsTol', 1e-10);
-            testCase.verifyEqual(actualDates, dates);
-            testCase.verifyGreaterThanOrEqual(actualStd, zeros(size(actualStd)));
+            testCase.verifyEqual(actl, expc, 'AbsTol', 1e-10);
+            testCase.verifyEqual(actlStd, expcStd, 'AbsTol', 1e-10);
+            testCase.verifyEqual(actlDates, dates);
+            testCase.verifyGreaterThanOrEqual(actlStd, zeros(size(actlStd)));
 
             if epochCount > 1
-                testCase.verifyEqual(actualStd(end, :), zeros(1, 7));
+                testCase.verifyEqual(actlStd(end, :), zeros(1, 7));
             end
 
         end
 
-        function uniformRetainsUnestimatedHarmonics(testCase, epochCount, adaptive, inputDegree)
+        function uniformRetainsUnestimatedHarmonics(testCase, epochCnt, adaptive, inputDegree)
             global JOINT_LOW_DEGREE_FIXTURE
             [order, degree] = addmon(3);
-            meta = repmat([degree, order], 1, 1, epochCount);
-            values = zeros(10, 2, epochCount);
+            meta = repmat([degree, order], 1, 1, epochCnt);
+            values = zeros(10, 2, epochCnt);
             sigma = values;
             giaValues = values;
             % C00 and S33 are not among the seven jointly estimated terms.
-            values(1, 1, :) = reshape(1:epochCount, 1, 1, []);
-            values(10, 2, :) = reshape(-3 * (1:epochCount), 1, 1, []);
+            values(1, 1, :) = reshape(1:epochCnt, 1, 1, []);
+            values(10, 2, :) = reshape(-3 * (1:epochCnt), 1, 1, []);
             sigma(1, 1, :) = 0.2;
             sigma(10, 2, :) = 0.7;
-            giaValues(10, 2, :) = reshape(0.4 * (1:epochCount), 1, 1, []);
+            giaValues(10, 2, :) = reshape(0.4 * (1:epochCnt), 1, 1, []);
 
-            if epochCount > 1
+            if epochCnt > 1
                 sigma(:, :, end) = 0;
             end
 
             p = cat(2, meta, values);
             s = cat(2, meta, sigma);
             gia = cat(2, meta, giaValues);
-            dates = datetime(2003, (1:epochCount)', 15);
+            dates = datetime(2003, (1:epochCnt)', 15);
             K = 0.6 * eye(16);
             K(1, 2:16) = 0.008 * (-1) .^ (2:16);
             K(1, 16) = -0.08;
@@ -228,45 +230,47 @@ classdef degree1SelectedLocalisationTest < matlab.unittest.TestCase
                 'dates', dates, 'kernel', K);
             locs = [2, 1; 3, 1; 3, 2; 4, 1; 7, 1; 5, 1; 5, 2];
             ids = [2, 3, 4, 5, 10, 6, 7];
-            referenceP = p;
-            referenceS = s;
-            referenceP(degree > inputDegree, 3:4, :) = 0;
-            referenceS(degree > inputDegree, 3:4, :) = 0;
+            refP = p;
+            refS = s;
+            refP(degree > inputDegree, 3:4, :) = 0;
+            refS(degree > inputDegree, 3:4, :) = 0;
 
             if adaptive
-                tolerance = 1e-6; limit = 100;
+                tol = 1e-6;
+                lim = 100;
             else
-                tolerance = 0; limit = 12;
+                tol = 0;
+                lim = 12;
             end
 
-            [expected, expectedStd] = fullFieldReference(referenceP, referenceS, ...
-                gia, locs, ids, 'uniform', tolerance, limit);
-            [actual, actualStd, actualDates] = solvedegree1( ...
+            [expc, expcStd] = fullFieldReference(refP, refS, ...
+                gia, locs, ids, 'uniform', tol, lim);
+            [actl, actlStd, actlDates] = solvedegree1( ...
                 'CSR', 'RL06', 3, inputDegree, 3, 'ICE6GD', GeoDomain('alloceans'), ...
                 'IncludeC20', true, 'IncludeC30', true, 'IncludeC21S21', true, ...
-                'Method', 'uniform', 'Tolerance', tolerance, 'MaxIter', limit, ...
+                'Method', 'uniform', 'Tolerance', tol, 'MaxIter', lim, ...
                 'ForceNew', true, 'SaveData', false, 'BeQuiet', true);
-            testCase.verifyEqual(actual, expected, 'AbsTol', 1e-10);
-            testCase.verifyEqual(actualStd, expectedStd, 'AbsTol', 1e-10);
-            testCase.verifyEqual(actualDates, dates);
-            testCase.verifyGreaterThan(max(abs(actual), [], 'all'), 0);
+            testCase.verifyEqual(actl, expc, 'AbsTol', 1e-10);
+            testCase.verifyEqual(actlStd, expcStd, 'AbsTol', 1e-10);
+            testCase.verifyEqual(actlDates, dates);
+            testCase.verifyGreaterThan(max(abs(actl), [], 'all'), 0);
 
-            if epochCount > 1
-                testCase.verifyEqual(actualStd(end, :), zeros(1, 7));
+            if epochCnt > 1
+                testCase.verifyEqual(actlStd(end, :), zeros(1, 7));
             end
 
         end
 
-        function matchesFullFieldReference(testCase, includeC20, includeC30, includeC21S21, method, epochCount, adaptive, kernelCase)
+        function matchesFullFieldReference(testCase, inclC20, inclC30, inclCS21, mthd, epochCnt, adaptive, kernelCase)
             global JOINT_LOW_DEGREE_FIXTURE
             [order, degree] = addmon(3);
-            meta = repmat([degree, order], 1, 1, epochCount);
-            values = reshape(sin(1:20 * epochCount), 10, 2, epochCount);
-            sigma = reshape(1:20 * epochCount, 10, 2, epochCount) / 100;
+            meta = repmat([degree, order], 1, 1, epochCnt);
+            values = reshape(sin(1:20 * epochCnt), 10, 2, epochCnt);
+            sigma = reshape(1:20 * epochCnt, 10, 2, epochCnt) / 100;
 
             if strcmp(kernelCase, 'denseZeroStd')
                 sigma(:) = 0;
-            elseif strcmp(kernelCase, 'dense') && epochCount > 1
+            elseif strcmp(kernelCase, 'dense') && epochCnt > 1
                 % A zero-variance epoch must not inherit another epoch's errors.
                 sigma(:, :, 1) = 0;
             end
@@ -274,58 +278,64 @@ classdef degree1SelectedLocalisationTest < matlab.unittest.TestCase
             gia = cat(2, meta, values / 7);
             p = cat(2, meta, values);
             s = cat(2, meta, sigma);
-            dates = datetime(2003, (1:epochCount)', 15);
+            dates = datetime(2003, (1:epochCnt)', 15);
             JOINT_LOW_DEGREE_FIXTURE = struct('p', permute(p, [3, 1, 2]), ...
                 's', permute(s, [3, 1, 2]), 'gia', permute(gia, [3, 1, 2]), 'dates', dates);
 
             if ~strcmp(kernelCase, 'original')
-                indices = 1:16;
+                idxs = 1:16;
                 JOINT_LOW_DEGREE_FIXTURE.kernel = .6 * eye(16) ...
-                    + .002 * (sin(indices' * indices) + cos(indices' + indices));
+                    + .002 * (sin(idxs' * idxs) + cos(idxs' + idxs));
             end
 
-            locs = [2, 1; 3, 1; 3, 2]; ids = [2, 3, 4];
+            locs = [2, 1; 3, 1; 3, 2];
+            ids = [2, 3, 4];
 
-            if includeC20
-                locs(end + 1, :) = [4, 1]; ids(end + 1) = 5;
+            if inclC20
+                locs(end + 1, :) = [4, 1];
+                ids(end + 1) = 5;
             end
 
-            if includeC30
-                locs(end + 1, :) = [7, 1]; ids(end + 1) = 10;
+            if inclC30
+                locs(end + 1, :) = [7, 1];
+                ids(end + 1) = 10;
             end
 
-            if includeC21S21
-                locs = [locs; 5, 1; 5, 2]; ids = [ids, 6, 7];
+            if inclCS21
+                locs = [locs; 5, 1; 5, 2];
+                ids = [ids, 6, 7];
             end
 
             if adaptive
-                tolerance = 1e-6; limit = 100;
+                tol = 1e-6;
+                lim = 100;
             else
-                tolerance = 0; limit = 3;
+                tol = 0;
+                lim = 3;
 
                 if ~strcmp(kernelCase, 'original')
-                    limit = 12;
+                    lim = 12;
                 end
 
             end
 
-            [expected, expectedStd] = fullFieldReference(p, s, gia, locs, ids, method, tolerance, limit);
-            [actual, actualStd, actualDates, field, actualLocs] = solvedegree1( ...
+            [expc, expcStd] = fullFieldReference(p, s, gia, locs, ids, mthd, tol, lim);
+            [actl, actlStd, actlDates, field, actlLocs] = solvedegree1( ...
                 'CSR', 'RL06', 3, 3, 3, 'ICE6GD', GeoDomain('alloceans'), ...
-                'IncludeC20', includeC20, 'IncludeC30', includeC30, ...
-                'IncludeC21S21', includeC21S21, 'Method', method, ...
-                'Tolerance', tolerance, 'MaxIter', limit, ...
+                'IncludeC20', inclC20, 'IncludeC30', inclC30, ...
+                'IncludeC21S21', inclCS21, 'Method', mthd, ...
+                'Tolerance', tol, 'MaxIter', lim, ...
                 'ForceNew', true, 'SaveData', false, 'BeQuiet', true);
-            testCase.verifyEqual(actual, expected, 'AbsTol', 1e-10);
-            testCase.verifyEqual(actualStd, expectedStd, 'AbsTol', 1e-10);
-            testCase.verifyTrue(all(isfinite(actual), 'all'));
-            testCase.verifyTrue(all(isfinite(actualStd), 'all'));
-            testCase.verifyGreaterThanOrEqual(actualStd, zeros(size(actualStd)));
-            testCase.verifyEqual(actualDates, dates);
-            testCase.verifyEqual(actualLocs, locs);
+            testCase.verifyEqual(actl, expc, 'AbsTol', 1e-10);
+            testCase.verifyEqual(actlStd, expcStd, 'AbsTol', 1e-10);
+            testCase.verifyTrue(all(isfinite(actl), 'all'));
+            testCase.verifyTrue(all(isfinite(actlStd), 'all'));
+            testCase.verifyGreaterThanOrEqual(actlStd, zeros(size(actlStd)));
+            testCase.verifyEqual(actlDates, dates);
+            testCase.verifyEqual(actlLocs, locs);
 
             for k = 1:size(locs, 1)
-                testCase.verifyEqual(field(:, locs(k, 1), 2 + locs(k, 2)), expected(:, k), 'AbsTol', 1e-10);
+                testCase.verifyEqual(field(:, locs(k, 1), 2 + locs(k, 2)), expc(:, k), 'AbsTol', 1e-10);
             end
 
         end
@@ -334,7 +344,7 @@ classdef degree1SelectedLocalisationTest < matlab.unittest.TestCase
 
 end
 
-function [coeffs, stds] = fullFieldReference(p, s, gia, locs, ids, method, tolerance, limit)
+function [coeffs, stds] = fullFieldReference(p, s, gia, locs, ids, mthd, tol, lim)
     % Keep the original full-localisation arithmetic as the comparison oracle.
     L = max(p(:, 1, 1));
     p(4:end, 3:4, :) = p(4:end, 3:4, :) - gia(4:end, 3:4, :);
@@ -344,30 +354,31 @@ function [coeffs, stds] = fullFieldReference(p, s, gia, locs, ids, method, toler
         s(locs(k, 1), 2 + locs(k, 2), :) = 0;
     end
 
-    K = kernelcp_new(L); land = eye((L + 1)^2) - K; block = K(ids, ids);
+    K = kernelcp_new(L); land = eye((L + 1) ^ 2) - K; block = K(ids, ids);
     known = select(localise(p, 'L', L, 'K', K), locs);
     knownStd = select(localise(s, 'L', L, 'K', K, 'IsError', true), locs);
     coeffs = zeros(size(known)); stds = coeffs;
 
-    for iteration = 1:limit
-        old = coeffs; oldStd = stds;
+    for iter = 1:lim
+        old = coeffs;
+        oldStd = stds;
         f = localise(p, 'L', L, 'K', land);
         fs = localise(s, 'L', L, 'K', land, 'IsError', true);
 
-        if strcmp(method, 'fingerprint')
+        if strcmp(mthd, 'fingerprint')
             [r, rs] = solvesle(f, fs, L, GeoDomain('alloceans'), ...
                 'OceanKernel', K, 'KernelOrder', kernelorder(L), ...
                 'InitialRSL', p / 1000, 'RotationFeedback', true, ...
                 'Tolerance', 1e-9, 'MaxIter', 100, 'BeQuiet', true);
-            ocean = select(localise(r, 'L', L, 'K', K), locs);
-            oceanStd = select(localise(rs, 'L', L, 'K', K, 'IsError', true), locs);
+            ocn = select(localise(r, 'L', L, 'K', K), locs);
+            ocnStd = select(localise(rs, 'L', L, 'K', K, 'IsError', true), locs);
         else
-            ocean = K(ids, 1) * reshape(-f(1, 3, :) / K(1, 1), 1, []);
-            oceanStd = K(ids, 1) * reshape(-fs(1, 3, :) / K(1, 1), 1, []);
+            ocn = K(ids, 1) * reshape(-f(1, 3, :) / K(1, 1), 1, []);
+            ocnStd = K(ids, 1) * reshape(-fs(1, 3, :) / K(1, 1), 1, []);
         end
 
-        coeffs = block \ (ocean - known);
-        stds = sqrt((block \ eye(numel(ids))) .^ 2 * (oceanStd .^ 2 + knownStd .^ 2));
+        coeffs = block \ (ocn - known);
+        stds = sqrt((block \ eye(numel(ids))) .^ 2 * (ocnStd .^ 2 + knownStd .^ 2));
 
         for k = 1:size(locs, 1)
             p(locs(k, 1), 2 + locs(k, 2), :) = coeffs(k, :);
@@ -376,13 +387,13 @@ function [coeffs, stds] = fullFieldReference(p, s, gia, locs, ids, method, toler
 
         change = max([abs(coeffs - old); abs(stds - oldStd)], [], 'all');
 
-        if tolerance > 0 && change <= tolerance
+        if tol > 0 && change <= tol
             break
         end
 
     end
 
-    assert(tolerance == 0 || change <= tolerance, 'Full-field reference failed to converge.');
+    assert(tol == 0 || change <= tol, 'Full-field reference failed to converge.');
 
     for k = 4:size(locs, 1)
         coeffs(k, :) = coeffs(k, :) + reshape(gia(locs(k, 1), 2 + locs(k, 2), :), 1, []);
