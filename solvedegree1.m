@@ -97,7 +97,8 @@
 %   The uniform method computes only land C00 and its variance, retaining
 %   contributions from every input harmonic to that ocean mass constraint.
 %   Fingerprint land setup applies I-K without storing a full land kernel;
-%   diagonal variances are propagated in bounded row blocks.
+%   diagonal variances use the squared retained ocean columns and a
+%   diagonal correction, without row blocking.
 %   Fixed variance projections omit input columns that are exactly zero at
 %   every epoch. Signal projections retain all harmonics, including GIA.
 %   Cached solutions are assumed converged at sufficiently small tolerances;
@@ -121,7 +122,7 @@
 %   2025/03/18, En-Chi Lee (williameclee@arizona.edu)
 %
 % Last modified
-%   2026/10/26, En-Chi Lee (williameclee@arizona.edu)
+%   2026/10/27, En-Chi Lee (williameclee@arizona.edu)
 
 function varargout = solvedegree1(varargin)
     %% Initialisation
@@ -215,9 +216,8 @@ function [coeffs, coeffStds, dates] = ...
     % Precompute kernels
     [coeffLocs, coeffIds] = lowdegreecoefficients(inclC20, inclC30, inclC21S21);
 
-    % Note: Converting to SINGLE does not work because it is not compatible with the sparse SLE kernel
-    ocnKernelSle = kernelcp_new(Lsle, ocnDom, ...
-        "BeQuiet", beQuiet);
+    ocnKernelSle = kernelcp_new(Lsle, ocnDom, "BeQuiet", beQuiet);
+
     if strcmp(mthd, 'uniform')
         % Uniform ocean loading depends only on the land C00 coefficient.
         lndKernelSle = -ocnKernelSle(1, :);
@@ -229,12 +229,12 @@ function [coeffs, coeffStds, dates] = ...
     % Prepare the ocean constraint rows once for signal and variance propagation.
     coeffOcnKernel = ocnKernelSle(coeffIds, :);
     coeffOcnKernelSq = coeffOcnKernel .^ 2;
-    coeffsKernel = nan([nCoeffs, nCoeffs]);
+    coeffKernel = nan([nCoeffs, nCoeffs]);
 
     for iCoeff = 1:nCoeffs
 
         for jCoeff = 1:nCoeffs
-            coeffsKernel(iCoeff, jCoeff) = ocnKernelSle(coeffIds(iCoeff), coeffIds(jCoeff));
+            coeffKernel(iCoeff, jCoeff) = ocnKernelSle(coeffIds(iCoeff), coeffIds(jCoeff));
         end
 
     end
@@ -245,26 +245,31 @@ function [coeffs, coeffStds, dates] = ...
     sdPlmt = putcoeffs(sdPlmt, 0, coeffLocs);
     sdStdPlmt = putcoeffs(sdStdPlmt, 0, coeffLocs);
     knownSdPlms = packcoeffs(sdPlmt, kernelOrder);
-    knownVarPlms = packcoeffs(sdStdPlmt, kernelOrder) .^ 2;
-    % Padding and known zero errors need no fixed-variance projection.
-    % Retain any column with a nonzero variance at at least one epoch.
-    knownVarIds = find(any(knownVarPlms ~= 0, 2));
-    knownVarPlms = knownVarPlms(knownVarIds, :);
-    % Only the jointly estimated coefficients enter the ocean constraint.
+    knownSdVarPlms = packcoeffs(sdStdPlmt, kernelOrder) .^ 2;
+
     knownOcnCoeffs = coeffOcnKernel * knownSdPlms;
-    knownOcnCoeffVars = coeffOcnKernelSq(:, knownVarIds) * knownVarPlms;
+    % We don't need to project the whole thing, because most of it is 0 (padded to Lsle)
+    % For now we only apply this to the STD/variance
+    knownVarIds = find(any(knownSdVarPlms ~= 0, 2));
+    knownSdVarPlms = knownSdVarPlms(knownVarIds, :);
+    knownOcnCoeffVars = coeffOcnKernelSq(:, knownVarIds) * knownSdVarPlms;
 
     % Only the estimated coefficients change between outer iterations.
     % Keep the fixed land signal and variance, plus their update columns.
     % Uniform loading retains only the C00 row; fingerprints need all rows.
     if strcmp(mthd, 'uniform')
         knownLndSdPlms = lndKernelSle * knownSdPlms;
-        knownLndVarPlms = (lndKernelSle(:, knownVarIds) .^ 2) * knownVarPlms;
+        knownLndVarPlms = (lndKernelSle(:, knownVarIds) .^ 2) * knownSdVarPlms;
         coeffLndKernel = lndKernelSle(:, coeffIds);
         clear lndKernelSle
     else
+        % Land kernel = I-K
         knownLndSdPlms = knownSdPlms - ocnKernelSle * knownSdPlms;
-        knownLndVarPlms = landvariance(ocnKernelSle, knownVarPlms, knownVarIds);
+        % (I-K).^2 = K.^2 + diag(1-2*diag(K))
+        knownLndVarPlms = (ocnKernelSle(:, knownVarIds) .^ 2) * knownSdVarPlms;
+        ocnDiag = diag(ocnKernelSle);
+        knownLndVarPlms(knownVarIds, :) = knownLndVarPlms(knownVarIds, :) ...
+            + (1 - 2 * ocnDiag(knownVarIds)) .* knownSdVarPlms;
         coeffLndKernel = -ocnKernelSle(:, coeffIds);
         diagIds = sub2ind(size(coeffLndKernel), coeffIds, 1:nCoeffs);
         coeffLndKernel(diagIds) = coeffLndKernel(diagIds) + 1;
@@ -317,14 +322,14 @@ function [coeffs, coeffStds, dates] = ...
                 ocnCoeffVars = uniformOcnScaleSq * lndC00Var;
         end
 
-        coeffs = coeffsKernel \ (ocnCoeffs - knownOcnCoeffs);
+        coeffs = coeffKernel \ (ocnCoeffs - knownOcnCoeffs);
 
         if strcmp(mthd, 'fingerprint')
             sdPlmt = putcoeffs(sdPlmt, coeffs, coeffLocs);
         end
 
         % STD
-        coeffStds = sqrt((coeffsKernel \ eye(nCoeffs)) .^ 2 * ...
+        coeffStds = sqrt((coeffKernel \ eye(nCoeffs)) .^ 2 * ...
             (ocnCoeffVars + knownOcnCoeffVars));
 
         if any(~isfinite(coeffs), 'all') || any(~isfinite(coeffStds), 'all')
@@ -540,30 +545,6 @@ function out = formatoutput(coeffs, coeffStds, dates, timelim, unit, nOut, inclu
     end
 
     out = {coeffs, coeffStds, dates, gracePlmt, coeffLocs};
-
-end
-
-% Propagate retained input variances through every output row of I-K.
-function lndVars = landvariance(ocnKernel, vars, inputIds)
-    nCoeffs = size(ocnKernel, 1);
-    lndVars = zeros(nCoeffs, size(vars, 2));
-
-    if isempty(inputIds)
-        return
-    end
-
-    % With all input columns, each block is about 64 MiB at degree 180.
-    blockRows = 256;
-
-    for first = 1:blockRows:nCoeffs
-        rows = first:min(first + blockRows - 1, nCoeffs);
-        block = -ocnKernel(rows, inputIds);
-        % Identity entries use global harmonic indices, not subset positions.
-        inBlock = inputIds >= first & inputIds <= rows(end);
-        diagIds = sub2ind(size(block), inputIds(inBlock) - first + 1, find(inBlock));
-        block(diagIds) = block(diagIds) + 1;
-        lndVars(rows, :) = (block .^ 2) * vars;
-    end
 
 end
 

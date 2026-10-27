@@ -7,26 +7,30 @@
 % forcing against full localisation at every reference iteration.
 % Uniform cases retain unestimated high-degree contributions to land C00,
 % including GIA above the input truncation degree and nonzero input C00.
-% Fingerprint cases at degrees 15, 16 and 23 exercise full and partial
-% 256-row variance blocks against the original full-field calculation.
+% Fingerprint cases at degrees 15, 16 and 23 check rectangular variance
+% products and both signs of the diagonal correction against full fields.
 % Padded-input cases check exact variance support across epochs, empty
 % support, tiny nonzero uncertainties, and higher-degree GIA signals.
 %
 % Created by
-%   2026/10/26, OpenAI Codex
+%   2026/10/26, En-Chi Lee (williameclee@arizona.edu)
+%
+% Last modified
+%   2026/10/27, En-Chi Lee (williameclee@arizona.edu)
 
 classdef degree1SelectedLocalisationTest < matlab.unittest.TestCase
 
     properties (TestParameter)
-        includeC20 = {false, true}
-        includeC30 = {false, true}
-        includeC21S21 = {false, true}
-        method = {'fingerprint', 'uniform'}
-        epochCount = {1, 3}
+        inclC20 = {false, true}
+        inclC30 = {false, true}
+        inclCS21 = {false, true}
+        mthd = {'fingerprint', 'uniform'}
+        epochCnt = {1, 3}
         adaptive = {false, true}
         kernelCase = {'original', 'dense', 'denseZeroStd'}
         inputDegree = {2, 3}
         fingerprintDegree = {15, 16, 23}
+        oceanDiagonal = {0.25, 0.6, 0.95}
         varianceSupport = {'empty', 'mixed', 'tiny'}
     end
 
@@ -147,25 +151,25 @@ classdef degree1SelectedLocalisationTest < matlab.unittest.TestCase
 
         end
 
-        function fingerprintMatchesAcrossVarianceBlocks(testCase, fingerprintDegree, epochCount, adaptive)
+        function fingerprintMatchesAcrossBandwidths(testCase, fingerprintDegree, epochCnt, adaptive, oceanDiagonal)
             global JOINT_LOW_DEGREE_FIXTURE
             L = fingerprintDegree;
             [order, degree] = addmon(L);
-            meta = repmat([degree, order], 1, 1, epochCount);
-            values = reshape(sin(1:2 * numel(degree) * epochCount), ...
-                numel(degree), 2, epochCount);
+            meta = repmat([degree, order], 1, 1, epochCnt);
+            values = reshape(sin(1:2 * numel(degree) * epochCnt), ...
+                numel(degree), 2, epochCnt);
             sigma = 0.1 + abs(values) / 5;
 
-            if epochCount > 1
+            if epochCnt > 1
                 sigma(:, :, end) = 0;
             end
 
             p = cat(2, meta, values);
             s = cat(2, meta, sigma);
             gia = cat(2, meta, values / 7);
-            dates = datetime(2003, (1:epochCount)', 15);
+            dates = datetime(2003, (1:epochCnt)', 15);
             idxs = 1:(L + 1) ^ 2;
-            K = 0.6 * eye(numel(idxs)) ...
+            K = oceanDiagonal * eye(numel(idxs)) ...
                 + 0.001 * (sin(idxs' * idxs) + cos(idxs' + idxs));
             JOINT_LOW_DEGREE_FIXTURE = struct('p', permute(p, [3, 1, 2]), ...
                 's', permute(s, [3, 1, 2]), 'gia', permute(gia, [3, 1, 2]), ...
@@ -193,7 +197,7 @@ classdef degree1SelectedLocalisationTest < matlab.unittest.TestCase
             testCase.verifyEqual(actlDates, dates);
             testCase.verifyGreaterThanOrEqual(actlStd, zeros(size(actlStd)));
 
-            if epochCount > 1
+            if epochCnt > 1
                 testCase.verifyEqual(actlStd(end, :), zeros(1, 7));
             end
 
