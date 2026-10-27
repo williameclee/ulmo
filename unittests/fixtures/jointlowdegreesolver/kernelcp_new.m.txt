@@ -1,9 +1,18 @@
-%% KERNELCP_NEW - Supplies a small coupled degree-3 kernel for synthetic inversions.
+%% KERNELCP_NEW - Supplies a configurable degree-3 kernel for synthetic inversions.
+% Uses the shared fixture's kernel when supplied; otherwise retains the
+% original sparse coupling used by the joint-coefficient integration tests.
 %
 % Created by
 %   2026/10/26, En-Chi Lee (williameclee@gmail.com)
 
 function K = kernelcp_new(varargin)
+    global JOINT_LOW_DEGREE_FIXTURE
+
+    if isfield(JOINT_LOW_DEGREE_FIXTURE, 'kernel')
+        K = JOINT_LOW_DEGREE_FIXTURE.kernel;
+        return
+    end
+
     K = .6 * eye(16);
     K(1, 2:16) = .002 * (1:15);
     K(2:16, 1) = K(1, 2:16)';

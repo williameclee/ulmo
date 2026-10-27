@@ -94,6 +94,14 @@
 % Notes
 %   GIA is removed for degrees >= 2 during estimation and restored for
 %   estimated coefficients of those degrees. Degree 1 remains GIA-free.
+%   The uniform method computes only land C00 and its variance, retaining
+%   contributions from every input harmonic to that ocean mass constraint.
+%   Fingerprint land setup applies I-K without storing a full land kernel;
+%   diagonal variances use squared ocean columns and a
+%   diagonal correction, without row blocking.
+%   Fixed signal and variance projections independently select active input
+%   columns when at most half are nonzero across the epochs. Denser inputs
+%   use full-column products. Only exact zeros are omitted, after GIA removal.
 %   Cached solutions are assumed converged at sufficiently small tolerances;
 %   iteration settings are not part of cache filenames. Use ForceNew=true
 %   for other settings and SaveData=false to preserve an existing cache.
@@ -115,7 +123,7 @@
 %   2025/03/18, En-Chi Lee (williameclee@arizona.edu)
 %
 % Last modified
-%   2026/10/26, En-Chi Lee (williameclee@arizona.edu)
+%   2026/10/27, En-Chi Lee (williameclee@arizona.edu)
 
 function varargout = solvedegree1(varargin)
     %% Initialisation
@@ -165,32 +173,24 @@ function varargout = solvedegree1(varargin)
 
 end
 
-%% Subfunctions
 % Heart of the programme
 function [coeffs, coeffStds, dates] = ...
         solvedegree1Core(prod, Lused, Lsle, giaMdl, inclC20, inclC30, inclC21S21, ocnDom, mthd, beQuiet, iterOpts)
-    %% Loading data
+    %% Initialisation
     if ~beQuiet
         wbar = waitbar(0, 'Loading GRACE data', ...
             "Name", upper(mfilename), "CreateCancelBtn", 'setappdata(gcbf,''canceling'',1)');
         cleanup = onCleanup(@() deleteWaitbar(wbar));
     end
 
-    [sdPlmt, sdStdPlmt, dates] = grace2plmt_new(prod{:}, ...
-        "Unit", 'SD', "OutputFormat", 'timefirst', "TimeFormat", 'datetime', ...
-        "BeQuiet", beQuiet);
-    sdPlmt = ensureplmdegree(sdPlmt, Lused);
-    sdPlmt = ensureplmdegree(sdPlmt, Lsle);
-    sdStdPlmt = ensureplmdegree(sdStdPlmt, Lused);
-    sdStdPlmt = ensureplmdegree(sdStdPlmt, Lsle);
+    [coeffLocs, coeffIds] = lowdegreecoefficients(inclC20, inclC30, inclC21S21);
+    nCoeffs = numel(coeffIds);
+    kerOrder = kernelorder(Lsle);
 
-    % Remove GIA signal for l >= 2 (Sun et al., 2016)
-    giaPlmt = gia2plmt(dates, giaMdl, "L", Lsle, ...
-        "OutputFormat", 'timefirst', "BeQuiet", beQuiet);
-    sdPlmt(:, 4:end, 3:4) = sdPlmt(:, 4:end, 3:4) - giaPlmt(:, 4:end, 3:4);
-    % Ignore STD of GIA for now
+    %% Data and kernel preparation
+    [sdPlmt, sdStdPlmt, giaPlmt, dates] = ...
+        preparedata(prod, Lused, Lsle, giaMdl, coeffLocs, beQuiet);
 
-    %% Preparing/preallocating variables
     if ~beQuiet
         waitbar(0, wbar, 'Preparing kernels and variables');
 
@@ -200,40 +200,18 @@ function [coeffs, coeffStds, dates] = ...
 
     end
 
-    sdPlmt = permute(sdPlmt, [2, 3, 1]); % timefirst -> traditional
-    sdStdPlmt = permute(sdStdPlmt, [2, 3, 1]); % timefirst -> traditional
+    [ocnKer, coeffKer, coeffLndKer, ocnLeakKer, lnd2ocnKer, lndC00Ker, lndVarDiag] = ...
+        preparekernels(Lsle, ocnDom, coeffIds, mthd, beQuiet);
+    ocnLeakKerSq = ocnLeakKer .^ 2;
+    coeffLndKerSq = coeffLndKer .^ 2;
+    lnd2ocnKerSq = lnd2ocnKer .^ 2;
+    coeffVarMap = (coeffKer \ eye(nCoeffs)) .^ 2;
 
-    % Number of simultaneously estimated low-degree coefficients
-    nCoeffs = 3 + inclC20 + inclC30 + 2 * inclC21S21; % Degree 1 and optional degree-2/3 terms
-
-    % Precompute kernels
-    [coeffLocs, coeffIds] = lowdegreecoefficients(inclC20, inclC30, inclC21S21);
-
-    % Note: Converting to SINGLE does not work because it is not compatible with the sparse SLE kernel
-    ocnKernelSle = kernelcp_new(Lsle, ocnDom, ...
-        "BeQuiet", beQuiet);
-    lndKernelSle = eye(size(ocnKernelSle)) - ocnKernelSle;
-    coeffsKernel = nan([nCoeffs, nCoeffs]);
-
-    for iCoeff = 1:nCoeffs
-
-        for jCoeff = 1:nCoeffs
-            coeffsKernel(iCoeff, jCoeff) = ocnKernelSle(coeffIds(iCoeff), coeffIds(jCoeff));
-        end
-
-    end
-
-    kernelOrder = kernelorder(Lsle);
-
-    % Set unknown coefficients to 0
-    sdPlmt = putcoeffs(sdPlmt, 0, coeffLocs);
-    sdStdPlmt = putcoeffs(sdStdPlmt, 0, coeffLocs);
-    knownOcnSdCoeffs = extractcoeffs( ...
-        localise(sdPlmt, "L", Lsle, "K", ocnKernelSle), ...
-        coeffLocs);
-    knownOcnSdCoeffStds = extractcoeffs( ...
-        localise(sdStdPlmt, "L", Lsle, "K", ocnKernelSle, "IsError", true), ...
-        coeffLocs);
+    %% Fixed projections
+    [fxdOcnCoeffs, fxdOcnCoeffVars, fxdLndSdPlms, fxdLndVarPlms] = ...
+        projectfixedfields(sdPlmt, sdStdPlmt, kerOrder, ocnKer, ...
+        ocnLeakKer, ocnLeakKerSq, lndC00Ker, lndVarDiag, mthd);
+    clear lndC00Ker lndVarDiag
 
     %% Solving the degree-1 coefficients
     maxIter = iterOpts.MaxIter;
@@ -241,6 +219,7 @@ function [coeffs, coeffStds, dates] = ...
     converged = false;
     coeffs = extractcoeffs(sdPlmt, coeffLocs);
     coeffStds = extractcoeffs(sdStdPlmt, coeffLocs);
+    clear sdStdPlmt
 
     for iIter = 1:maxIter
         prevCoeffs = coeffs;
@@ -256,35 +235,36 @@ function [coeffs, coeffStds, dates] = ...
 
         end
 
-        lndPlmt = localise(sdPlmt, "L", Lsle, "K", lndKernelSle);
-        lndStdPlmt = localise(sdStdPlmt, "L", Lsle, "K", lndKernelSle, "IsError", true);
-
         switch mthd
             case 'fingerprint'
+                lndPlmt = plms2lmcosi(fxdLndSdPlms + coeffLndKer * coeffs, ...
+                    kerOrder, sdPlmt);
+                lndStdPlmt = plms2lmcosi( ...
+                    sqrt(fxdLndVarPlms + coeffLndKerSq * coeffStds .^ 2), ...
+                    kerOrder, sdPlmt);
                 [ocnPlmt, ocnStdPlmt] = ...
                     solvesle(lndPlmt, lndStdPlmt, Lsle, ocnDom, ...
-                    "OceanKernel", ocnKernelSle, "KernelOrder", kernelOrder, ...
+                    "OceanKernel", ocnKer, "KernelOrder", kerOrder, ...
                     "InitialRSL", sdPlmt / 1000, ... % kg/m^2 -> m
                     "RotationFeedback", true, "MaxIter", iterOpts.SleMaxIter, ...
                     "Tolerance", iterOpts.SleTolerance, "BeQuiet", true);
-                ocnPlmt = localise(ocnPlmt, "L", Lsle, "K", ocnKernelSle);
-                ocnStdPlmt = localise(ocnStdPlmt, "L", Lsle, "K", ocnKernelSle, "IsError", true);
-                ocnCoeffs = extractcoeffs(ocnPlmt, coeffLocs);
-                ocnCoeffStds = extractcoeffs(ocnStdPlmt, coeffLocs);
+                ocnCoeffs = ocnLeakKer * packcoeffs(ocnPlmt, kerOrder);
+                ocnCoeffVars = ocnLeakKerSq * packcoeffs(ocnStdPlmt, kerOrder) .^ 2;
             case 'uniform'
-                ocnArea = ocnKernelSle(1, 1);
-                eustatic = squeeze(-lndPlmt(1, 3, :) / ocnArea);
-                ocnCoeffs = eustatic' .* ocnKernelSle(coeffIds, 1);
-                eustaticStd = squeeze(-lndStdPlmt(1, 3, :) / ocnArea);
-                ocnCoeffStds = eustaticStd' .* ocnKernelSle(coeffIds, 1);
+                lndC00 = fxdLndSdPlms + coeffLndKer * coeffs;
+                lndC00Var = fxdLndVarPlms + coeffLndKerSq * coeffStds .^ 2;
+                ocnCoeffs = -lnd2ocnKer * lndC00;
+                ocnCoeffVars = lnd2ocnKerSq * lndC00Var;
         end
 
-        coeffs = coeffsKernel \ (ocnCoeffs - knownOcnSdCoeffs);
-        sdPlmt = putcoeffs(sdPlmt, coeffs, coeffLocs);
+        coeffs = coeffKer \ (ocnCoeffs - fxdOcnCoeffs);
+
+        if strcmp(mthd, 'fingerprint')
+            sdPlmt = putcoeffs(sdPlmt, coeffs, coeffLocs);
+        end
+
         % STD
-        coeffStds = sqrt((coeffsKernel \ eye(nCoeffs)) .^ 2 * ...
-            (ocnCoeffStds .^ 2 + knownOcnSdCoeffStds .^ 2));
-        sdStdPlmt = putcoeffs(sdStdPlmt, coeffStds, coeffLocs);
+        coeffStds = sqrt(coeffVarMap * (ocnCoeffVars + fxdOcnCoeffVars));
 
         if any(~isfinite(coeffs), 'all') || any(~isfinite(coeffStds), 'all')
             error('ULMO:solvedegree1:NonFiniteIterate', ...
@@ -323,6 +303,137 @@ function [coeffs, coeffStds, dates] = ...
 
 end
 
+%% PREPAREKERNELS - Constructs operators
+% Output arguments
+%   ocnKer - Localises full SH to ocean domain
+%   coeffKer - Localises only unknown coefficients that are being solved to ocean domain
+%   coeffLndKer - Localises only unknown coefficients that are being solved to land domain
+%   ocnLeakKer - Projects leakage from known coefficients into the unkown coefficients in the ocean domain
+%   lnd2ocnKer - Projects a constant field to ocean domain with full SH
+function [ocnKer, coeffKer, coeffLndKer, ocnLeakKer, lnd2ocnKer, lndC00Ker, lndVarDiag] = preparekernels( ...
+        Lsle, ocnDom, coeffIds, mthd, beQuiet)
+    ocnKer = kernelcp_new(Lsle, ocnDom, "BeQuiet", beQuiet);
+    ocnLeakKer = ocnKer(coeffIds, :);
+    coeffKer = ocnKer(coeffIds, coeffIds);
+    lnd2ocnKer = [];
+    lndC00Ker = [];
+    lndVarDiag = [];
+
+    if strcmp(mthd, 'uniform')
+        lndC00Ker = -ocnKer(1, :);
+        lndC00Ker(1) = lndC00Ker(1) + 1;
+        coeffLndKer = lndC00Ker(:, coeffIds);
+        lnd2ocnKer = ocnKer(coeffIds, 1) / ocnKer(1, 1);
+    else
+        % Form only the update columns of I-K, not the full land kernel.
+        coeffLndKer = -ocnKer(:, coeffIds);
+        diagIds = sub2ind(size(coeffLndKer), coeffIds, 1:numel(coeffIds));
+        coeffLndKer(diagIds) = coeffLndKer(diagIds) + 1;
+        lndVarDiag = 1 - 2 * diag(ocnKer);
+    end
+
+end
+
+%% PREPAREDATA - Loads known GRACE fields and subtract GIA
+% Signal and STD use traditional lmcosi layout at Lsle, with unknown
+% coefficients zeroed. GIA retains timefirst layout for restoration.
+function [sdPlmt, sdStdPlmt, giaPlmt, dates] = preparedata( ...
+        prod, Lused, Lsle, giaMdl, coeffLocs, beQuiet)
+    [sdPlmt, sdStdPlmt, dates] = grace2plmt_new(prod{:}, ...
+        "Unit", 'SD', "OutputFormat", 'timefirst', "TimeFormat", 'datetime', ...
+        "BeQuiet", beQuiet);
+    % First truncate, then pad
+    sdPlmt = ensureplmdegree(sdPlmt, Lused);
+    sdPlmt = ensureplmdegree(sdPlmt, Lsle);
+    sdStdPlmt = ensureplmdegree(sdStdPlmt, Lused);
+    sdStdPlmt = ensureplmdegree(sdStdPlmt, Lsle);
+
+    % Remove GIA signal for l >= 2, l <= 1 is not used anyway
+    giaPlmt = gia2plmt(dates, giaMdl, "L", Lsle, ...
+        "OutputFormat", 'timefirst', "BeQuiet", beQuiet);
+    sdPlmt(:, 4:end, 3:4) = sdPlmt(:, 4:end, 3:4) - giaPlmt(:, 4:end, 3:4);
+    % Ignore STD of GIA for now
+
+    sdPlmt = permute(sdPlmt, [2, 3, 1]); % timefirst -> traditional
+    sdStdPlmt = permute(sdStdPlmt, [2, 3, 1]); % timefirst -> traditional
+    % The estimated coefficients are unknown in both known input fields.
+    sdPlmt = putcoeffs(sdPlmt, 0, coeffLocs);
+    sdStdPlmt = putcoeffs(sdStdPlmt, 0, coeffLocs);
+end
+
+%% PROJECTFIXEDFIELDS - Projects the fixed (known) signal and variance
+% Output arguments
+%   fxdOcnCoeffs - Leakage of the fixed coefficients onto the unkown coefficients in the ocean domain
+%   fxdOcnCoeffVars - Variance of fxdOcnCoeffs
+%   fxdLndSdPlms - Full SH coefficients of the fixed cofficients' land signal
+%   fxdLndVarPlms - Variance of fxdLndSdPlms
+function [fxdOcnCoeffs, fxdOcnCoeffVars, fxdLndSdPlms, fxdLndVarPlms] = projectfixedfields( ...
+        sdPlmt, sdStdPlmt, kerOrder, ocnKer, ocnLeakKer, ocnLeakKerSq, lndC00Ker, lndVarDiag, mthd)
+    fxdSdPlms = packcoeffs(sdPlmt, kerOrder);
+    fxdSdVarPlms = packcoeffs(sdStdPlmt, kerOrder) .^ 2;
+
+    % If most coefficients are 0 (because of the padding to Lsle),
+    % projecting all of them invokes multiplication of large matrices.
+    % This can be avoided by truncating the projection
+    maxAcvFrac = 0.5; % Truncate at or below this threshold
+    actvSigIds = find(any(fxdSdPlms ~= 0, 2));
+    useSigSubset = numel(actvSigIds) <= maxAcvFrac * size(fxdSdPlms, 1);
+    actvVarIds = find(any(fxdSdVarPlms ~= 0, 2));
+    useVarSubset = numel(actvVarIds) <= maxAcvFrac * size(fxdSdVarPlms, 1);
+
+    if useSigSubset
+        actvSdPlms = fxdSdPlms(actvSigIds, :);
+        fxdOcnCoeffs = ocnLeakKer(:, actvSigIds) * actvSdPlms;
+    else
+        fxdOcnCoeffs = ocnLeakKer * fxdSdPlms;
+    end
+
+    if useVarSubset
+        fxdSdVarPlms = fxdSdVarPlms(actvVarIds, :);
+        fxdOcnCoeffVars = ocnLeakKerSq(:, actvVarIds) * fxdSdVarPlms;
+    else
+        fxdOcnCoeffVars = ocnLeakKerSq * fxdSdVarPlms;
+    end
+
+    % Uniform loading consumes only C00; fingerprints need all output rows.
+    if strcmp(mthd, 'uniform')
+
+        if useSigSubset
+            fxdLndSdPlms = lndC00Ker(:, actvSigIds) * actvSdPlms;
+        else
+            fxdLndSdPlms = lndC00Ker * fxdSdPlms;
+        end
+
+        if useVarSubset
+            fxdLndVarPlms = (lndC00Ker(:, actvVarIds) .^ 2) * fxdSdVarPlms;
+        else
+            fxdLndVarPlms = (lndC00Ker .^ 2) * fxdSdVarPlms;
+        end
+
+    else
+        % Land kernel = I-K
+
+        if useSigSubset
+            fxdLndSdPlms = fxdSdPlms - ocnKer(:, actvSigIds) * actvSdPlms;
+        else
+            fxdLndSdPlms = fxdSdPlms - ocnKer * fxdSdPlms;
+        end
+
+        % (I-K).^2 = K.^2 + diag(1-2*diag(K))
+        if useVarSubset
+            fxdLndVarPlms = (ocnKer(:, actvVarIds) .^ 2) * fxdSdVarPlms;
+            fxdLndVarPlms(actvVarIds, :) = fxdLndVarPlms(actvVarIds, :) ...
+                + lndVarDiag(actvVarIds) .* fxdSdVarPlms;
+        else
+            fxdLndVarPlms = (ocnKer .^ 2) * fxdSdVarPlms ...
+                + lndVarDiag .* fxdSdVarPlms;
+        end
+
+    end
+
+end
+
+%% Subfunctions
 % Parse input arguments
 function varargout = parseinputs(inputs)
     % Set default parameters
@@ -420,9 +531,8 @@ function varargout = parseinputs(inputs)
 end
 
 % Get the input and output file names
-function outPath = ...
-        getoutputfile(prod, giaMdl, ...
-        inclC20, inclC30, inclC21S21, Lused, Lsle, ocnDom, mthd)
+function outPath = getoutputfile( ...
+        prod, giaMdl, inclC20, inclC30, inclC21S21, Lused, Lsle, ocnDom, mthd)
     outFolder = fullfile(getenv('GRACEDATA'), 'Degree1', 'new');
 
     if ~exist(outFolder, 'dir')
@@ -464,7 +574,8 @@ function outPath = ...
 end
 
 % Format the output
-function out = formatoutput(coeffs, coeffStds, dates, timelim, unit, nOut, includeC2030, product, beQuiet)
+function out = formatoutput( ...
+        coeffs, coeffStds, dates, timelim, unit, nOut, includeC2030, product, beQuiet)
     [coeffLocs, ~, degrees] = lowdegreecoefficients(includeC2030(1), includeC2030(2), includeC2030(3));
 
     for iCoeff = 1:numel(degrees)
@@ -500,6 +611,22 @@ function out = formatoutput(coeffs, coeffStds, dates, timelim, unit, nOut, inclu
 
     out = {coeffs, coeffStds, dates, gracePlmt, coeffLocs};
 
+end
+
+% Pack matching-bandwidth lmcosi fields into kernel order, with epochs in columns.
+function coeffs = packcoeffs(plm, kernelOrder)
+    coeffs = plm(:, 3:4, :);
+    coeffs = reshape(coeffs, [], size(plm, 3));
+    coeffs = coeffs(kernelOrder, :);
+end
+
+% Restore matching-bandwidth lmcosi coefficients, preserving degree/order columns.
+function plm = plms2lmcosi(coeffs, kernelOrder, plm)
+    nRows = size(plm, 1);
+    nEpochs = size(plm, 3);
+    vals = zeros(2 * nRows, nEpochs);
+    vals(kernelOrder, :) = coeffs;
+    plm(:, end - 1:end, :) = reshape(vals, nRows, 2, nEpochs);
 end
 
 % Just get the coeffs
