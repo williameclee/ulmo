@@ -44,14 +44,14 @@ classdef solvesleConvergenceTest < matlab.unittest.TestCase
             C(1, :) = C(1, :) - K(1, :) / K(1, 1);
             b = zeros(size(f)); b(1, :) = -f(1, :) / 1000 / K(1, 1);
             exact = (eye(9) - 1000 * C * S * K) \ (C * S * f + b) * 1000;
-            p = legacysolvesle(unflatten(f), [], 2, GeoDomain('alloceans'), ...
+            p = solveslelegacy(unflatten(f), [], 2, GeoDomain('alloceans'), ...
                 "OceanKernel", K, "RotationFeedback", false, "Tolerance", 1e-12, "BeQuiet", true);
             testCase.verifyEqual(flatten(p), exact, 'AbsTol', 1e-8);
         end
 
         function zeroForcingConvergesFromNonzeroInitialRSL(testCase)
             initial = zeros(9, 1); initial(end) = 1;
-            p = legacysolvesle(unflatten(zeros(9, 1)), [], 2, GeoDomain('alloceans'), ...
+            p = solveslelegacy(unflatten(zeros(9, 1)), [], 2, GeoDomain('alloceans'), ...
                 "OceanKernel", hemisphereKernel(), "RotationFeedback", false, ...
                 "InitialRSL", unflatten(initial), "Tolerance", 1e-6, "BeQuiet", true);
             % Output is SD (kg/m^2); the stopping tolerance is in metres.
@@ -62,17 +62,17 @@ classdef solvesleConvergenceTest < matlab.unittest.TestCase
             f = unflatten(reshape(sin(1:27), 9, 3) * 1e-12);
             opts = {"OceanKernel", hemisphereKernel(), "RotationFeedback", false, ...
                         "BeQuiet", true, "MaxIter", 1};
-            a = legacysolvesle(f, [], 2, GeoDomain('alloceans'), opts{:}, "Tolerance", 1e-6);
-            b = legacysolvesle(f, [], 2, GeoDomain('alloceans'), opts{:}, "Tolerance", 0);
+            a = solveslelegacy(f, [], 2, GeoDomain('alloceans'), opts{:}, "Tolerance", 1e-6);
+            b = solveslelegacy(f, [], 2, GeoDomain('alloceans'), opts{:}, "Tolerance", 0);
             testCase.verifyEqual(a, b);
         end
 
         function checksEveryEpochAndUncertainties(testCase)
             K = hemisphereKernel(); f = zeros(9, 3); sigma = zeros(9, 3); sigma(:, 3) = (1:9)';
             opts = {"OceanKernel", K, "RotationFeedback", false, "BeQuiet", true};
-            [p, s] = legacysolvesle(unflatten(f), unflatten(sigma), 2, GeoDomain('alloceans'), ...
+            [p, s] = solveslelegacy(unflatten(f), unflatten(sigma), 2, GeoDomain('alloceans'), ...
                 opts{:}, "Tolerance", 1e-12);
-            [reference, referenceStd] = legacysolvesle(unflatten(f), unflatten(sigma), 2, GeoDomain('alloceans'), ...
+            [reference, referenceStd] = solveslelegacy(unflatten(f), unflatten(sigma), 2, GeoDomain('alloceans'), ...
                 opts{:}, "Tolerance", 0, "MaxIter", 100);
             testCase.verifyEqual(p, reference, 'AbsTol', 1e-8);
             testCase.verifyEqual(s, referenceStd, 'AbsTol', 1e-8);
@@ -81,14 +81,14 @@ classdef solvesleConvergenceTest < matlab.unittest.TestCase
         function capFailureAndFixedModeAreDistinct(testCase)
             p = unflatten((1:9)');
             opts = {"OceanKernel", hemisphereKernel(), "MaxIter", 1, "BeQuiet", true};
-            testCase.verifyError(@() legacysolvesle(p, [], 2, GeoDomain('alloceans'), opts{:}, "Tolerance", 1e-15), ...
+            testCase.verifyError(@() solveslelegacy(p, [], 2, GeoDomain('alloceans'), opts{:}, "Tolerance", 1e-15), ...
             'ULMO:solvesle:NonConvergence');
         end
 
         function nonfiniteInputCannotConverge(testCase)
             p = zeros(6, 2);
             p(2, 1) = NaN;
-            testCase.verifyError(@() legacysolvesle(p, [], 2, GeoDomain('alloceans'), ...
+            testCase.verifyError(@() solveslelegacy(p, [], 2, GeoDomain('alloceans'), ...
                 "OceanKernel", hemisphereKernel(), "BeQuiet", true), 'ULMO:solvesle:NonFiniteIterate');
         end
 
@@ -135,9 +135,4 @@ end
 function v = flatten(p)
     p = reshape(p, 12, []);
     v = p(kernelorder(2), :);
-end
-
-% Keep the historical iteration contract explicit in regression tests.
-function varargout = legacysolvesle(varargin)
-    [varargout{1:nargout}] = solvesle(varargin{:}, "Solver", "iteration");
 end

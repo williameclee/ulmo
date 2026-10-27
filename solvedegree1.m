@@ -46,23 +46,12 @@
 %       'SD': surface mass density in kg/m^2, equivalent to mm of fresh
 %       water. 'GRAV' and 'POT' follow the CONVERTGRAVITY conventions.
 %       Default unit: 'SD'.
-%   Solver (name-value) - Linear map or legacy nested iteration.
-%       Default solver: 'linear'. Linear mode does not call SOLVESLE.
 %   RelativeTolerance (name-value) - Relative residual for response-map solves.
-%       Default tolerance: 1e-12. Used only by the linear solver.
-%   Tolerance (name-value) - Absolute low-degree residual in linear mode.
-%       In iteration mode, checks absolute changes in coefficients and
-%       standard deviations at every epoch.
-%       Set 0 to select legacy fixed steps when Solver is omitted or iteration.
+%       Default tolerance: 1e-12.
+%   Tolerance (name-value) - Positive absolute low-degree residual tolerance.
 %       Unit: kg/m^2.
 %       Default tolerance: 1e-6.
-%   MaxIter (name-value) - Maximum outer iterations in iteration mode only.
-%       Default iteration limit: 100.
-%   SleTolerance (name-value) - Inner absolute tolerance in iteration mode only.
-%       Set 0 for exactly SleMaxIter steps.
-%       Unit: m.
-%       Default tolerance: 1e-9.
-%   SleMaxIter (name-value) - Maximum iterations per SLE or response-map solve.
+%   SleMaxIter (name-value) - Maximum iterations per response-map solve.
 %       Default iteration limit: 100.
 %   ForceNew (name-value) - Whether to bypass the coefficient cache.
 %       Default option: false.
@@ -99,16 +88,14 @@
 % Notes
 %   GIA is removed for degrees >= 2 during estimation and restored for
 %   estimated coefficients of those degrees. Degree 1 remains GIA-free.
-%   Linear mode prepares a selected response map once for all epochs. Input
+%   Prepares a selected response map once for all epochs. Input
 %   coefficient errors are assumed independent; all induced correlations are
 %   retained through the final map. GIA uncertainty is excluded.
-%   Iteration mode retains the previous signal and uncertainty recurrences.
-%   Zero Tolerance or SleTolerance selects iteration if Solver is omitted;
-%   an explicitly linear solver rejects zero iteration tolerances.
+%   All new estimates use the linear map without calling SOLVESLE.
 %   A response map is prepared for each fresh coefficient calculation.
-%   Linear coefficient caches have a version and accuracy suffix and never
-%   reuse legacy results. Legacy iteration settings share a cache; use ForceNew=true for
-%   other settings and SaveData=false to preserve an existing cache.
+%   Coefficient caches retain the original filenames without solver or
+%   accuracy suffixes. Use ForceNew=true when recomputation is needed;
+%   SaveData=false preserves an existing cache.
 %
 % References
 %   Sun, Y, Ditmar, P, and Riva, REM. (2015). Observed changes
@@ -133,11 +120,11 @@ function varargout = solvedegree1(varargin)
     %% Initialisation
     % Parse inputs
     [prod, Lused, Lsle, giaMdl, ocnDom, ...
-         inclC20, inclC30, inclCS21, mthd, timelim, unit, iterOpts, ...
+         inclC20, inclC30, inclCS21, mthd, timelim, unit, solveOpts, ...
          forceNew, saveData, beQuiet, callChain] = ...
         parseinputs(varargin);
 
-    dataPath = getoutputfile(prod, giaMdl, inclC20, inclC30, inclCS21, Lused, Lsle, ocnDom, mthd, iterOpts);
+    dataPath = getoutputfile(prod, giaMdl, inclC20, inclC30, inclCS21, Lused, Lsle, ocnDom, mthd);
 
     vars = {'coeffs', 'coeffStds', 'dates'};
 
@@ -160,7 +147,7 @@ function varargout = solvedegree1(varargin)
 
     [coeffs, coeffStds, dates] = ...
         solvedegree1Core(prod, Lused, Lsle, ...
-        giaMdl, inclC20, inclC30, inclCS21, ocnDom, mthd, beQuiet, iterOpts);
+        giaMdl, inclC20, inclC30, inclCS21, ocnDom, mthd, beQuiet, solveOpts);
 
     if saveData
         save(dataPath, 'coeffs', 'coeffStds', 'dates')
@@ -179,7 +166,7 @@ end
 
 % Heart of the programme
 function [coeffs, coeffStds, dates] = ...
-        solvedegree1Core(prod, Lused, Lsle, giaMdl, inclC20, inclC30, inclC21S21, ocnDom, mthd, beQuiet, iterOpts)
+        solvedegree1Core(prod, Lused, Lsle, giaMdl, inclC20, inclC30, inclC21S21, ocnDom, mthd, beQuiet, solveOpts)
     %% Initialisation
     if ~beQuiet
         wbar = waitbar(0, 'Loading GRACE data', ...
@@ -204,123 +191,26 @@ function [coeffs, coeffStds, dates] = ...
 
     end
 
-    if iterOpts.Solver == "linear"
-        O = kernelcp_new(Lsle, ocnDom, "BeQuiet", beQuiet);
-        if strcmp(mthd, 'fingerprint')
-            kernels = prepareslekernels(Lsle, O);
-        else
-            kernels = struct('O', O);
-        end
-        [knownToUnknownMap, knownIds, ~, unknownConstraint, knownConstraint] = ...
-            preparelowdegreemap(kernels, coeffIds, Method=string(mthd), ...
-            RelativeTolerance=iterOpts.RelativeTolerance, MaxIter=iterOpts.SleMaxIter);
-        known = packcoeffs(sdPlmt, kerOrder);
-        knownStd = packcoeffs(sdStdPlmt, kerOrder);
-        coeffs = knownToUnknownMap * known(knownIds, :);
-        coeffStds = sqrt((knownToUnknownMap.^2) * knownStd(knownIds, :).^2);
-        residual = unknownConstraint * coeffs - knownConstraint * known(knownIds, :);
-        if any(~isfinite(coeffs), 'all') || any(~isfinite(coeffStds), 'all')
-            error('ULMO:solvedegree1:NonFiniteIterate', 'Estimated coefficients or uncertainties became nonfinite.');
-        end
-        if max(abs(residual), [], 'all') > iterOpts.Tolerance
-            error('ULMO:solvedegree1:NonConvergence', 'The low-degree constraint residual exceeds Tolerance.');
-        end
+    O = kernelcp_new(Lsle, ocnDom, "BeQuiet", beQuiet);
+    if strcmp(mthd, 'fingerprint')
+        kernels = prepareslekernels(Lsle, O);
     else
-        [ocnKer, coeffKer, coeffLndKer, ocnLeakKer, lnd2ocnKer, lndC00Ker, lndVarDiag] = ...
-            preparekernels(Lsle, ocnDom, coeffIds, mthd, beQuiet);
-        ocnLeakKerSq = ocnLeakKer .^ 2;
-        coeffLndKerSq = coeffLndKer .^ 2;
-        lnd2ocnKerSq = lnd2ocnKer .^ 2;
-        coeffVarMap = (coeffKer \ eye(nCoeffs)) .^ 2;
-
-        %% Fixed projections
-        [fxdOcnCoeffs, fxdOcnCoeffVars, fxdLndSdPlms, fxdLndVarPlms] = ...
-            projectfixedfields(sdPlmt, sdStdPlmt, kerOrder, ocnKer, ...
-            ocnLeakKer, ocnLeakKerSq, lndC00Ker, lndVarDiag, mthd);
-        clear lndC00Ker lndVarDiag
-
-        %% Solving the degree-1 coefficients
-        maxIter = iterOpts.MaxIter;
-        tol = iterOpts.Tolerance;
-        converged = false;
-        coeffs = extractcoeffs(sdPlmt, coeffLocs);
-        coeffStds = extractcoeffs(sdStdPlmt, coeffLocs);
-        clear sdStdPlmt
-
-        % Precompute variance kernel to avoid repeated reconstruction in SOLVESLE
-        % Construct only after fixed-field projection temporaries are released.
-        if strcmp(mthd, 'fingerprint')
-            ocnVarKer = prepareoceanvariancekernel(ocnKer);
-        end
-
-        for iIter = 1:maxIter
-            prevCoeffs = coeffs;
-            prevStds = coeffStds;
-
-            if ~beQuiet
-                waitbar((iIter - 1) / maxIter, wbar, ...
-                    sprintf('Solving degree-1 coefficients iteratively (%d/%d)', iIter, maxIter));
-
-                if getappdata(wbar, 'canceling')
-                    error('ULMO:ProcessCancelledByUser', 'Geocentre computation cancelled');
-                end
-
-            end
-
-            switch mthd
-                case 'fingerprint'
-                    lndPlmt = plms2lmcosi(fxdLndSdPlms + coeffLndKer * coeffs, ...
-                        kerOrder, sdPlmt);
-                    lndStdPlmt = plms2lmcosi( ...
-                        sqrt(fxdLndVarPlms + coeffLndKerSq * coeffStds .^ 2), ...
-                        kerOrder, sdPlmt);
-                    [ocnPlmt, ocnStdPlmt] = solvesle( ...
-                        lndPlmt, lndStdPlmt, Lsle, ocnDom, ...
-                        "Solver", "iteration", "OceanKernel", ocnKer, "OceanVarianceKernel", ocnVarKer, "KernelOrder", kerOrder, ...
-                        "InitialRSL", sdPlmt / 1000, ... % kg/m^2 -> m
-                        "RotationFeedback", true, "MaxIter", iterOpts.SleMaxIter, ...
-                        "Tolerance", iterOpts.SleTolerance, "BeQuiet", true);
-                    ocnCoeffs = ocnLeakKer * packcoeffs(ocnPlmt, kerOrder);
-                    ocnCoeffVars = ocnLeakKerSq * packcoeffs(ocnStdPlmt, kerOrder) .^ 2;
-                case 'uniform'
-                    lndC00 = fxdLndSdPlms + coeffLndKer * coeffs;
-                    lndC00Var = fxdLndVarPlms + coeffLndKerSq * coeffStds .^ 2;
-                    ocnCoeffs = -lnd2ocnKer * lndC00;
-                    ocnCoeffVars = lnd2ocnKerSq * lndC00Var;
-            end
-
-            coeffs = coeffKer \ (ocnCoeffs - fxdOcnCoeffs);
-
-            if strcmp(mthd, 'fingerprint')
-                sdPlmt = putcoeffs(sdPlmt, coeffs, coeffLocs);
-            end
-
-            % STD
-            coeffStds = sqrt(coeffVarMap * (ocnCoeffVars + fxdOcnCoeffVars));
-
-            if any(~isfinite(coeffs), 'all') || any(~isfinite(coeffStds), 'all')
-                error('ULMO:solvedegree1:NonFiniteIterate', ...
-                'Estimated coefficients or uncertainties became nonfinite.');
-            end
-
-            maxChange = max(absoluteiterationchange(coeffs, prevCoeffs), ...
-                absoluteiterationchange(coeffStds, prevStds));
-
-            if tol > 0 && maxChange <= tol
-                converged = true;
-                break
-            end
-
-        end
-
-        if tol > 0 && ~converged
-            error('ULMO:solvedegree1:NonConvergence', ...
-                'Solution did not converge in %d iterations (maximum absolute change %.6g; tolerance %.6g).', ...
-                maxIter, maxChange, tol);
-        end
-
+        kernels = struct('O', O);
     end
-
+    [knownToUnknownMap, knownIds, ~, unknownConstraint, knownConstraint] = ...
+        preparelowdegreemap(kernels, coeffIds, Method=string(mthd), ...
+        RelativeTolerance=solveOpts.RelativeTolerance, MaxIter=solveOpts.SleMaxIter);
+    known = packcoeffs(sdPlmt, kerOrder);
+    knownStd = packcoeffs(sdStdPlmt, kerOrder);
+    coeffs = knownToUnknownMap * known(knownIds, :);
+    coeffStds = sqrt((knownToUnknownMap.^2) * knownStd(knownIds, :).^2);
+    residual = unknownConstraint * coeffs - knownConstraint * known(knownIds, :);
+    if any(~isfinite(coeffs), 'all') || any(~isfinite(coeffStds), 'all')
+        error('ULMO:solvedegree1:NonFiniteIterate', 'Estimated coefficients or uncertainties became nonfinite.');
+    end
+    if max(abs(residual), [], 'all') > solveOpts.Tolerance
+        error('ULMO:solvedegree1:NonConvergence', 'The low-degree constraint residual exceeds Tolerance.');
+    end
     coeffs = coeffs'; % traditional -> timefirst
     coeffStds = coeffStds'; % traditional -> timefirst
 
@@ -333,37 +223,6 @@ function [coeffs, coeffStds, dates] = ...
     for iCoeff = 4:nCoeffs
         coeffs(:, iCoeff) = coeffs(:, iCoeff) + ...
             squeeze(giaPlmt(:, coeffLocs(iCoeff, 1), 2 + coeffLocs(iCoeff, 2)));
-    end
-
-end
-
-%% PREPAREKERNELS - Constructs operators
-% Output arguments
-%   ocnKer - Localises full SH to ocean domain
-%   coeffKer - Localises only unknown coefficients that are being solved to ocean domain
-%   coeffLndKer - Localises only unknown coefficients that are being solved to land domain
-%   ocnLeakKer - Projects leakage from known coefficients into the unkown coefficients in the ocean domain
-%   lnd2ocnKer - Projects a constant field to ocean domain with full SH
-function [ocnKer, coeffKer, coeffLndKer, ocnLeakKer, lnd2ocnKer, lndC00Ker, lndVarDiag] = preparekernels( ...
-        Lsle, ocnDom, coeffIds, mthd, beQuiet)
-    ocnKer = kernelcp_new(Lsle, ocnDom, "BeQuiet", beQuiet);
-    ocnLeakKer = ocnKer(coeffIds, :);
-    coeffKer = ocnKer(coeffIds, coeffIds);
-    lnd2ocnKer = [];
-    lndC00Ker = [];
-    lndVarDiag = [];
-
-    if strcmp(mthd, 'uniform')
-        lndC00Ker = -ocnKer(1, :);
-        lndC00Ker(1) = lndC00Ker(1) + 1;
-        coeffLndKer = lndC00Ker(:, coeffIds);
-        lnd2ocnKer = ocnKer(coeffIds, 1) / ocnKer(1, 1);
-    else
-        % Form only the update columns of I-K, not the full land kernel.
-        coeffLndKer = -ocnKer(:, coeffIds);
-        diagIds = sub2ind(size(coeffLndKer), coeffIds, 1:numel(coeffIds));
-        coeffLndKer(diagIds) = coeffLndKer(diagIds) + 1;
-        lndVarDiag = 1 - 2 * diag(ocnKer);
     end
 
 end
@@ -393,78 +252,6 @@ function [sdPlmt, sdStdPlmt, giaPlmt, dates] = preparedata( ...
     % The estimated coefficients are unknown in both known input fields.
     sdPlmt = putcoeffs(sdPlmt, 0, coeffLocs);
     sdStdPlmt = putcoeffs(sdStdPlmt, 0, coeffLocs);
-end
-
-%% PROJECTFIXEDFIELDS - Projects the fixed (known) signal and variance
-% Output arguments
-%   fxdOcnCoeffs - Leakage of the fixed coefficients onto the unkown coefficients in the ocean domain
-%   fxdOcnCoeffVars - Variance of fxdOcnCoeffs
-%   fxdLndSdPlms - Full SH coefficients of the fixed cofficients' land signal
-%   fxdLndVarPlms - Variance of fxdLndSdPlms
-function [fxdOcnCoeffs, fxdOcnCoeffVars, fxdLndSdPlms, fxdLndVarPlms] = projectfixedfields( ...
-        sdPlmt, sdStdPlmt, kerOrder, ocnKer, ocnLeakKer, ocnLeakKerSq, lndC00Ker, lndVarDiag, mthd)
-    fxdSdPlms = packcoeffs(sdPlmt, kerOrder);
-    fxdSdVarPlms = packcoeffs(sdStdPlmt, kerOrder) .^ 2;
-
-    % If most coefficients are 0 (because of the padding to Lsle),
-    % projecting all of them invokes multiplication of large matrices.
-    % This can be avoided by truncating the projection
-    maxAcvFrac = 0.5; % Truncate at or below this threshold
-    actvSigIds = find(any(fxdSdPlms ~= 0, 2));
-    useSigSubset = numel(actvSigIds) <= maxAcvFrac * size(fxdSdPlms, 1);
-    actvVarIds = find(any(fxdSdVarPlms ~= 0, 2));
-    useVarSubset = numel(actvVarIds) <= maxAcvFrac * size(fxdSdVarPlms, 1);
-
-    if useSigSubset
-        actvSdPlms = fxdSdPlms(actvSigIds, :);
-        fxdOcnCoeffs = ocnLeakKer(:, actvSigIds) * actvSdPlms;
-    else
-        fxdOcnCoeffs = ocnLeakKer * fxdSdPlms;
-    end
-
-    if useVarSubset
-        fxdSdVarPlms = fxdSdVarPlms(actvVarIds, :);
-        fxdOcnCoeffVars = ocnLeakKerSq(:, actvVarIds) * fxdSdVarPlms;
-    else
-        fxdOcnCoeffVars = ocnLeakKerSq * fxdSdVarPlms;
-    end
-
-    % Uniform loading consumes only C00; fingerprints need all output rows.
-    if strcmp(mthd, 'uniform')
-
-        if useSigSubset
-            fxdLndSdPlms = lndC00Ker(:, actvSigIds) * actvSdPlms;
-        else
-            fxdLndSdPlms = lndC00Ker * fxdSdPlms;
-        end
-
-        if useVarSubset
-            fxdLndVarPlms = (lndC00Ker(:, actvVarIds) .^ 2) * fxdSdVarPlms;
-        else
-            fxdLndVarPlms = (lndC00Ker .^ 2) * fxdSdVarPlms;
-        end
-
-    else
-        % Land kernel = I-K
-
-        if useSigSubset
-            fxdLndSdPlms = fxdSdPlms - ocnKer(:, actvSigIds) * actvSdPlms;
-        else
-            fxdLndSdPlms = fxdSdPlms - ocnKer * fxdSdPlms;
-        end
-
-        % (I-K).^2 = K.^2 + diag(1-2*diag(K))
-        if useVarSubset
-            fxdLndVarPlms = (ocnKer(:, actvVarIds) .^ 2) * fxdSdVarPlms;
-            fxdLndVarPlms(actvVarIds, :) = fxdLndVarPlms(actvVarIds, :) ...
-                + lndVarDiag(actvVarIds) .* fxdSdVarPlms;
-        else
-            fxdLndVarPlms = (ocnKer .^ 2) * fxdSdVarPlms ...
-                + lndVarDiag .* fxdSdVarPlms;
-        end
-
-    end
-
 end
 
 %% Subfunctions
@@ -510,13 +297,10 @@ function varargout = parseinputs(inputs)
         @(x) ischar(validatestring(x, {'GRAV', 'POT', 'SD'})));
     valdLimit = @(x) isnumeric(x) && isscalar(x) && isfinite(x) && x >= 1 && x == fix(x);
     valdTol = @(x) isnumeric(x) && isscalar(x) && isfinite(x) && x >= 0;
-    addParameter(ip, 'Solver', 'linear', @(x) any(strcmp(x, {'linear', 'iteration'})));
     addParameter(ip, 'RelativeTolerance', 1e-12, ...
         @(x) isnumeric(x) && isscalar(x) && isfinite(x) && x > 0 && x < 1);
-    addParameter(ip, 'MaxIter', 100, valdLimit);
     addParameter(ip, 'Tolerance', 1e-6, valdTol);
     addParameter(ip, 'SleMaxIter', 100, valdLimit);
-    addParameter(ip, 'SleTolerance', 1e-9, valdTol);
     addParameter(ip, 'ForceNew', false, ...
         @(x) (isnumeric(x) || islogical(x)) && isscalar(x));
     addParameter(ip, 'SaveData', true, ...
@@ -549,18 +333,12 @@ function varargout = parseinputs(inputs)
     beQuiet = double(ip.Results.BeQuiet) * 2;
     callChain = [ip.Results.CallChain, {mfilename}];
 
-    solver = string(ip.Results.Solver);
-    if ip.Results.Tolerance == 0 || ip.Results.SleTolerance == 0
-        if solver == "linear" && ~ismember('Solver', ip.UsingDefaults)
-            error('ULMO:solvedegree1:FixedStepsRequireIteration', ...
-                'Zero iteration tolerances require Solver="iteration".');
-        end
-        solver = "iteration";
+    if ip.Results.Tolerance == 0
+        error('ULMO:solvedegree1:InvalidTolerance', 'Tolerance must be positive.');
     end
-    iterOpts = struct('Solver', solver, 'RelativeTolerance', ip.Results.RelativeTolerance, ...
-        'MaxIter', ip.Results.MaxIter, ...
-        'Tolerance', ip.Results.Tolerance, 'SleMaxIter', ip.Results.SleMaxIter, ...
-        'SleTolerance', ip.Results.SleTolerance);
+
+    solveOpts = struct('RelativeTolerance', ip.Results.RelativeTolerance, ...
+        'Tolerance', ip.Results.Tolerance, 'SleMaxIter', ip.Results.SleMaxIter);
 
     if ~isempty(regexp(lower(giaMdl), '^ice[-]?6g[_-]?d$', 'once'))
         giaMdl = 'ICE6GD';
@@ -572,13 +350,13 @@ function varargout = parseinputs(inputs)
 
     varargout = ...
         {{pcenter, rlevel, Ldata}, Lused, Lsle, giaMdl, ocnDom, ...
-          inclC20, inclC30, inclC21S21, mthd, timelim, unit, iterOpts, ...
+          inclC20, inclC30, inclC21S21, mthd, timelim, unit, solveOpts, ...
           forceNew, saveData, beQuiet, callChain};
 end
 
 % Get the input and output file names
 function outPath = getoutputfile( ...
-        prod, giaMdl, inclC20, inclC30, inclC21S21, Lused, Lsle, ocnDom, mthd, iterOpts)
+        prod, giaMdl, inclC20, inclC30, inclC21S21, Lused, Lsle, ocnDom, mthd)
     outFolder = fullfile(getenv('GRACEDATA'), 'Degree1', 'new');
 
     if ~exist(outFolder, 'dir')
@@ -614,11 +392,6 @@ function outPath = getoutputfile( ...
     deg1Flag = sprintf('%s%s-Ld%d_Ls%d-%s%s', ...
         giaMdl, moreCoeffFlag, ...
         Lused, Lsle, ocnDom.Id, mthdFlag);
-    if iterOpts.Solver == "linear"
-        % Different uncertainty definitions must never share cached results.
-        deg1Flag = sprintf('%s-linear-v1-r%.17g-a%.17g', ...
-            deg1Flag, iterOpts.RelativeTolerance, iterOpts.Tolerance);
-    end
     outFile = sprintf('%s_%s-SD.mat', prodFlag, deg1Flag);
 
     outPath = fullfile(outFolder, outFile);
@@ -669,27 +442,6 @@ function coeffs = packcoeffs(plm, kernelOrder)
     coeffs = plm(:, 3:4, :);
     coeffs = reshape(coeffs, [], size(plm, 3));
     coeffs = coeffs(kernelOrder, :);
-end
-
-% Restore matching-bandwidth lmcosi coefficients, preserving degree/order columns.
-function plm = plms2lmcosi(coeffs, kernelOrder, plm)
-    nRows = size(plm, 1);
-    nEpochs = size(plm, 3);
-    vals = zeros(2 * nRows, nEpochs);
-    vals(kernelOrder, :) = coeffs;
-    plm(:, end - 1:end, :) = reshape(vals, nRows, 2, nEpochs);
-end
-
-% Just get the coeffs
-function coeffs = extractcoeffs(plm, coeffLocs)
-    nCoeffs = size(coeffLocs, 1);
-    coeffLen = size(plm, 3);
-    coeffs = zeros(nCoeffs, coeffLen);
-
-    for iCoeff = 1:nCoeffs
-        coeffs(iCoeff, :) = plm(coeffLocs(iCoeff, 1), 2 + coeffLocs(iCoeff, 2), :);
-    end
-
 end
 
 % Just put the coeffs back

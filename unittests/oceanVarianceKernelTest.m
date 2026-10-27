@@ -77,7 +77,7 @@ classdef oceanVarianceKernelTest < matlab.unittest.TestCase
             global DEGREE1_CONVERGENCE_FIXTURE %#ok<GVMIS>
             DEGREE1_CONVERGENCE_FIXTURE = struct('x', reshape(sin(1:27), 9, 3), ...
                 'sigma', ones(9, 3) * .1, 'builds', 0);
-            [coeffs, sigma] = legacysolvedegree1('CSR', 'RL06', 2, 2, 2, 'ICE6GD', ...
+            [coeffs, sigma] = solvedegree1legacy('CSR', 'RL06', 2, 2, 2, 'ICE6GD', ...
                 GeoDomain('alloceans'), 'Method', mthd, 'Tolerance', 0, 'MaxIter', 3, ...
                 'SleTolerance', 0, 'SleMaxIter', 3, 'ForceNew', true, ...
                 'SaveData', false, 'BeQuiet', true);
@@ -117,8 +117,8 @@ classdef oceanVarianceKernelTest < matlab.unittest.TestCase
 
             actl = cell(1, 4);
             ref = cell(1, 4);
-            [ref{:}] = legacysolvesle(forc, unc, 2, GeoDomain('alloceans'), opts{:});
-            [actl{:}] = legacysolvesle(forc, unc, 2, GeoDomain('alloceans'), ...
+            [ref{:}] = solveslelegacy(forc, unc, 2, GeoDomain('alloceans'), opts{:});
+            [actl{:}] = solveslelegacy(forc, unc, 2, GeoDomain('alloceans'), ...
                 opts{:}, 'OceanVarianceKernel', Q);
 
             for k = 1:4
@@ -144,23 +144,23 @@ classdef oceanVarianceKernelTest < matlab.unittest.TestCase
             K = syntheticKernel();
             forcing = unflatten((1:9)', 2);
             opts = {'OceanKernel', K, 'Tolerance', 0, 'MaxIter', 3, 'BeQuiet', true};
-            [~, sigma] = legacysolvesle(forcing, [], 2, GeoDomain('alloceans'), opts{:});
+            [~, sigma] = solveslelegacy(forcing, [], 2, GeoDomain('alloceans'), opts{:});
             testCase.verifyEmpty(sigma);
-            [~, sigma] = legacysolvesle(forcing, forcing / 10, 2, GeoDomain('alloceans'), ...
+            [~, sigma] = solveslelegacy(forcing, forcing / 10, 2, GeoDomain('alloceans'), ...
                 opts{:}, 'OceanVarianceKernel', denseVarianceKernel(K));
             testCase.verifyTrue(all(isfinite(sigma), 'all'));
-            testCase.verifyError(@() legacysolvesle(forcing, forcing / 10, 2, ...
+            testCase.verifyError(@() solveslelegacy(forcing, forcing / 10, 2, ...
                 GeoDomain('alloceans'), opts{:}), 'ULMO:UnexpectedVarianceConstruction');
         end
 
         function suppliedRequiresMatchingDimensions(testCase)
             p = zeros(6, 2);
             common = {p, p, 2, GeoDomain('alloceans'), 'BeQuiet', true};
-            testCase.verifyError(@() legacysolvesle(common{:}, 'OceanVarianceKernel', eye(9)), ...
+            testCase.verifyError(@() solveslelegacy(common{:}, 'OceanVarianceKernel', eye(9)), ...
             'ULMO:solvesle:MissingOceanKernel');
-            testCase.verifyError(@() legacysolvesle(common{:}, 'OceanKernel', eye(9), ...
+            testCase.verifyError(@() solveslelegacy(common{:}, 'OceanKernel', eye(9), ...
                 'OceanVarianceKernel', eye(4)), 'ULMO:solvesle:InvalidOceanVarianceKernelSize');
-            testCase.verifyError(@() legacysolvesle(common{:}, 'OceanKernel', eye(4), ...
+            testCase.verifyError(@() solveslelegacy(common{:}, 'OceanKernel', eye(4), ...
                 'OceanVarianceKernel', eye(4)), 'ULMO:solvesle:InvalidOceanVarianceKernelSize');
         end
 
@@ -220,14 +220,4 @@ function v = flatten(p)
 
     p = reshape(p, 12, []);
     v = p(kernelorder(2), :);
-end
-
-% Keep the historical iteration contract explicit in regression tests.
-function varargout = legacysolvesle(varargin)
-    [varargout{1:nargout}] = solvesle(varargin{:}, "Solver", "iteration");
-end
-
-% Keep the historical iteration contract explicit in regression tests.
-function varargout = legacysolvedegree1(varargin)
-    [varargout{1:nargout}] = solvedegree1(varargin{:}, "Solver", "iteration");
 end

@@ -1,7 +1,7 @@
 %% LINEARSLESYSTEMTEST - Checks full and selected responses against dense equations.
 % Uses isolated synthetic Love numbers, ocean kernels and GRACE/GIA readers.
 % Tests induced covariance, transposed solves, joint coefficient sets, cache
-% separation, physical mass balance and failure handling without production data.
+% reuse, physical mass balance and failure handling without production data.
 %
 % Created by
 %   2026/10/27, En-Chi Lee (williameclee@arizona.edu)
@@ -149,8 +149,8 @@ classdef linearSleSystemTest < matlab.unittest.TestCase
             testCase.verifyEqual(dates, f.dates);
             testCase.verifyEqual(actualLocs, locs);
             % Independently check the central coefficients against converged iteration.
-            legacy = solvedegree1('CSR', 'RL06', 3, 3, 3, 'ICE6GD', ...
-                GeoDomain('alloceans'), opts{:}, 'Solver', 'iteration', ...
+            legacy = solvedegree1legacy('CSR', 'RL06', 3, 3, 3, 'ICE6GD', ...
+                GeoDomain('alloceans'), opts{:}, ...
                 'Tolerance', 1e-12, 'SleTolerance', 1e-14);
             testCase.verifyEqual(actual, legacy, 'AbsTol', 2e-9);
         end
@@ -192,7 +192,7 @@ classdef linearSleSystemTest < matlab.unittest.TestCase
             testCase.verifyEqual(a,b,'AbsTol',2e-14);
             testCase.verifyEqual(solveslesystem(k, zeros(16,2)), zeros(16,2));
         end
-        function failureAndFixedStepContracts(testCase)
+        function linearFailureContracts(testCase)
             k = prepareslekernels(3, ocean());
             testCase.verifyError(@() solveslesystem(k, (1:16)', MaxIter=1), ...
                 'ULMO:solveslesystem:NonConvergence');
@@ -204,25 +204,37 @@ classdef linearSleSystemTest < matlab.unittest.TestCase
             f = unpack((1:16)');
             args = {f, [], 3, GeoDomain('alloceans'), 'OceanKernel', k.O, ...
                 'Tolerance', 0, 'MaxIter', 3, 'BeQuiet', true};
-            testCase.verifyEqual(solvesle(args{:}), solvesle(args{:}, 'Solver', 'iteration'));
-            testCase.verifyError(@() solvesle(args{:}, 'Solver', 'linear'), ...
-                'ULMO:solvesle:FixedStepsRequireIteration');
+            testCase.verifyError(@() solvesle(args{:}), ...
+                'ULMO:solvesle:InvalidTolerance');
+            testCase.verifyError(@() solvedegree1('Tolerance',0,'BeQuiet',true), ...
+                'ULMO:solvedegree1:InvalidTolerance');
         end
         function mapFailureIsReported(testCase)
             k = prepareslekernels(3,ocean());
             testCase.verifyError(@() preparelowdegreemap(k,2:4,MaxIter=1), ...
                 'ULMO:solveslesystem:NonConvergence');
         end
-        function linearAndLegacyCachesAreSeparate(testCase)
+        function originalCacheNamesAndExplicitRecomputation(testCase)
             args = {'CSR','RL06',3,3,3,'ICE6GD',GeoDomain('alloceans'), ...
                 'Method','uniform','SaveData',true,'BeQuiet',true};
-            [a, sa] = solvedegree1(args{:});
-            solvedegree1(args{:}, 'Solver','iteration');
+            [legacy, legacyStd] = solvedegree1legacy(args{:});
             files = dir(fullfile(testCase.Folder,'Degree1','new','*.mat'));
-            testCase.verifyNumElements(files,2);
-            testCase.verifyEqual(sum(contains({files.name},'-linear-v1-')),1);
-            [b,sb] = solvedegree1(args{:});
-            testCase.verifyEqual(a,b); testCase.verifyEqual(sa,sb);
+            testCase.verifyNumElements(files,1);
+            domain = GeoDomain('alloceans');
+            testCase.verifyEqual(files.name, ...
+                sprintf('CSRRL063_ICE6GD-Ld3_Ls3-%s-uniform-SD.mat',domain.Id));
+            [loaded, loadedStd] = solvedegree1(args{:});
+            testCase.verifyEqual(loaded,legacy);
+            testCase.verifyEqual(loadedStd,legacyStd);
+            [fresh, freshStd] = solvedegree1(args{:},'ForceNew',true,'SaveData',false);
+            stored = load(fullfile(files.folder,files.name));
+            testCase.verifyEqual(stored.coeffStds,legacyStd);
+            testCase.verifyGreaterThan(norm(freshStd-legacyStd),1e-8);
+            solvedegree1(args{:},'ForceNew',true);
+            [loaded, loadedStd] = solvedegree1(args{:},'RelativeTolerance',1e-10,'Tolerance',1e-5);
+            testCase.verifyEqual(loaded,fresh);
+            testCase.verifyEqual(loadedStd,freshStd);
+            testCase.verifyNumElements(dir(fullfile(files.folder,'*.mat')),1);
             testCase.verifyFalse(isfolder(fullfile(testCase.Folder,'Degree1','maps')));
         end
     end

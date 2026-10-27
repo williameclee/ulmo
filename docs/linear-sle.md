@@ -1,6 +1,6 @@
 # Linear sea-level and low-degree solvers
 
-`solvesle` and `solvedegree1` default to `Solver="linear"`. Both use the same
+`solvesle` and `solvedegree1` compute new results with the linear solver. Both use the same
 elastic Earth response, fixed ocean geometry and mass constraint. Internal
 coefficients have kernel order, fields are columns, and loads use kg/m².
 
@@ -68,7 +68,7 @@ sufficient for applying the map; additional outputs expose the ocean-response
 and constraint matrices for inspection.
 
 `solvedegree1` performs these steps once for all epochs and handles GRACE
-loading, GIA, coefficient selection, units and dates. Its linear path never
+loading, GIA, coefficient selection, units and dates. It never
 calls `solvesle`. `Method="uniform"` builds the analytical uniform-ocean map
 without an SLE solve. Both methods support joint C20, C30 and C21/S21 estimates.
 
@@ -78,14 +78,14 @@ selection and numerical settings remain fixed.
 
 `solvedegree1` retains its coefficient-result cache. `ForceNew=true` bypasses
 that cache and prepares a fresh map; `SaveData=false` prevents new coefficient
-result writes. Linear coefficient results use a version/accuracy suffix
-separate from legacy results. Existing coefficient caches retain the usual
-assumption that source observations and model files have not changed; use
-`ForceNew` after such changes.
+result writes. Coefficient results use the original filenames, with no solver,
+version or accuracy suffix. Existing cached results are loaded as stored,
+including results from the previous solver. The caller decides when to use
+`ForceNew`, including after solver, numerical-setting, observation or model changes.
 
 ## Uncertainty and numerical settings
 
-Linear mode propagates independent input variances through the **complete**
+The linear solver propagates independent input variances through the **complete**
 response. It retains correlations induced by localization, ocean feedback and
 mass conservation. Its standard deviations therefore differ from the legacy
 intermediate diagonal approximation. GIA/model uncertainty is not included.
@@ -101,9 +101,11 @@ solve; its default is `1e-12`. `MaxIter` in `solvesle`, and `SleMaxIter` in
 raise an error. `Tolerance` additionally checks ocean mass balance in metres for
 `solvesle`, and the low-degree constraint in kg/m² for `solvedegree1`.
 
-For reproducibility, `Solver="iteration"` retains the previous signal/variance
-iterations and their absolute change tolerances. `Tolerance=0` (or
-`SleTolerance=0` for `solvedegree1`) selects fixed-step iteration when `Solver`
-is omitted. An explicitly linear solver rejects zero iteration tolerances.
-`InitialRSL`, `OceanVarianceKernel`, and `SleTolerance` apply to legacy iteration;
-`MaxIter` in `solvedegree1` also applies only to that mode.
+The public functions no longer accept `Solver` or zero `Tolerance`. Legacy-only
+options (`InitialRSL` and `OceanVarianceKernel` in `solvesle`; `MaxIter` and
+`SleTolerance` in `solvedegree1`) have also been removed.
+
+For regression testing, the previous implementations live in
+`unittests/private/solveslelegacy.m` and `unittests/private/solvedegree1legacy.m`.
+These private references retain fixed-step iteration and the previous variance
+recurrences. The production functions do not call them.
