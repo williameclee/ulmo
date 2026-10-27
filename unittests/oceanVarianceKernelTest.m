@@ -32,6 +32,8 @@ classdef oceanVarianceKernelTest < matlab.unittest.TestCase
             testCase.applyFixture(PathFixture(fullfile(repo, 'legacy')));
             testCase.applyFixture(PathFixture(fullfile(repo, 'domains')));
             testCase.assertEqual(which('solvesle'), fullfile(repo, 'solvesle.m'));
+            testCase.assertEqual(which('prepareoceanvariancekernel'), ...
+                fullfile(repo, 'legacy', 'prepareoceanvariancekernel.m'));
             folder = testCase.applyFixture(TemporaryFolderFixture);
             previous = getenv('IFILES');
             testCase.addTeardown(@() setenv('IFILES', previous));

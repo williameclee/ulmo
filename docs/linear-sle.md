@@ -119,7 +119,8 @@ options (`InitialRSL` and `OceanVarianceKernel` in `solvesle`; `MaxIter` and
 
 For regression testing, the previous implementations live in
 `legacy/solvesle_iteration.m` and `legacy/solvedegree1_iteration.m`.
-The suffix identifies their fixed-point iteration method. These references retain
+Their diagonal-variance helper is `legacy/prepareoceanvariancekernel.m`.
+The suffix identifies the solvers’ fixed-point iteration method. These references retain
 fixed-step execution and the previous variance recurrences. Tests add `legacy/`
 to the MATLAB path through a path fixture; the production functions do not call
 these references.
