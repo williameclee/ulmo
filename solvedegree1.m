@@ -145,8 +145,7 @@ function varargout = solvedegree1(varargin)
 
     end
 
-    [coeffs, coeffStds, dates] = ...
-        solvedegree1Core(prod, Lused, Lsle, ...
+    [coeffs, coeffStds, dates] = solvedegree1Core(prod, Lused, Lsle, ...
         giaMdl, inclC20, inclC30, inclCS21, ocnDom, mthd, beQuiet, solveOpts);
 
     if saveData
@@ -165,16 +164,10 @@ function varargout = solvedegree1(varargin)
 end
 
 % Heart of the programme
-function [coeffs, coeffStds, dates] = ...
-        solvedegree1Core(prod, Lused, Lsle, giaMdl, inclC20, inclC30, inclC21S21, ocnDom, mthd, beQuiet, solveOpts)
+function [coeffs, coeffStds, dates] = solvedegree1Core( ...
+        prod, Lused, Lsle, giaMdl, inclC20, inclC30, inclCS21, ocnDom, mthd, beQuiet, solveOpts)
     %% Initialisation
-    if ~beQuiet
-        wbar = waitbar(0, 'Loading GRACE data', ...
-            "Name", upper(mfilename), "CreateCancelBtn", 'setappdata(gcbf,''canceling'',1)');
-        cleanup = onCleanup(@() deleteWaitbar(wbar));
-    end
-
-    [coeffLocs, coeffIds] = lowdegreecoefficients(inclC20, inclC30, inclC21S21);
+    [coeffLocs, coeffIds] = lowdegreecoefficients(inclC20, inclC30, inclCS21);
     nCoeffs = numel(coeffIds);
     kerOrder = kernelorder(Lsle);
 
@@ -182,44 +175,36 @@ function [coeffs, coeffStds, dates] = ...
     [sdPlmt, sdStdPlmt, giaPlmt, dates] = ...
         preparedata(prod, Lused, Lsle, giaMdl, coeffLocs, beQuiet);
 
-    if ~beQuiet
-        waitbar(0, wbar, 'Preparing kernels and variables');
+    ocnKer = kernelcp_new(Lsle, ocnDom, "BeQuiet", beQuiet);
 
-        if getappdata(wbar, 'canceling')
-            error('ULMO:ProcessCancelledByUser', 'Geocentre computation cancelled');
-        end
-
-    end
-
-    oceanKernel = kernelcp_new(Lsle, ocnDom, "BeQuiet", beQuiet);
     if strcmp(mthd, 'fingerprint')
-        [earthResponseKernel, forcingKernel] = prepareslekernels(Lsle, oceanKernel);
+        [earthRespKer, forcKer] = prepareslekernels(Lsle, ocnKer);
     else
-        earthResponseKernel = [];
-        forcingKernel = [];
+        earthRespKer = [];
+        forcKer = [];
     end
-    [knownToUnknownMap, knownIds, ~, unknownConstraint, knownConstraint] = ...
-        preparelowdegreemap(oceanKernel, earthResponseKernel, forcingKernel, coeffIds, Method=string(mthd), ...
-        RelativeTolerance=solveOpts.RelativeTolerance, MaxIter=solveOpts.SleMaxIter);
+
+    [known2unknownMap, knownIds, ~, unknownConstraint, knownConstraint] = ...
+        preparelowdegreemap(ocnKer, earthRespKer, forcKer, coeffIds, Method = mthd, ...
+        RelativeTolerance = solveOpts.RelativeTolerance, MaxIter = solveOpts.SleMaxIter);
     known = packcoeffs(sdPlmt, kerOrder);
     knownStd = packcoeffs(sdStdPlmt, kerOrder);
-    coeffs = knownToUnknownMap * known(knownIds, :);
-    coeffStds = sqrt((knownToUnknownMap.^2) * knownStd(knownIds, :).^2);
+    coeffs = known2unknownMap * known(knownIds, :);
+    coeffStds = sqrt((known2unknownMap .^ 2) * knownStd(knownIds, :) .^ 2);
     residual = unknownConstraint * coeffs - knownConstraint * known(knownIds, :);
+
     if any(~isfinite(coeffs), 'all') || any(~isfinite(coeffStds), 'all')
         error('ULMO:solvedegree1:NonFiniteIterate', 'Estimated coefficients or uncertainties became nonfinite.');
     end
+
     if max(abs(residual), [], 'all') > solveOpts.Tolerance
         error('ULMO:solvedegree1:NonConvergence', 'The low-degree constraint residual exceeds Tolerance.');
     end
+
     coeffs = coeffs'; % traditional -> timefirst
     coeffStds = coeffStds'; % traditional -> timefirst
 
     %% Postprocessing and output
-    if ~beQuiet
-        waitbar(1, wbar, 'Postprocessing results');
-    end
-
     % Restore the GIA signal for every estimated coefficient of degree >= 2.
     for iCoeff = 4:nCoeffs
         coeffs(:, iCoeff) = coeffs(:, iCoeff) + ...
@@ -393,6 +378,7 @@ function outPath = getoutputfile( ...
     deg1Flag = sprintf('%s%s-Ld%d_Ls%d-%s%s', ...
         giaMdl, moreCoeffFlag, ...
         Lused, Lsle, ocnDom.Id, mthdFlag);
+
     outFile = sprintf('%s_%s-SD.mat', prodFlag, deg1Flag);
 
     outPath = fullfile(outFolder, outFile);

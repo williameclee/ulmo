@@ -164,26 +164,29 @@ function varargout = solvesle(varargin)
         waitbar(0, wbar, 'Constructing SLE kernel');
     end
 
-    [earthResponseKernel, forcingKernel, waterDensity] = prepareslekernels(L, ocnKernel, Frame=string(frame), ...
-        LoveNumSource=string(loveNumSrc), RotationFeedback=doRotation, ...
-        KernelOrder=kernelOrder);
+    [earthResponseKernel, forcingKernel, waterDensity] = prepareslekernels(L, ocnKernel, Frame = string(frame), ...
+        LoveNumSource = string(loveNumSrc), RotationFeedback = doRotation, ...
+        KernelOrder = kernelOrder);
 
     if any(~isfinite(forcSdPlms), 'all') || any(~isfinite(forcSdStdPlms), 'all')
         error('ULMO:solvesle:NonFiniteIterate', 'Forcing and errors must be finite.');
     end
+
     rslSdPlms = solveslesystem(ocnKernel, earthResponseKernel, forcingKernel * forcSdPlms, ...
-        RelativeTolerance=relativeTolerance, MaxIter=maxIter);
+        RelativeTolerance = relativeTolerance, MaxIter = maxIter);
     rslPlms = rslSdPlms / waterDensity;
     rslOcnPlms = ocnKernel * rslPlms;
     % Tolerance remains an absolute physical residual check, in metres.
     if max(abs(rslOcnPlms(1, :) + forcSdPlms(1, :) / waterDensity), [], 'all') > tol
         error('ULMO:solvesle:NonConvergence', 'The ocean mass residual exceeds Tolerance.');
     end
+
     if doError
-        rslVarPlms = slevariance(ocnKernel, earthResponseKernel, forcingKernel, forcSdStdPlms.^2, ...
-            RelativeTolerance=relativeTolerance, MaxIter=maxIter) / waterDensity^2;
-        targetOcnVar = forcSdStdPlms(1, :).^2 / waterDensity^2;
+        rslVarPlms = slevariance(ocnKernel, earthResponseKernel, forcingKernel, forcSdStdPlms .^ 2, ...
+            RelativeTolerance = relativeTolerance, MaxIter = maxIter) / waterDensity ^ 2;
+        targetOcnVar = forcSdStdPlms(1, :) .^ 2 / waterDensity ^ 2;
     end
+
     %% Post-processing
     if ~beQuiet
         waitbar(1, wbar, 'Post-processing results');

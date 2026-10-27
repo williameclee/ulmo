@@ -16,7 +16,7 @@
 %   KernelOrder (name-value) - Packing indices. Default order: kernelorder(L).
 %
 % Output arguments
-%   earthResponseKernel - Sparse elastic Earth response G+R, including rotation.
+%   earthRespKernel - Sparse elastic Earth response G+R, including rotation.
 %       Maps total surface mass density to relative sea-level load before the
 %       ocean mass adjustment. Size: ((L+1)^2, (L+1)^2). Unit: dimensionless.
 %   forcingKernel - Sparse mass-constrained forcing matrix KF.
@@ -37,7 +37,8 @@
 % Created by
 %   2026/10/27, En-Chi Lee (williameclee@arizona.edu)
 
-function [earthResponseKernel, forcingKernel, waterDensity] = prepareslekernels(L, oceanKernel, options)
+function [earthRespKernel, forcingKernel, waterDensity] = prepareslekernels(L, oceanKernel, options)
+
     arguments (Input)
         L (1, 1) double {mustBeInteger, mustBePositive}
         oceanKernel (:, :) double {mustBeReal}
@@ -46,28 +47,37 @@ function [earthResponseKernel, forcingKernel, waterDensity] = prepareslekernels(
         options.RotationFeedback (1, 1) logical = true
         options.KernelOrder (:, 1) double = kernelorder(L)
     end
-    numCoeffs = (L + 1)^2;
+
+    numCoeffs = (L + 1) ^ 2;
+
     if ~isequal(size(oceanKernel), [numCoeffs, numCoeffs]) || ~isfinite(oceanKernel(1, 1)) || oceanKernel(1, 1) <= 0
         error('ULMO:prepareslekernels:InvalidOceanKernel', ...
-            'oceanKernel must have size (L+1)^2 by (L+1)^2 and positive finite area.');
+        'oceanKernel must have size (L+1)^2 by (L+1)^2 and positive finite area.');
     end
+
     % Check in blocks to avoid a full logical temporary for a large kernel.
     for first = 1:256:numCoeffs
-        if any(~isfinite(oceanKernel(:, first:min(first+255, numCoeffs))), 'all')
+
+        if any(~isfinite(oceanKernel(:, first:min(first + 255, numCoeffs))), 'all')
             error('ULMO:prepareslekernels:InvalidOceanKernel', 'oceanKernel must be finite.');
         end
+
     end
+
     if options.RotationFeedback && L < 2
         error('ULMO:prepareslekernels:RotationDegree', 'Rotation requires L >= 2.');
     end
+
     frame = char(options.Frame);
     loveNumSrc = char(options.LoveNumSource);
     doRotation = options.RotationFeedback;
     kernelOrder = options.KernelOrder;
     expectedOrder = kernelorder(L);
+
     if ~isequal(kernelOrder(:), expectedOrder(:))
         error('ULMO:prepareslekernels:InvalidOrder', 'Invalid packing indices.');
     end
+
     [~, degree] = addmon(L);
     degrees = [degree, degree];
     degrees = degrees(kernelOrder);
@@ -95,7 +105,7 @@ function [earthResponseKernel, forcingKernel, waterDensity] = prepareslekernels(
 
     % Construct the SLE kernel
     % Gravitational potential
-    earthResponseKernel = spdiags(3 / EARTH_DENSITY * llnFactors ./ (2 * degrees + 1), 0, ...
+    earthRespKernel = spdiags(3 / EARTH_DENSITY * llnFactors ./ (2 * degrees + 1), 0, ...
         numel(degrees), numel(degrees));
 
     if doRotation
@@ -104,21 +114,23 @@ function [earthResponseKernel, forcingKernel, waterDensity] = prepareslekernels(
         c21s21Fac = EARTH_ANGULAR_VELOCITY / 5 / EQUATORIAL_INERTIA / CHANDLER_WOBBLE_FREQUENCY;
 
         % C00
-        earthResponseKernel(1, 1) = earthResponseKernel(1, 1) - cmnFac * c00c20Fac;
-        earthResponseKernel(1, 5) = earthResponseKernel(1, 5) + cmnFac * c00c20Fac / sqrt(5);
+        earthRespKernel(1, 1) = earthRespKernel(1, 1) - cmnFac * c00c20Fac;
+        earthRespKernel(1, 5) = earthRespKernel(1, 5) + cmnFac * c00c20Fac / sqrt(5);
         % C20
-        earthResponseKernel(5, 1) = earthResponseKernel(5, 1) + cmnFac * c00c20Fac / sqrt(5) * tlnFactors(5);
-        earthResponseKernel(5, 5) = earthResponseKernel(5, 5) - cmnFac * c00c20Fac / 5 * tlnFactors(5);
+        earthRespKernel(5, 1) = earthRespKernel(5, 1) + cmnFac * c00c20Fac / sqrt(5) * tlnFactors(5);
+        earthRespKernel(5, 5) = earthRespKernel(5, 5) - cmnFac * c00c20Fac / 5 * tlnFactors(5);
         % C21 and S21
-        earthResponseKernel(6, 6) = earthResponseKernel(6, 6) + cmnFac * c21s21Fac * tlnFactors(6);
-        earthResponseKernel(7, 7) = earthResponseKernel(7, 7) + cmnFac * c21s21Fac * tlnFactors(7);
+        earthRespKernel(6, 6) = earthRespKernel(6, 6) + cmnFac * c21s21Fac * tlnFactors(6);
+        earthRespKernel(7, 7) = earthRespKernel(7, 7) + cmnFac * c21s21Fac * tlnFactors(7);
     end
 
-    earthResponseKernel = waterDensity * earthResponseKernel;
-    if any(~isfinite(nonzeros(earthResponseKernel)))
+    earthRespKernel = waterDensity * earthRespKernel;
+
+    if any(~isfinite(nonzeros(earthRespKernel)))
         error('ULMO:prepareslekernels:InvalidResponse', 'Earth response must be finite.');
     end
-    forcingKernel = earthResponseKernel;
-    forcingKernel(1, :) = forcingKernel(1, :) - sparse((oceanKernel(1, :) * earthResponseKernel) / oceanKernel(1, 1));
+
+    forcingKernel = earthRespKernel;
+    forcingKernel(1, :) = forcingKernel(1, :) - sparse((oceanKernel(1, :) * earthRespKernel) / oceanKernel(1, 1));
     forcingKernel(1, 1) = forcingKernel(1, 1) - 1 / oceanKernel(1, 1);
 end
