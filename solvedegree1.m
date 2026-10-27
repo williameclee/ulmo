@@ -37,7 +37,7 @@
 %       Scalar logical.
 %       Default option: false.
 %   Method (name-value) - Method used for the ocean constraint.
-%       'fingerprint': use SOLVESLE; 'uniform': use a uniform ocean load.
+%       'fingerprint': use the elastic SLE; 'uniform': use a uniform ocean load.
 %       Default method: 'fingerprint'.
 %   TimeRange (name-value) - Inclusive start and end dates for the output.
 %       Size: (1, 2) or (2, 1).
@@ -46,22 +46,28 @@
 %       'SD': surface mass density in kg/m^2, equivalent to mm of fresh
 %       water. 'GRAV' and 'POT' follow the CONVERTGRAVITY conventions.
 %       Default unit: 'SD'.
-%   Tolerance (name-value) - Outer absolute tolerance.
-%       Checks coefficients and standard deviations at every epoch.
-%       Set 0 for exactly MaxIter steps.
+%   Solver (name-value) - Linear map or legacy nested iteration.
+%       Default solver: 'linear'. Linear mode does not call SOLVESLE.
+%   RelativeTolerance (name-value) - Relative residual for response-map solves.
+%       Default tolerance: 1e-12. Used only by the linear solver.
+%   Tolerance (name-value) - Absolute low-degree residual in linear mode.
+%       In iteration mode, checks absolute changes in coefficients and
+%       standard deviations at every epoch.
+%       Set 0 to select legacy fixed steps when Solver is omitted or iteration.
 %       Unit: kg/m^2.
 %       Default tolerance: 1e-6.
-%   MaxIter (name-value) - Maximum outer iterations.
+%   MaxIter (name-value) - Maximum outer iterations in iteration mode only.
 %       Default iteration limit: 100.
-%   SleTolerance (name-value) - Inner SLE absolute tolerance.
+%   SleTolerance (name-value) - Inner absolute tolerance in iteration mode only.
 %       Set 0 for exactly SleMaxIter steps.
 %       Unit: m.
 %       Default tolerance: 1e-9.
-%   SleMaxIter (name-value) - Maximum inner SLE iterations.
+%   SleMaxIter (name-value) - Maximum iterations per SLE or response-map solve.
 %       Default iteration limit: 100.
 %   ForceNew (name-value) - Whether to bypass the coefficient cache.
+%       Also bypasses the prepared response-map cache.
 %       Default option: false.
-%   SaveData (name-value) - Whether to save computed coefficients.
+%   SaveData (name-value) - Whether to save coefficients and prepared maps.
 %       Default option: true.
 %   BeQuiet (name-value) - Whether to report progress.
 %       false: messages and waitbar; 0.5: messages only; true: silent.
@@ -94,17 +100,17 @@
 % Notes
 %   GIA is removed for degrees >= 2 during estimation and restored for
 %   estimated coefficients of those degrees. Degree 1 remains GIA-free.
-%   The uniform method computes only land C00 and its variance, retaining
-%   contributions from every input harmonic to that ocean mass constraint.
-%   Fingerprint land setup applies I-K without storing a full land kernel;
-%   diagonal variances use squared ocean columns and a
-%   diagonal correction, without row blocking.
-%   Fixed signal and variance projections independently select active input
-%   columns when at most half are nonzero across the epochs. Denser inputs
-%   use full-column products. Only exact zeros are omitted, after GIA removal.
-%   Cached solutions are assumed converged at sufficiently small tolerances;
-%   iteration settings are not part of cache filenames. Use ForceNew=true
-%   for other settings and SaveData=false to preserve an existing cache.
+%   Linear mode prepares a selected response map once for all epochs. Input
+%   coefficient errors are assumed independent; all induced correlations are
+%   retained through the final map. GIA uncertainty is excluded.
+%   Iteration mode retains the previous signal and uncertainty recurrences.
+%   Zero Tolerance or SleTolerance selects iteration if Solver is omitted;
+%   an explicitly linear solver rejects zero iteration tolerances.
+%   Prepared maps are cached by numeric kernel identity and accuracy under
+%   GRACEDATA/Degree1/maps, so other data products can reuse the same map.
+%   Linear coefficient caches have a version and accuracy suffix and never
+%   reuse legacy results. Legacy iteration settings share a cache; use ForceNew=true for
+%   other settings and SaveData=false to preserve an existing cache.
 %
 % References
 %   Sun, Y, Ditmar, P, and Riva, REM. (2015). Observed changes
@@ -133,7 +139,7 @@ function varargout = solvedegree1(varargin)
          forceNew, saveData, beQuiet, callChain] = ...
         parseinputs(varargin);
 
-    dataPath = getoutputfile(prod, giaMdl, inclC20, inclC30, inclCS21, Lused, Lsle, ocnDom, mthd);
+    dataPath = getoutputfile(prod, giaMdl, inclC20, inclC30, inclCS21, Lused, Lsle, ocnDom, mthd, iterOpts);
 
     vars = {'coeffs', 'coeffStds', 'dates'};
 
@@ -156,7 +162,7 @@ function varargout = solvedegree1(varargin)
 
     [coeffs, coeffStds, dates] = ...
         solvedegree1Core(prod, Lused, Lsle, ...
-        giaMdl, inclC20, inclC30, inclCS21, ocnDom, mthd, beQuiet, iterOpts);
+        giaMdl, inclC20, inclC30, inclCS21, ocnDom, mthd, beQuiet, iterOpts, forceNew, saveData);
 
     if saveData
         save(dataPath, 'coeffs', 'coeffStds', 'dates')
@@ -175,7 +181,7 @@ end
 
 % Heart of the programme
 function [coeffs, coeffStds, dates] = ...
-        solvedegree1Core(prod, Lused, Lsle, giaMdl, inclC20, inclC30, inclC21S21, ocnDom, mthd, beQuiet, iterOpts)
+        solvedegree1Core(prod, Lused, Lsle, giaMdl, inclC20, inclC30, inclC21S21, ocnDom, mthd, beQuiet, iterOpts, forceNew, saveData)
     %% Initialisation
     if ~beQuiet
         wbar = waitbar(0, 'Loading GRACE data', ...
@@ -200,97 +206,122 @@ function [coeffs, coeffStds, dates] = ...
 
     end
 
-    [ocnKer, coeffKer, coeffLndKer, ocnLeakKer, lnd2ocnKer, lndC00Ker, lndVarDiag] = ...
-        preparekernels(Lsle, ocnDom, coeffIds, mthd, beQuiet);
-    ocnLeakKerSq = ocnLeakKer .^ 2;
-    coeffLndKerSq = coeffLndKer .^ 2;
-    lnd2ocnKerSq = lnd2ocnKer .^ 2;
-    coeffVarMap = (coeffKer \ eye(nCoeffs)) .^ 2;
+    if iterOpts.Solver == "linear"
+        O = kernelcp_new(Lsle, ocnDom, "BeQuiet", beQuiet);
+        if strcmp(mthd, 'fingerprint')
+            kernels = prepareslekernels(Lsle, O);
+        else
+            kernels = struct('O', O);
+        end
+        map = preparelowdegreemap(kernels, coeffIds, Method=string(mthd), ...
+            RelativeTolerance=iterOpts.RelativeTolerance, MaxIter=iterOpts.SleMaxIter, ...
+            CacheFolder=fullfile(getenv('GRACEDATA'), 'Degree1', 'maps'), ...
+            SaveData=saveData, ForceNew=forceNew);
+        known = packcoeffs(sdPlmt, kerOrder);
+        knownStd = packcoeffs(sdStdPlmt, kerOrder);
+        coeffs = map.T * known(map.knownIds, :);
+        coeffStds = sqrt((map.T.^2) * knownStd(map.knownIds, :).^2);
+        residual = map.Dunknown * coeffs - map.Dknown * known(map.knownIds, :);
+        if any(~isfinite(coeffs), 'all') || any(~isfinite(coeffStds), 'all')
+            error('ULMO:solvedegree1:NonFiniteIterate', 'Estimated coefficients or uncertainties became nonfinite.');
+        end
+        if max(abs(residual), [], 'all') > iterOpts.Tolerance
+            error('ULMO:solvedegree1:NonConvergence', 'The low-degree constraint residual exceeds Tolerance.');
+        end
+    else
+        [ocnKer, coeffKer, coeffLndKer, ocnLeakKer, lnd2ocnKer, lndC00Ker, lndVarDiag] = ...
+            preparekernels(Lsle, ocnDom, coeffIds, mthd, beQuiet);
+        ocnLeakKerSq = ocnLeakKer .^ 2;
+        coeffLndKerSq = coeffLndKer .^ 2;
+        lnd2ocnKerSq = lnd2ocnKer .^ 2;
+        coeffVarMap = (coeffKer \ eye(nCoeffs)) .^ 2;
 
-    %% Fixed projections
-    [fxdOcnCoeffs, fxdOcnCoeffVars, fxdLndSdPlms, fxdLndVarPlms] = ...
-        projectfixedfields(sdPlmt, sdStdPlmt, kerOrder, ocnKer, ...
-        ocnLeakKer, ocnLeakKerSq, lndC00Ker, lndVarDiag, mthd);
-    clear lndC00Ker lndVarDiag
+        %% Fixed projections
+        [fxdOcnCoeffs, fxdOcnCoeffVars, fxdLndSdPlms, fxdLndVarPlms] = ...
+            projectfixedfields(sdPlmt, sdStdPlmt, kerOrder, ocnKer, ...
+            ocnLeakKer, ocnLeakKerSq, lndC00Ker, lndVarDiag, mthd);
+        clear lndC00Ker lndVarDiag
 
-    %% Solving the degree-1 coefficients
-    maxIter = iterOpts.MaxIter;
-    tol = iterOpts.Tolerance;
-    converged = false;
-    coeffs = extractcoeffs(sdPlmt, coeffLocs);
-    coeffStds = extractcoeffs(sdStdPlmt, coeffLocs);
-    clear sdStdPlmt
+        %% Solving the degree-1 coefficients
+        maxIter = iterOpts.MaxIter;
+        tol = iterOpts.Tolerance;
+        converged = false;
+        coeffs = extractcoeffs(sdPlmt, coeffLocs);
+        coeffStds = extractcoeffs(sdStdPlmt, coeffLocs);
+        clear sdStdPlmt
 
-    % Precompute variance kernel to avoid repeated reconstruction in SOLVESLE
-    % Construct only after fixed-field projection temporaries are released.
-    if strcmp(mthd, 'fingerprint')
-        ocnVarKer = prepareoceanvariancekernel(ocnKer);
-    end
+        % Precompute variance kernel to avoid repeated reconstruction in SOLVESLE
+        % Construct only after fixed-field projection temporaries are released.
+        if strcmp(mthd, 'fingerprint')
+            ocnVarKer = prepareoceanvariancekernel(ocnKer);
+        end
 
-    for iIter = 1:maxIter
-        prevCoeffs = coeffs;
-        prevStds = coeffStds;
+        for iIter = 1:maxIter
+            prevCoeffs = coeffs;
+            prevStds = coeffStds;
 
-        if ~beQuiet
-            waitbar((iIter - 1) / maxIter, wbar, ...
-                sprintf('Solving degree-1 coefficients iteratively (%d/%d)', iIter, maxIter));
+            if ~beQuiet
+                waitbar((iIter - 1) / maxIter, wbar, ...
+                    sprintf('Solving degree-1 coefficients iteratively (%d/%d)', iIter, maxIter));
 
-            if getappdata(wbar, 'canceling')
-                error('ULMO:ProcessCancelledByUser', 'Geocentre computation cancelled');
+                if getappdata(wbar, 'canceling')
+                    error('ULMO:ProcessCancelledByUser', 'Geocentre computation cancelled');
+                end
+
+            end
+
+            switch mthd
+                case 'fingerprint'
+                    lndPlmt = plms2lmcosi(fxdLndSdPlms + coeffLndKer * coeffs, ...
+                        kerOrder, sdPlmt);
+                    lndStdPlmt = plms2lmcosi( ...
+                        sqrt(fxdLndVarPlms + coeffLndKerSq * coeffStds .^ 2), ...
+                        kerOrder, sdPlmt);
+                    [ocnPlmt, ocnStdPlmt] = solvesle( ...
+                        lndPlmt, lndStdPlmt, Lsle, ocnDom, ...
+                        "Solver", "iteration", "OceanKernel", ocnKer, "OceanVarianceKernel", ocnVarKer, "KernelOrder", kerOrder, ...
+                        "InitialRSL", sdPlmt / 1000, ... % kg/m^2 -> m
+                        "RotationFeedback", true, "MaxIter", iterOpts.SleMaxIter, ...
+                        "Tolerance", iterOpts.SleTolerance, "BeQuiet", true);
+                    ocnCoeffs = ocnLeakKer * packcoeffs(ocnPlmt, kerOrder);
+                    ocnCoeffVars = ocnLeakKerSq * packcoeffs(ocnStdPlmt, kerOrder) .^ 2;
+                case 'uniform'
+                    lndC00 = fxdLndSdPlms + coeffLndKer * coeffs;
+                    lndC00Var = fxdLndVarPlms + coeffLndKerSq * coeffStds .^ 2;
+                    ocnCoeffs = -lnd2ocnKer * lndC00;
+                    ocnCoeffVars = lnd2ocnKerSq * lndC00Var;
+            end
+
+            coeffs = coeffKer \ (ocnCoeffs - fxdOcnCoeffs);
+
+            if strcmp(mthd, 'fingerprint')
+                sdPlmt = putcoeffs(sdPlmt, coeffs, coeffLocs);
+            end
+
+            % STD
+            coeffStds = sqrt(coeffVarMap * (ocnCoeffVars + fxdOcnCoeffVars));
+
+            if any(~isfinite(coeffs), 'all') || any(~isfinite(coeffStds), 'all')
+                error('ULMO:solvedegree1:NonFiniteIterate', ...
+                'Estimated coefficients or uncertainties became nonfinite.');
+            end
+
+            maxChange = max(absoluteiterationchange(coeffs, prevCoeffs), ...
+                absoluteiterationchange(coeffStds, prevStds));
+
+            if tol > 0 && maxChange <= tol
+                converged = true;
+                break
             end
 
         end
 
-        switch mthd
-            case 'fingerprint'
-                lndPlmt = plms2lmcosi(fxdLndSdPlms + coeffLndKer * coeffs, ...
-                    kerOrder, sdPlmt);
-                lndStdPlmt = plms2lmcosi( ...
-                    sqrt(fxdLndVarPlms + coeffLndKerSq * coeffStds .^ 2), ...
-                    kerOrder, sdPlmt);
-                [ocnPlmt, ocnStdPlmt] = solvesle( ...
-                    lndPlmt, lndStdPlmt, Lsle, ocnDom, ...
-                    "OceanKernel", ocnKer, "OceanVarianceKernel", ocnVarKer, "KernelOrder", kerOrder, ...
-                    "InitialRSL", sdPlmt / 1000, ... % kg/m^2 -> m
-                    "RotationFeedback", true, "MaxIter", iterOpts.SleMaxIter, ...
-                    "Tolerance", iterOpts.SleTolerance, "BeQuiet", true);
-                ocnCoeffs = ocnLeakKer * packcoeffs(ocnPlmt, kerOrder);
-                ocnCoeffVars = ocnLeakKerSq * packcoeffs(ocnStdPlmt, kerOrder) .^ 2;
-            case 'uniform'
-                lndC00 = fxdLndSdPlms + coeffLndKer * coeffs;
-                lndC00Var = fxdLndVarPlms + coeffLndKerSq * coeffStds .^ 2;
-                ocnCoeffs = -lnd2ocnKer * lndC00;
-                ocnCoeffVars = lnd2ocnKerSq * lndC00Var;
+        if tol > 0 && ~converged
+            error('ULMO:solvedegree1:NonConvergence', ...
+                'Solution did not converge in %d iterations (maximum absolute change %.6g; tolerance %.6g).', ...
+                maxIter, maxChange, tol);
         end
 
-        coeffs = coeffKer \ (ocnCoeffs - fxdOcnCoeffs);
-
-        if strcmp(mthd, 'fingerprint')
-            sdPlmt = putcoeffs(sdPlmt, coeffs, coeffLocs);
-        end
-
-        % STD
-        coeffStds = sqrt(coeffVarMap * (ocnCoeffVars + fxdOcnCoeffVars));
-
-        if any(~isfinite(coeffs), 'all') || any(~isfinite(coeffStds), 'all')
-            error('ULMO:solvedegree1:NonFiniteIterate', ...
-            'Estimated coefficients or uncertainties became nonfinite.');
-        end
-
-        maxChange = max(absoluteiterationchange(coeffs, prevCoeffs), ...
-            absoluteiterationchange(coeffStds, prevStds));
-
-        if tol > 0 && maxChange <= tol
-            converged = true;
-            break
-        end
-
-    end
-
-    if tol > 0 && ~converged
-        error('ULMO:solvedegree1:NonConvergence', ...
-            'Solution did not converge in %d iterations (maximum absolute change %.6g; tolerance %.6g).', ...
-            maxIter, maxChange, tol);
     end
 
     coeffs = coeffs'; % traditional -> timefirst
@@ -482,6 +513,9 @@ function varargout = parseinputs(inputs)
         @(x) ischar(validatestring(x, {'GRAV', 'POT', 'SD'})));
     valdLimit = @(x) isnumeric(x) && isscalar(x) && isfinite(x) && x >= 1 && x == fix(x);
     valdTol = @(x) isnumeric(x) && isscalar(x) && isfinite(x) && x >= 0;
+    addParameter(ip, 'Solver', 'linear', @(x) any(strcmp(x, {'linear', 'iteration'})));
+    addParameter(ip, 'RelativeTolerance', 1e-12, ...
+        @(x) isnumeric(x) && isscalar(x) && isfinite(x) && x > 0 && x < 1);
     addParameter(ip, 'MaxIter', 100, valdLimit);
     addParameter(ip, 'Tolerance', 1e-6, valdTol);
     addParameter(ip, 'SleMaxIter', 100, valdLimit);
@@ -518,7 +552,16 @@ function varargout = parseinputs(inputs)
     beQuiet = double(ip.Results.BeQuiet) * 2;
     callChain = [ip.Results.CallChain, {mfilename}];
 
-    iterOpts = struct('MaxIter', ip.Results.MaxIter, ...
+    solver = string(ip.Results.Solver);
+    if ip.Results.Tolerance == 0 || ip.Results.SleTolerance == 0
+        if solver == "linear" && ~ismember('Solver', ip.UsingDefaults)
+            error('ULMO:solvedegree1:FixedStepsRequireIteration', ...
+                'Zero iteration tolerances require Solver="iteration".');
+        end
+        solver = "iteration";
+    end
+    iterOpts = struct('Solver', solver, 'RelativeTolerance', ip.Results.RelativeTolerance, ...
+        'MaxIter', ip.Results.MaxIter, ...
         'Tolerance', ip.Results.Tolerance, 'SleMaxIter', ip.Results.SleMaxIter, ...
         'SleTolerance', ip.Results.SleTolerance);
 
@@ -538,7 +581,7 @@ end
 
 % Get the input and output file names
 function outPath = getoutputfile( ...
-        prod, giaMdl, inclC20, inclC30, inclC21S21, Lused, Lsle, ocnDom, mthd)
+        prod, giaMdl, inclC20, inclC30, inclC21S21, Lused, Lsle, ocnDom, mthd, iterOpts)
     outFolder = fullfile(getenv('GRACEDATA'), 'Degree1', 'new');
 
     if ~exist(outFolder, 'dir')
@@ -574,6 +617,11 @@ function outPath = getoutputfile( ...
     deg1Flag = sprintf('%s%s-Ld%d_Ls%d-%s%s', ...
         giaMdl, moreCoeffFlag, ...
         Lused, Lsle, ocnDom.Id, mthdFlag);
+    if iterOpts.Solver == "linear"
+        % Different uncertainty definitions must never share cached results.
+        deg1Flag = sprintf('%s-linear-v1-r%.17g-a%.17g', ...
+            deg1Flag, iterOpts.RelativeTolerance, iterOpts.Tolerance);
+    end
     outFile = sprintf('%s_%s-SD.mat', prodFlag, deg1Flag);
 
     outPath = fullfile(outFolder, outFile);

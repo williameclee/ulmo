@@ -203,10 +203,15 @@ classdef degree1ConvergenceTest < matlab.unittest.TestCase
 end
 
 function varargout = runSolver(varargin)
-    [varargout{1:nargout}] = solvedegree1('CSR', 'RL06', 2, 2, 2, 'ICE6GD', GeoDomain('alloceans'), ...
+    [varargout{1:nargout}] = legacysolvedegree1('CSR', 'RL06', 2, 2, 2, 'ICE6GD', GeoDomain('alloceans'), ...
         "Method", 'uniform', "BeQuiet", true, "SaveData", false, varargin{:});
 end
 
 function clearFixture()
     clear global DEGREE1_CONVERGENCE_FIXTURE
+end
+
+% Keep the historical iteration contract explicit in regression tests.
+function varargout = legacysolvedegree1(varargin)
+    [varargout{1:nargout}] = solvedegree1(varargin{:}, "Solver", "iteration");
 end
