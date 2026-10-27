@@ -24,6 +24,7 @@ classdef linearSleSystemTest < matlab.unittest.TestCase
             repo = fileparts(fileparts(mfilename('fullpath')));
             testCase.applyFixture(PathFixture(repo));
             testCase.applyFixture(PathFixture(fullfile(repo, 'aux')));
+            testCase.applyFixture(PathFixture(fullfile(repo, 'legacy')));
             testCase.applyFixture(PathFixture(fullfile(repo, 'domains')));
             temp = testCase.applyFixture(TemporaryFolderFixture);
             testCase.Folder = temp.Folder;
@@ -149,7 +150,7 @@ classdef linearSleSystemTest < matlab.unittest.TestCase
             testCase.verifyEqual(dates, f.dates);
             testCase.verifyEqual(actualLocs, locs);
             % Independently check the central coefficients against converged iteration.
-            legacy = solvedegree1legacy('CSR', 'RL06', 3, 3, 3, 'ICE6GD', ...
+            legacy = solvedegree1_iteration('CSR', 'RL06', 3, 3, 3, 'ICE6GD', ...
                 GeoDomain('alloceans'), opts{:}, ...
                 'Tolerance', 1e-12, 'SleTolerance', 1e-14);
             testCase.verifyEqual(actual, legacy, 'AbsTol', 2e-9);
@@ -217,7 +218,7 @@ classdef linearSleSystemTest < matlab.unittest.TestCase
         function originalCacheNamesAndExplicitRecomputation(testCase)
             args = {'CSR','RL06',3,3,3,'ICE6GD',GeoDomain('alloceans'), ...
                 'Method','uniform','SaveData',true,'BeQuiet',true};
-            [legacy, legacyStd] = solvedegree1legacy(args{:});
+            [legacy, legacyStd] = solvedegree1_iteration(args{:});
             files = dir(fullfile(testCase.Folder,'Degree1','new','*.mat'));
             testCase.verifyNumElements(files,1);
             domain = GeoDomain('alloceans');

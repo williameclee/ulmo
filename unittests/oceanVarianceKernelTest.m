@@ -29,6 +29,7 @@ classdef oceanVarianceKernelTest < matlab.unittest.TestCase
             repo = fileparts(fileparts(mfilename('fullpath')));
             testCase.applyFixture(PathFixture(repo));
             testCase.applyFixture(PathFixture(fullfile(repo, 'aux')));
+            testCase.applyFixture(PathFixture(fullfile(repo, 'legacy')));
             testCase.applyFixture(PathFixture(fullfile(repo, 'domains')));
             testCase.assertEqual(which('solvesle'), fullfile(repo, 'solvesle.m'));
             folder = testCase.applyFixture(TemporaryFolderFixture);
@@ -77,7 +78,7 @@ classdef oceanVarianceKernelTest < matlab.unittest.TestCase
             global DEGREE1_CONVERGENCE_FIXTURE %#ok<GVMIS>
             DEGREE1_CONVERGENCE_FIXTURE = struct('x', reshape(sin(1:27), 9, 3), ...
                 'sigma', ones(9, 3) * .1, 'builds', 0);
-            [coeffs, sigma] = solvedegree1legacy('CSR', 'RL06', 2, 2, 2, 'ICE6GD', ...
+            [coeffs, sigma] = solvedegree1_iteration('CSR', 'RL06', 2, 2, 2, 'ICE6GD', ...
                 GeoDomain('alloceans'), 'Method', mthd, 'Tolerance', 0, 'MaxIter', 3, ...
                 'SleTolerance', 0, 'SleMaxIter', 3, 'ForceNew', true, ...
                 'SaveData', false, 'BeQuiet', true);
@@ -117,8 +118,8 @@ classdef oceanVarianceKernelTest < matlab.unittest.TestCase
 
             actl = cell(1, 4);
             ref = cell(1, 4);
-            [ref{:}] = solveslelegacy(forc, unc, 2, GeoDomain('alloceans'), opts{:});
-            [actl{:}] = solveslelegacy(forc, unc, 2, GeoDomain('alloceans'), ...
+            [ref{:}] = solvesle_iteration(forc, unc, 2, GeoDomain('alloceans'), opts{:});
+            [actl{:}] = solvesle_iteration(forc, unc, 2, GeoDomain('alloceans'), ...
                 opts{:}, 'OceanVarianceKernel', Q);
 
             for k = 1:4
@@ -144,23 +145,23 @@ classdef oceanVarianceKernelTest < matlab.unittest.TestCase
             K = syntheticKernel();
             forcing = unflatten((1:9)', 2);
             opts = {'OceanKernel', K, 'Tolerance', 0, 'MaxIter', 3, 'BeQuiet', true};
-            [~, sigma] = solveslelegacy(forcing, [], 2, GeoDomain('alloceans'), opts{:});
+            [~, sigma] = solvesle_iteration(forcing, [], 2, GeoDomain('alloceans'), opts{:});
             testCase.verifyEmpty(sigma);
-            [~, sigma] = solveslelegacy(forcing, forcing / 10, 2, GeoDomain('alloceans'), ...
+            [~, sigma] = solvesle_iteration(forcing, forcing / 10, 2, GeoDomain('alloceans'), ...
                 opts{:}, 'OceanVarianceKernel', denseVarianceKernel(K));
             testCase.verifyTrue(all(isfinite(sigma), 'all'));
-            testCase.verifyError(@() solveslelegacy(forcing, forcing / 10, 2, ...
+            testCase.verifyError(@() solvesle_iteration(forcing, forcing / 10, 2, ...
                 GeoDomain('alloceans'), opts{:}), 'ULMO:UnexpectedVarianceConstruction');
         end
 
         function suppliedRequiresMatchingDimensions(testCase)
             p = zeros(6, 2);
             common = {p, p, 2, GeoDomain('alloceans'), 'BeQuiet', true};
-            testCase.verifyError(@() solveslelegacy(common{:}, 'OceanVarianceKernel', eye(9)), ...
+            testCase.verifyError(@() solvesle_iteration(common{:}, 'OceanVarianceKernel', eye(9)), ...
             'ULMO:solvesle:MissingOceanKernel');
-            testCase.verifyError(@() solveslelegacy(common{:}, 'OceanKernel', eye(9), ...
+            testCase.verifyError(@() solvesle_iteration(common{:}, 'OceanKernel', eye(9), ...
                 'OceanVarianceKernel', eye(4)), 'ULMO:solvesle:InvalidOceanVarianceKernelSize');
-            testCase.verifyError(@() solveslelegacy(common{:}, 'OceanKernel', eye(4), ...
+            testCase.verifyError(@() solvesle_iteration(common{:}, 'OceanKernel', eye(4), ...
                 'OceanVarianceKernel', eye(4)), 'ULMO:solvesle:InvalidOceanVarianceKernelSize');
         end
 

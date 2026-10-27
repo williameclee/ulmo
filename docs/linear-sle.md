@@ -106,6 +106,8 @@ options (`InitialRSL` and `OceanVarianceKernel` in `solvesle`; `MaxIter` and
 `SleTolerance` in `solvedegree1`) have also been removed.
 
 For regression testing, the previous implementations live in
-`unittests/private/solveslelegacy.m` and `unittests/private/solvedegree1legacy.m`.
-These private references retain fixed-step iteration and the previous variance
-recurrences. The production functions do not call them.
+`legacy/solvesle_iteration.m` and `legacy/solvedegree1_iteration.m`.
+The suffix identifies their fixed-point iteration method. These references retain
+fixed-step execution and the previous variance recurrences. Tests add `legacy/`
+to the MATLAB path through a path fixture; the production functions do not call
+these references.

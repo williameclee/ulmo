@@ -30,6 +30,7 @@ classdef solvesleMassConservationTest < matlab.unittest.TestCase
             repo = fileparts(fileparts(mfilename('fullpath')));
             testCase.applyFixture(PathFixture(repo));
             testCase.applyFixture(PathFixture(fullfile(repo, 'aux')));
+            testCase.applyFixture(PathFixture(fullfile(repo, 'legacy')));
             testCase.assertNotEmpty(which('addmon'), 'Add slepian_alpha to the path.');
             testCase.assertEqual(which('solvesle'), fullfile(repo, 'solvesle.m'));
             folder = testCase.applyFixture(TemporaryFolderFixture);
@@ -84,9 +85,9 @@ classdef solvesleMassConservationTest < matlab.unittest.TestCase
 
             opts = {"OceanKernel", K, "Tolerance", 0, "MaxIter", 5, "BeQuiet", true};
             actual = cell(1, 4); reference = cell(1, 4);
-            [actual{:}] = solveslelegacy(input{1}, input{2}, 2, GeoDomain('alloceans'), ...
+            [actual{:}] = solvesle_iteration(input{1}, input{2}, 2, GeoDomain('alloceans'), ...
                 opts{:}, "InitialRSL", input{3});
-            [reference{:}] = solveslelegacy(expected{1}, expected{2}, 2, GeoDomain('alloceans'), ...
+            [reference{:}] = solvesle_iteration(expected{1}, expected{2}, 2, GeoDomain('alloceans'), ...
                 opts{:}, "InitialRSL", expected{3});
 
             if columnCount == 4
@@ -125,7 +126,7 @@ classdef solvesleMassConservationTest < matlab.unittest.TestCase
             reference = solve(f, [], K, 5, false, zeros(size(f)));
             p = unflatten(f); wrongOcean = ones(6, 2) * 0.9;
             % Hold initialisation fixed while varying the ocean expansion.
-            r = solveslelegacy(p, [], 2, GeoDomain('alloceans'), ...
+            r = solvesle_iteration(p, [], 2, GeoDomain('alloceans'), ...
                 "OceanKernel", K, "OceanFunction", wrongOcean, ...
                 "InitialRSL", zeros(size(p)), ...
                 "RotationFeedback", false, "Tolerance", 0, "MaxIter", 5, "BeQuiet", true);
@@ -166,7 +167,7 @@ classdef solvesleMassConservationTest < matlab.unittest.TestCase
             K = hemisphereKernel(); f = reshape(1:27, 9, 3); p = unflatten(f);
             [order, degree] = addmon(2);
             p = cat(2, repmat([degree, order], 1, 1, 3), p);
-            r = solveslelegacy(p, [], 2, GeoDomain('alloceans'), ...
+            r = solvesle_iteration(p, [], 2, GeoDomain('alloceans'), ...
                 "OceanKernel", K, "OceanFunction", unflatten(K(:, 1)), "Tolerance", 0, "MaxIter", 3, "BeQuiet", true);
             testCase.verifyEqual(r(:, 1:2, :), p(:, 1:2, :));
             testCase.verifyEqual(K(1, :) * flatten(r(:, 3:4, :)), -f(1, :), 'AbsTol', 1e-11);
@@ -198,7 +199,7 @@ end
 
 function [r, sigma, g, gStd] = solve(f, s, K, count, rotation, initial)
     if ~isempty(s), s = unflatten(s); end
-    [p, stdP, g, gStd] = solveslelegacy(unflatten(f), s, 2, GeoDomain('alloceans'), ...
+    [p, stdP, g, gStd] = solvesle_iteration(unflatten(f), s, 2, GeoDomain('alloceans'), ...
         "OceanKernel", K, "OceanFunction", unflatten(K(:, 1)), ...
         "RotationFeedback", rotation, "Tolerance", 0, "MaxIter", count, ...
         "InitialRSL", unflatten(initial), "BeQuiet", true);

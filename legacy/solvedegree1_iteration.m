@@ -1,15 +1,15 @@
-%% SOLVEDEGREE1LEGACY - Jointly estimates low-degree GRACE coefficients.
+%% SOLVEDEGREE1_ITERATION - Estimates low-degree coefficients by nested fixed-point iteration.
 % Estimates degree 1 and optional C20, C30, C21 and S21 using an ocean
 % constraint and the specified GIA model, following Sun et al. (2016).
-% Test-only reference copied from commit 7f43e48; production uses the linear solver.
+% Regression reference copied from commit 7f43e48; production uses the linear solver.
 %
 % Syntax
-%   [coeffs, coeffStds, dates] = solvedegree1legacy()
-%   [coeffs, coeffStds, dates] = solvedegree1legacy(product, "Name", value)
-%   [coeffs, coeffStds, dates] = solvedegree1legacy(Pcenter, Rlevel, Ldata, ...
+%   [coeffs, coeffStds, dates] = solvedegree1_iteration()
+%   [coeffs, coeffStds, dates] = solvedegree1_iteration(product, "Name", value)
+%   [coeffs, coeffStds, dates] = solvedegree1_iteration(Pcenter, Rlevel, Ldata, ...
 %       Ltruncation, Lsle, GiaModel, OceanDomain)
-%   [coeffs, coeffStds, dates, gracePlmt, coeffLocs] = solvedegree1legacy(__)
-%   [coeffs, coeffStds, dates] = solvedegree1legacy(__, "IncludeC21S21", true)
+%   [coeffs, coeffStds, dates, gracePlmt, coeffLocs] = solvedegree1_iteration(__)
+%   [coeffs, coeffStds, dates] = solvedegree1_iteration(__, "IncludeC21S21", true)
 %
 % Input arguments
 %   Pcenter (optional) - GRACE data centre.
@@ -126,7 +126,7 @@
 % Last modified
 %   2026/10/27, En-Chi Lee (williameclee@arizona.edu)
 
-function varargout = solvedegree1legacy(varargin)
+function varargout = solvedegree1_iteration(varargin)
     %% Initialisation
     % Parse inputs
     [prod, Lused, Lsle, giaMdl, ocnDom, ...
@@ -249,7 +249,7 @@ function [coeffs, coeffStds, dates] = ...
                 lndStdPlmt = plms2lmcosi( ...
                     sqrt(fxdLndVarPlms + coeffLndKerSq * coeffStds .^ 2), ...
                     kerOrder, sdPlmt);
-                [ocnPlmt, ocnStdPlmt] = solveslelegacy( ...
+                [ocnPlmt, ocnStdPlmt] = solvesle_iteration( ...
                     lndPlmt, lndStdPlmt, Lsle, ocnDom, ...
                     "OceanKernel", ocnKer, "OceanVarianceKernel", ocnVarKer, "KernelOrder", kerOrder, ...
                     "InitialRSL", sdPlmt / 1000, ... % kg/m^2 -> m

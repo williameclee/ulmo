@@ -1,13 +1,13 @@
-%% SOLVESLELEGACY - Solves the elastic sea-level equation for a fixed ocean domain.
+%% SOLVESLE_ITERATION - Solves the fixed-ocean elastic SLE by fixed-point iteration.
 % Computes the relative sea-level load and barystatic sea level from
 % spherical harmonic forcing, with optional formal uncertainty propagation.
-% Test-only reference copied from commit 7f43e48; production uses the linear solver.
+% Regression reference copied from commit 7f43e48; production uses the linear solver.
 %
 % Syntax
-%   rslSd = solveslelegacy(forcing)
-%   [rslSd, rslSdStd, gmsl, gmslStd] = solveslelegacy(forcing, forcingStd, L, ocean)
-%   [rslSd, rslSdStd, gmsl, gmslStd] = solveslelegacy(forcing, [], L, ocean)
-%   rslSd = solveslelegacy(__, "Name", value)
+%   rslSd = solvesle_iteration(forcing)
+%   [rslSd, rslSdStd, gmsl, gmslStd] = solvesle_iteration(forcing, forcingStd, L, ocean)
+%   [rslSd, rslSdStd, gmsl, gmslStd] = solvesle_iteration(forcing, [], L, ocean)
+%   rslSd = solvesle_iteration(__, "Name", value)
 %
 % Input arguments
 %   forcing - Surface mass density spherical harmonic coefficients.
@@ -115,7 +115,7 @@
 % Last modified
 %   2026/10/27, En-Chi Lee (williameclee@arizona.edu)
 
-function varargout = solveslelegacy(varargin)
+function varargout = solvesle_iteration(varargin)
     %% Initialisation
     % Load all missing variables and convert to correct formats
 
