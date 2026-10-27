@@ -191,16 +191,6 @@ function varargout = solvesle(varargin)
         waitbar(0, wbar, 'Constructing SLE kernel');
     end
 
-    % Many values from Adhikari et al. (2016)
-    WATER_DENSITY = 1000; % to be consistent with other functions, mainly MASS2WEQ
-    EARTH_DENSITY = 5517; % to be consistent with PLM2POT
-    EARTH_RADIUS = 6371e3;
-    EARTH_ANGULAR_VELOCITY = 7.2921e-5;
-    EQUATORIAL_INERTIA = 8.0077e37;
-    POLAR_INERTIA = 8.0345e37;
-    CHANDLER_WOBBLE_FREQUENCY = 2.4405e-7;
-    GRAVITY = 9.81;
-
     [~, degree] = addmon(L);
     degrees = [degree, degree];
     degrees = degrees(kernelOrder);
@@ -212,29 +202,38 @@ function varargout = solvesle(varargin)
     tlnFactors = 1 + tlnGeoids - tlnVlms;
     llnGeoid2 = lovenumber(2, 'LLN geoid', frame, "Source", loveNumSrc);
 
+    % Many values from Adhikari et al. (2016)
+    WATER_DENSITY = 1000; % to be consistent with other functions(mainly MASS2WEQ) and Adhikari et al. (2016)
+    EARTH_DENSITY = 5517; % to be consistent with PLM2POT
+    EARTH_RADIUS = 6371e3;
+    EARTH_ANGULAR_VELOCITY = 7.2921e-5;
+    EQUATORIAL_INERTIA = 8.0077e37;
+    POLAR_INERTIA = 8.0345e37;
+    SECULAR_LOVE_NUMBER = 0.942; % 'Secular (fluid) Love number '
+    CHANDLER_WOBBLE_FREQUENCY = EARTH_ANGULAR_VELOCITY ...
+        * (POLAR_INERTIA - EQUATORIAL_INERTIA) / EQUATORIAL_INERTIA ...
+        * (1 - tlnGeoids(5) / SECULAR_LOVE_NUMBER); % Should use the elastic Earth value
+    GRAVITY = 9.81;
+
     % Construct the SLE kernel
     % Gravitational potential
     sleKernel = spdiags(3 / EARTH_DENSITY * llnFactors ./ (2 * degrees + 1), 0, ...
         numel(degrees), numel(degrees));
 
     if doRotation
-        % Rotation potential
-        c00c20Factor = 2/3 * EARTH_RADIUS ^ 2 * EARTH_ANGULAR_VELOCITY ^ 2 ...
-            * (- (1 + llnGeoid2) / POLAR_INERTIA) * 8 * pi / 3 * EARTH_RADIUS ^ 4;
-        c21s21Factor = -1 / sqrt(15) * EARTH_RADIUS ^ 2 * EARTH_ANGULAR_VELOCITY ^ 2 ...
-            * EARTH_ANGULAR_VELOCITY * (1 + llnGeoid2) ...
-            / (EQUATORIAL_INERTIA * CHANDLER_WOBBLE_FREQUENCY) ...
-            * (-4 * pi / sqrt(15)) * EARTH_RADIUS ^ 4;
-        c21s21Factor = c21s21Factor / GRAVITY;
+        cmnFac = (4 * pi / 3) * (1 + llnGeoid2) * EARTH_RADIUS ^ 6 * EARTH_ANGULAR_VELOCITY ^ 2 / GRAVITY;
+        c00c20Fac = 4/3 / POLAR_INERTIA;
+        c21s21Fac = EARTH_ANGULAR_VELOCITY / 5 / EQUATORIAL_INERTIA / CHANDLER_WOBBLE_FREQUENCY;
+
         % C00
-        sleKernel(1, 1) = sleKernel(1, 1) + c00c20Factor;
-        sleKernel(1, 5) = sleKernel(1, 5) + (-1 / sqrt(5)) * c00c20Factor;
+        sleKernel(1, 1) = sleKernel(1, 1) - cmnFac * c00c20Fac;
+        sleKernel(1, 5) = sleKernel(1, 5) + cmnFac * c00c20Fac / sqrt(5);
         % C20
-        sleKernel(5, 1) = sleKernel(5, 1) + (-1 / sqrt(5)) * c00c20Factor;
-        sleKernel(5, 5) = sleKernel(5, 5) + (1/5) * c00c20Factor;
-        % C21
-        sleKernel(6, 6) = sleKernel(6, 6) + c21s21Factor * tlnFactors(6);
-        sleKernel(7, 7) = sleKernel(7, 7) + c21s21Factor * tlnFactors(7);
+        sleKernel(5, 1) = sleKernel(5, 1) + cmnFac * c00c20Fac / sqrt(5) * tlnFactors(5);
+        sleKernel(5, 5) = sleKernel(5, 5) - cmnFac * c00c20Fac / 5 * tlnFactors(5);
+        % C21 and S21
+        sleKernel(6, 6) = sleKernel(6, 6) + cmnFac * c21s21Fac * tlnFactors(6);
+        sleKernel(7, 7) = sleKernel(7, 7) + cmnFac * c21s21Fac * tlnFactors(7);
     end
 
     %% Iteration
@@ -453,8 +452,7 @@ function varargout = parseinputs(varargin)
     else
 
         if ~isequal(size(forcStdPlm), size(forcPlm))
-            error( ...
-                sprintf('%s:InvalidInput:InputSizeNotMatch', upper(mfilename)), ...
+            error('ULMO:solvesle:InvalidInput:InputSizeNotMatch', ...
                 'Input size of FORCINGSTDPLM ([%s]) does not match FORCINGPLM ([%s])', ...
                 strjoin(string(size(forcStdPlm)), ', '), ...
                 strjoin(string(size(forcPlm)), ', '));
