@@ -1,15 +1,19 @@
 %% PREPARELOWDEGREEMAP - Builds the linear map from known to unknown loads.
 %
 % Syntax
-%   [knownToUnknownMap, knownIds] = preparelowdegreemap(kernels, unknownIds)
+%   [knownToUnknownMap, knownIds] = preparelowdegreemap(oceanKernel, earthResponseKernel, forcingKernel, unknownIds)
 %   [knownToUnknownMap, knownIds, oceanResponseMap, unknownConstraint, ...
 %       knownConstraint, reciprocalCondition, relativeResiduals, iterationCounts] = ...
-%       preparelowdegreemap(kernels, unknownIds)
-%   knownToUnknownMap = preparelowdegreemap(kernels, unknownIds, Method="uniform")
+%       preparelowdegreemap(oceanKernel, earthResponseKernel, forcingKernel, unknownIds)
+%   knownToUnknownMap = preparelowdegreemap(oceanKernel, [], [], unknownIds, Method="uniform")
 %
 % Input arguments
-%   kernels - Output of PREPARESLEKERNELS. For Method="uniform", only O
-%       is required; no Earth response or SLE solve is used.
+%   oceanKernel - Ocean localization matrix in kernel order.
+%   earthResponseKernel - G+R matrix from PREPARESLEKERNELS.
+%   forcingKernel - Mass-constrained forcing matrix from PREPARESLEKERNELS.
+%       All kernels have size (M,M), M=(L+1)^2, and are dimensionless.
+%       For Method="uniform", pass [] for earthResponseKernel and forcingKernel;
+%       only oceanKernel is used, with no Earth response or SLE solve.
 %   unknownIds - Distinct kernel-order indices of the estimated coefficients.
 %       Size: (1, U). Order is retained in the output.
 %   Method (name-value) - Ocean constraint, fingerprint or uniform.
@@ -57,20 +61,21 @@
 
 function [knownToUnknownMap, knownIds, oceanResponseMap, unknownConstraint, ...
           knownConstraint, reciprocalCondition, relativeResiduals, iterationCounts] = ...
-        preparelowdegreemap(kernels, unknownIds, options)
+        preparelowdegreemap(oceanKernel, earthResponseKernel, forcingKernel, unknownIds, options)
     arguments (Input)
-        kernels (1, 1) struct
+        oceanKernel (:, :) double {mustBeReal}
+        earthResponseKernel (:, :) double {mustBeReal}
+        forcingKernel (:, :) double {mustBeReal}
         unknownIds (1, :) double {mustBeInteger, mustBePositive}
         options.Method (1, 1) string {mustBeMember(options.Method, ["fingerprint", "uniform"])} = "fingerprint"
         options.RelativeTolerance (1, 1) double {mustBePositive, mustBeFinite, mustBeLessThan(options.RelativeTolerance, 1)} = 1e-12
         options.MaxIter (1, 1) double {mustBeInteger, mustBePositive} = 100
     end
-    oceanKernel = kernels.O;
     numCoeffs = size(oceanKernel, 1);
     if isempty(unknownIds) || numel(unique(unknownIds)) ~= numel(unknownIds) || any(unknownIds > numCoeffs)
         error('ULMO:preparelowdegreemap:InvalidIndices', 'Unknown indices must be distinct and within the bandwidth.');
     end
-    if size(oceanKernel, 2) ~= numCoeffs || ~isfinite(oceanKernel(1, 1)) || oceanKernel(1, 1) <= 0
+    if numCoeffs == 0 || size(oceanKernel, 2) ~= numCoeffs || ~isfinite(oceanKernel(1, 1)) || oceanKernel(1, 1) <= 0
         error('ULMO:preparelowdegreemap:InvalidOceanKernel', 'oceanKernel must be square with positive finite area.');
     end
     knownIds = setdiff(1:numCoeffs, unknownIds);
@@ -82,11 +87,15 @@ function [knownToUnknownMap, knownIds, oceanResponseMap, unknownConstraint, ...
         landMassRow(1) = landMassRow(1) + 1;
         oceanResponseMap = -(oceanKernel(unknownIds, 1) / oceanKernel(1, 1)) * landMassRow;
     else
-        [adjointResponse, solverDiagnostics] = solveslesystem(kernels, selectedOceanKernel.', Transpose=true, ...
+        if ~isequal(size(forcingKernel), size(oceanKernel))
+            error('ULMO:preparelowdegreemap:InvalidForcingKernel', ...
+                'forcingKernel must match the ocean matrix size.');
+        end
+        [adjointResponse, solverDiagnostics] = solveslesystem(oceanKernel, earthResponseKernel, selectedOceanKernel.', Transpose=true, ...
             RelativeTolerance=options.RelativeTolerance, MaxIter=options.MaxIter);
         relativeResiduals = solverDiagnostics.RelativeResidual;
         iterationCounts = solverDiagnostics.Iterations;
-        forcingResponse = adjointResponse.' * kernels.KF;
+        forcingResponse = adjointResponse.' * forcingKernel;
         oceanResponseMap = forcingResponse - forcingResponse * oceanKernel;
     end
     unknownConstraint = oceanResponseMap(:, unknownIds) - selectedOceanKernel(:, unknownIds);

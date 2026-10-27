@@ -164,33 +164,32 @@ function varargout = solvesle(varargin)
         waitbar(0, wbar, 'Constructing SLE kernel');
     end
 
-    kernels = prepareslekernels(L, ocnKernel, Frame=string(frame), ...
+    [earthResponseKernel, forcingKernel, waterDensity] = prepareslekernels(L, ocnKernel, Frame=string(frame), ...
         LoveNumSource=string(loveNumSrc), RotationFeedback=doRotation, ...
         KernelOrder=kernelOrder);
-    WATER_DENSITY = kernels.waterDensity;
 
     if any(~isfinite(forcSdPlms), 'all') || any(~isfinite(forcSdStdPlms), 'all')
         error('ULMO:solvesle:NonFiniteIterate', 'Forcing and errors must be finite.');
     end
-    rslSdPlms = solveslesystem(kernels, kernels.KF * forcSdPlms, ...
+    rslSdPlms = solveslesystem(ocnKernel, earthResponseKernel, forcingKernel * forcSdPlms, ...
         RelativeTolerance=relativeTolerance, MaxIter=maxIter);
-    rslPlms = rslSdPlms / WATER_DENSITY;
+    rslPlms = rslSdPlms / waterDensity;
     rslOcnPlms = ocnKernel * rslPlms;
     % Tolerance remains an absolute physical residual check, in metres.
-    if max(abs(rslOcnPlms(1, :) + forcSdPlms(1, :) / WATER_DENSITY), [], 'all') > tol
+    if max(abs(rslOcnPlms(1, :) + forcSdPlms(1, :) / waterDensity), [], 'all') > tol
         error('ULMO:solvesle:NonConvergence', 'The ocean mass residual exceeds Tolerance.');
     end
     if doError
-        rslVarPlms = slevariance(kernels, forcSdStdPlms.^2, ...
-            RelativeTolerance=relativeTolerance, MaxIter=maxIter) / WATER_DENSITY^2;
-        targetOcnVar = forcSdStdPlms(1, :).^2 / WATER_DENSITY^2;
+        rslVarPlms = slevariance(ocnKernel, earthResponseKernel, forcingKernel, forcSdStdPlms.^2, ...
+            RelativeTolerance=relativeTolerance, MaxIter=maxIter) / waterDensity^2;
+        targetOcnVar = forcSdStdPlms(1, :).^2 / waterDensity^2;
     end
     %% Post-processing
     if ~beQuiet
         waitbar(1, wbar, 'Post-processing results');
     end
 
-    rslSdPlms = rslPlms * WATER_DENSITY;
+    rslSdPlms = rslPlms * waterDensity;
     gmsl = rslOcnPlms(1, :) ./ ocnFunPlms(1, :) * 1e3; % m -> mm (= kg/m^2)
 
     if isvector(rslSdPlms)
@@ -222,7 +221,7 @@ function varargout = solvesle(varargin)
     end
 
     % Post-process the standard deviation
-    rslSdStdPlms = sqrt(rslVarPlms) * WATER_DENSITY;
+    rslSdStdPlms = sqrt(rslVarPlms) * waterDensity;
     gmslStd = sqrt(targetOcnVar) / ocnArea * 1e3; % m -> mm
 
     if isvector(rslSdStdPlms)

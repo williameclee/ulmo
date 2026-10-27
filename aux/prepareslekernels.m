@@ -1,12 +1,13 @@
 %% PREPARESLEKERNELS - Prepares matrices for the fixed-ocean elastic SLE.
 %
 % Syntax
-%   kernels = prepareslekernels(L, O)
-%   kernels = prepareslekernels(__, Frame="CF", RotationFeedback=true)
+%   [earthResponseKernel, forcingKernel, waterDensity] = prepareslekernels(L, oceanKernel)
+%   [earthResponseKernel, forcingKernel] = prepareslekernels(__, ...
+%       Frame="CF", RotationFeedback=true)
 %
 % Input arguments
 %   L - Maximum harmonic degree. Integer >= 1 (>= 2 with rotation).
-%   O - Ocean localization matrix in kernel order.
+%   oceanKernel - Ocean localization matrix in kernel order.
 %       Size: ((L+1)^2, (L+1)^2). Unit: dimensionless.
 %   Frame (name-value) - Reference frame, CF or CM. Default frame: CF.
 %   LoveNumSource (name-value) - Love-number source. Default source: ISSM.
@@ -15,16 +16,20 @@
 %   KernelOrder (name-value) - Packing indices. Default order: kernelorder(L).
 %
 % Output arguments
-%   kernels - Struct of ordinary numeric matrices, with no function handles.
-%       O: ocean matrix; response: sparse G+R; KF: sparse forcing matrix.
-%       oceanFunction: O(:,1); oceanArea: O(1,1); kernelOrder: packing indices.
-%       waterDensity: conversion from metres to kg/m^2; config: model settings.
+%   earthResponseKernel - Sparse elastic Earth response G+R, including rotation.
+%       Maps total surface mass density to relative sea-level load before the
+%       ocean mass adjustment. Size: ((L+1)^2, (L+1)^2). Unit: dimensionless.
+%   forcingKernel - Sparse mass-constrained forcing matrix KF.
+%       Maps forcing loads to the SLE right-hand side.
+%       Size: ((L+1)^2, (L+1)^2). Unit: dimensionless.
+%   waterDensity - Density used to convert sea-level metres to surface load.
+%       Size: scalar. Unit: kg/m^3.
 %
 % Notes
 %   S and F use kg/m^2, so G+R and KF are dimensionless. KF=P*(G+R)
-%   -e00*e00.'/O(1,1), where P=I-e00*O(1,:)/O(1,1).
-%   The system A=I-P*(G+R)*O is applied from these matrices without storing
-%   another full dense matrix. No idempotence of the truncated O is assumed.
+%   -e00*e00.'/oceanKernel(1,1), where P=I-e00*oceanKernel(1,:)/oceanKernel(1,1).
+%   The system A=I-P*(G+R)*oceanKernel is applied from these matrices without storing
+%   another full dense matrix. No idempotence of the truncated oceanKernel is assumed.
 %
 % See also
 %   SOLVESLE, SOLVESLESYSTEM, PREPARELOWDEGREEMAP, LOVENUMBER
@@ -32,24 +37,24 @@
 % Created by
 %   2026/10/27, En-Chi Lee (williameclee@arizona.edu)
 
-function kernels = prepareslekernels(L, O, options)
+function [earthResponseKernel, forcingKernel, waterDensity] = prepareslekernels(L, oceanKernel, options)
     arguments (Input)
         L (1, 1) double {mustBeInteger, mustBePositive}
-        O (:, :) double {mustBeReal}
+        oceanKernel (:, :) double {mustBeReal}
         options.Frame (1, 1) string {mustBeMember(options.Frame, ["CF", "CM"])} = "CF"
         options.LoveNumSource (1, 1) string = "ISSM"
         options.RotationFeedback (1, 1) logical = true
         options.KernelOrder (:, 1) double = kernelorder(L)
     end
-    M = (L + 1)^2;
-    if ~isequal(size(O), [M, M]) || ~isfinite(O(1, 1)) || O(1, 1) <= 0
+    numCoeffs = (L + 1)^2;
+    if ~isequal(size(oceanKernel), [numCoeffs, numCoeffs]) || ~isfinite(oceanKernel(1, 1)) || oceanKernel(1, 1) <= 0
         error('ULMO:prepareslekernels:InvalidOceanKernel', ...
-            'O must have size (L+1)^2 by (L+1)^2 and positive finite area.');
+            'oceanKernel must have size (L+1)^2 by (L+1)^2 and positive finite area.');
     end
     % Check in blocks to avoid a full logical temporary for a large kernel.
-    for first = 1:256:M
-        if any(~isfinite(O(:, first:min(first+255, M))), 'all')
-            error('ULMO:prepareslekernels:InvalidOceanKernel', 'O must be finite.');
+    for first = 1:256:numCoeffs
+        if any(~isfinite(oceanKernel(:, first:min(first+255, numCoeffs))), 'all')
+            error('ULMO:prepareslekernels:InvalidOceanKernel', 'oceanKernel must be finite.');
         end
     end
     if options.RotationFeedback && L < 2
@@ -76,7 +81,7 @@ function kernels = prepareslekernels(L, O, options)
     llnGeoid2 = lovenumber(2, 'LLN geoid', frame, "Source", loveNumSrc);
 
     % Many values from Adhikari et al. (2016)
-    WATER_DENSITY = 1000; % to be consistent with other functions(mainly MASS2WEQ) and Adhikari et al. (2016)
+    waterDensity = 1000; % to be consistent with other functions(mainly MASS2WEQ) and Adhikari et al. (2016)
     EARTH_DENSITY = 5517; % to be consistent with PLM2POT
     EARTH_RADIUS = 6371e3;
     EARTH_ANGULAR_VELOCITY = 7.2921e-5;
@@ -90,7 +95,7 @@ function kernels = prepareslekernels(L, O, options)
 
     % Construct the SLE kernel
     % Gravitational potential
-    response = spdiags(3 / EARTH_DENSITY * llnFactors ./ (2 * degrees + 1), 0, ...
+    earthResponseKernel = spdiags(3 / EARTH_DENSITY * llnFactors ./ (2 * degrees + 1), 0, ...
         numel(degrees), numel(degrees));
 
     if doRotation
@@ -99,27 +104,21 @@ function kernels = prepareslekernels(L, O, options)
         c21s21Fac = EARTH_ANGULAR_VELOCITY / 5 / EQUATORIAL_INERTIA / CHANDLER_WOBBLE_FREQUENCY;
 
         % C00
-        response(1, 1) = response(1, 1) - cmnFac * c00c20Fac;
-        response(1, 5) = response(1, 5) + cmnFac * c00c20Fac / sqrt(5);
+        earthResponseKernel(1, 1) = earthResponseKernel(1, 1) - cmnFac * c00c20Fac;
+        earthResponseKernel(1, 5) = earthResponseKernel(1, 5) + cmnFac * c00c20Fac / sqrt(5);
         % C20
-        response(5, 1) = response(5, 1) + cmnFac * c00c20Fac / sqrt(5) * tlnFactors(5);
-        response(5, 5) = response(5, 5) - cmnFac * c00c20Fac / 5 * tlnFactors(5);
+        earthResponseKernel(5, 1) = earthResponseKernel(5, 1) + cmnFac * c00c20Fac / sqrt(5) * tlnFactors(5);
+        earthResponseKernel(5, 5) = earthResponseKernel(5, 5) - cmnFac * c00c20Fac / 5 * tlnFactors(5);
         % C21 and S21
-        response(6, 6) = response(6, 6) + cmnFac * c21s21Fac * tlnFactors(6);
-        response(7, 7) = response(7, 7) + cmnFac * c21s21Fac * tlnFactors(7);
+        earthResponseKernel(6, 6) = earthResponseKernel(6, 6) + cmnFac * c21s21Fac * tlnFactors(6);
+        earthResponseKernel(7, 7) = earthResponseKernel(7, 7) + cmnFac * c21s21Fac * tlnFactors(7);
     end
 
-    response = WATER_DENSITY * response;
-    if any(~isfinite(nonzeros(response)))
+    earthResponseKernel = waterDensity * earthResponseKernel;
+    if any(~isfinite(nonzeros(earthResponseKernel)))
         error('ULMO:prepareslekernels:InvalidResponse', 'Earth response must be finite.');
     end
-    KF = response;
-    KF(1, :) = KF(1, :) - sparse((O(1, :) * response) / O(1, 1));
-    KF(1, 1) = KF(1, 1) - 1 / O(1, 1);
-    config = rmfield(options, 'KernelOrder');
-    config.L = L;
-    config.Version = 1;
-    kernels = struct('O', O, 'response', response, 'KF', KF, ...
-        'oceanFunction', O(:, 1), 'oceanArea', O(1, 1), ...
-        'kernelOrder', kernelOrder, 'waterDensity', WATER_DENSITY, 'config', config);
+    forcingKernel = earthResponseKernel;
+    forcingKernel(1, :) = forcingKernel(1, :) - sparse((oceanKernel(1, :) * earthResponseKernel) / oceanKernel(1, 1));
+    forcingKernel(1, 1) = forcingKernel(1, 1) - 1 / oceanKernel(1, 1);
 end

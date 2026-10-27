@@ -65,35 +65,43 @@ classdef linearSleSystemTest < matlab.unittest.TestCase
     end
     methods (Test)
         function forwardAndTransposeMatchDense(testCase, rotation)
-            k = prepareslekernels(3, ocean(), RotationFeedback=rotation);
-            [A, KF] = explicitSystem(k);
+            oceanKernel = ocean();
+            [earthResponseKernel, forcingKernel, waterDensity] = ...
+                prepareslekernels(3, oceanKernel, RotationFeedback=rotation);
+            [A, KF] = explicitSystem(oceanKernel, earthResponseKernel);
             b = reshape(sin(1:48), 16, 3);
-            [x, info] = solveslesystem(k, b);
-            xt = solveslesystem(k, b, Transpose=true);
+            [x, info] = solveslesystem(oceanKernel, earthResponseKernel, b);
+            xt = solveslesystem(oceanKernel, earthResponseKernel, b, Transpose=true);
             testCase.verifyEqual(x, A\b, 'AbsTol', 2e-11);
             testCase.verifyEqual(xt, A.'\b, 'AbsTol', 2e-11);
-            testCase.verifyEqual(full(k.KF), KF, 'AbsTol', 1e-14);
+            testCase.verifyEqual(full(forcingKernel), KF, 'AbsTol', 1e-14);
             testCase.verifyLessThanOrEqual(max(info.RelativeResidual), 1e-12);
-            testCase.verifyTrue(issparse(k.response) && issparse(k.KF));
-            testCase.verifyFalse(any(structfun(@(x) isa(x, 'function_handle'), k)));
-            testCase.verifyGreaterThan(norm(k.O*k.O-k.O, 'fro'), 0.1);
+            testCase.verifyTrue(issparse(earthResponseKernel) && issparse(forcingKernel));
+            testCase.verifyClass(earthResponseKernel, 'double');
+            testCase.verifyClass(forcingKernel, 'double');
+            testCase.verifySize(earthResponseKernel, [16,16]);
+            testCase.verifySize(forcingKernel, [16,16]);
+            testCase.verifyEqual(waterDensity, 1000);
+            testCase.verifyGreaterThan(norm(oceanKernel*oceanKernel-oceanKernel, 'fro'), 0.1);
         end
         function massAndFullCovariance(testCase, rotation)
-            k = prepareslekernels(3, ocean(), RotationFeedback=rotation);
-            [A, KF] = explicitSystem(k);
+            oceanKernel = ocean();
+            [earthResponseKernel, forcingKernel] = ...
+                prepareslekernels(3, oceanKernel, RotationFeedback=rotation);
+            [A, KF] = explicitSystem(oceanKernel, earthResponseKernel);
             fullSleResponse = A\KF;
             f = reshape(sin(1:48), 16, 3);
             sigma = reshape(abs(cos(1:48)), 16, 3)/10;
             sigma(:, 1) = 0;
             [s, ss, meanLevel, meanStd] = solvesle(unpack(f), unpack(sigma), ...
-                3, GeoDomain('alloceans'), 'OceanKernel', k.O, ...
+                3, GeoDomain('alloceans'), 'OceanKernel', oceanKernel, ...
                 'RotationFeedback', rotation, 'BeQuiet', true);
             testCase.verifyEqual(pack(s), fullSleResponse*f, 'AbsTol', 2e-11);
             testCase.verifyEqual(pack(ss).^2, (fullSleResponse.^2)*(sigma.^2), 'AbsTol', 2e-13);
-            local = k.O*pack(s);
+            local = oceanKernel*pack(s);
             testCase.verifyEqual(local(1, :), -f(1, :), 'AbsTol', 2e-11);
-            testCase.verifyEqual(meanLevel, (-f(1,:)/k.oceanArea).', 'AbsTol', 2e-11);
-            testCase.verifyEqual(meanStd, (sigma(1,:)/k.oceanArea).', 'AbsTol', 2e-13);
+            testCase.verifyEqual(meanLevel, (-f(1,:)/oceanKernel(1,1)).', 'AbsTol', 2e-11);
+            testCase.verifyEqual(meanStd, (sigma(1,:)/oceanKernel(1,1)).', 'AbsTol', 2e-13);
             for epoch = 1:3
                 C = fullSleResponse*diag(sigma(:,epoch).^2)*fullSleResponse.';
                 testCase.verifyEqual(pack(ss(:, :, epoch)).^2, diag(C), 'AbsTol', 2e-13);
@@ -102,8 +110,9 @@ classdef linearSleSystemTest < matlab.unittest.TestCase
         function selectedMapsAndPublicSolver(testCase, method, c20, c30, cs21)
             global JOINT_LOW_DEGREE_FIXTURE
             f = JOINT_LOW_DEGREE_FIXTURE;
-            k = prepareslekernels(3, f.kernel);
-            [A, KF] = explicitSystem(k);
+            oceanKernel = f.kernel;
+            [earthResponseKernel, forcingKernel] = prepareslekernels(3, oceanKernel);
+            [A, KF] = explicitSystem(oceanKernel, earthResponseKernel);
             [locs, ids] = lowdegreecoefficients(c20, c30, cs21);
             if method == "fingerprint"
                 expectedOceanResponse = f.kernel(ids,:)*(A\KF)*(eye(16)-f.kernel);
@@ -113,7 +122,7 @@ classdef linearSleSystemTest < matlab.unittest.TestCase
             end
             [knownToUnknownMap, knownIds, oceanResponseMap, unknownConstraint, ...
                 knownConstraint, reciprocalCondition, relativeResiduals, iterationCounts] = ...
-                preparelowdegreemap(k, ids, Method=method);
+                preparelowdegreemap(oceanKernel, earthResponseKernel, forcingKernel, ids, Method=method);
             known = setdiff(1:16, ids);
             expectedLoadResponse = (expectedOceanResponse(:,ids)-f.kernel(ids,ids)) \ (f.kernel(ids,known)-expectedOceanResponse(:,known));
             testCase.verifyEqual(oceanResponseMap, expectedOceanResponse, 'AbsTol', 2e-11);
@@ -159,8 +168,9 @@ classdef linearSleSystemTest < matlab.unittest.TestCase
             global JOINT_LOW_DEGREE_FIXTURE
             f = JOINT_LOW_DEGREE_FIXTURE;
             [~, ids] = lowdegreecoefficients(false, true, true);
-            k = prepareslekernels(3, f.kernel);
-            [knownToUnknownMap, knownIds] = preparelowdegreemap(k, ids, Method=method);
+            oceanKernel = f.kernel;
+            [earthResponseKernel, forcingKernel] = prepareslekernels(3, oceanKernel);
+            [knownToUnknownMap, knownIds] = preparelowdegreemap(oceanKernel, earthResponseKernel, forcingKernel, ids, Method=method);
             x = pack(permute(f.p(:,:,3:4), [2,3,1]));
             sigma = pack(permute(f.s(:,:,3:4), [2,3,1]));
             gia = pack(permute(f.gia(:,:,3:4), [2,3,1]));
@@ -184,26 +194,36 @@ classdef linearSleSystemTest < matlab.unittest.TestCase
             testCase.verifyEqual(againStd,actualStd);
         end
         function varianceBlocksAndZeroRhs(testCase)
-            k = prepareslekernels(3, ocean());
+            oceanKernel = ocean();
+            [earthResponseKernel, forcingKernel] = ...
+                prepareslekernels(3, oceanKernel);
             v = zeros(16,3); v([1,7,16],3) = [1; 1e-20; 2];
-            a = slevariance(k, v, BlockSize=1);
-            b = slevariance(k, v, BlockSize=16);
-            [A, KF] = explicitSystem(k);
+            a = slevariance(oceanKernel, earthResponseKernel, forcingKernel, v, BlockSize=1);
+            b = slevariance(oceanKernel, earthResponseKernel, forcingKernel, v, BlockSize=16);
+            [A, KF] = explicitSystem(oceanKernel, earthResponseKernel);
             testCase.verifyEqual(a, ((A\KF).^2)*v, 'AbsTol', 2e-12);
             testCase.verifyEqual(a,b,'AbsTol',2e-14);
-            testCase.verifyEqual(solveslesystem(k, zeros(16,2)), zeros(16,2));
+            testCase.verifyEqual(solveslesystem(oceanKernel, earthResponseKernel, zeros(16,2)), zeros(16,2));
         end
         function linearFailureContracts(testCase)
-            k = prepareslekernels(3, ocean());
-            testCase.verifyError(@() solveslesystem(k, (1:16)', MaxIter=1), ...
+            oceanKernel = ocean();
+            [earthResponseKernel, forcingKernel] = ...
+                prepareslekernels(3, oceanKernel);
+            testCase.verifyError(@() solveslesystem(oceanKernel, earthResponseKernel, (1:16)', MaxIter=1), ...
                 'ULMO:solveslesystem:NonConvergence');
-            testCase.verifyError(@() preparelowdegreemap(k, [2,2]), ...
+            testCase.verifyError(@() solveslesystem(oceanKernel, eye(3), ones(16,1)), ...
+                'ULMO:solveslesystem:InvalidKernels');
+            testCase.verifyError(@() slevariance(oceanKernel, earthResponseKernel, eye(3), zeros(16,1)), ...
+                'ULMO:slevariance:InvalidSize');
+            testCase.verifyError(@() preparelowdegreemap(oceanKernel, earthResponseKernel, eye(3), 2:4), ...
+                'ULMO:preparelowdegreemap:InvalidForcingKernel');
+            testCase.verifyError(@() preparelowdegreemap(oceanKernel, earthResponseKernel, forcingKernel, [2,2]), ...
                 'ULMO:preparelowdegreemap:InvalidIndices');
-            bad = k; bad.O(:) = 0; bad.O(1,1) = 1;
-            testCase.verifyError(@() preparelowdegreemap(bad, 2:4, Method="uniform"), ...
+            badOceanKernel = zeros(16); badOceanKernel(1,1) = 1;
+            testCase.verifyError(@() preparelowdegreemap(badOceanKernel, [], [], 2:4, Method="uniform"), ...
                 'ULMO:preparelowdegreemap:SingularSystem');
             f = unpack((1:16)');
-            args = {f, [], 3, GeoDomain('alloceans'), 'OceanKernel', k.O, ...
+            args = {f, [], 3, GeoDomain('alloceans'), 'OceanKernel', oceanKernel, ...
                 'Tolerance', 0, 'MaxIter', 3, 'BeQuiet', true};
             testCase.verifyError(@() solvesle(args{:}), ...
                 'ULMO:solvesle:InvalidTolerance');
@@ -211,8 +231,10 @@ classdef linearSleSystemTest < matlab.unittest.TestCase
                 'ULMO:solvedegree1:InvalidTolerance');
         end
         function mapFailureIsReported(testCase)
-            k = prepareslekernels(3,ocean());
-            testCase.verifyError(@() preparelowdegreemap(k,2:4,MaxIter=1), ...
+            oceanKernel = ocean();
+            [earthResponseKernel, forcingKernel] = ...
+                prepareslekernels(3, oceanKernel);
+            testCase.verifyError(@() preparelowdegreemap(oceanKernel, earthResponseKernel, forcingKernel,2:4,MaxIter=1), ...
                 'ULMO:solveslesystem:NonConvergence');
         end
         function originalCacheNamesAndExplicitRecomputation(testCase)
@@ -244,11 +266,11 @@ function O = ocean()
     i = 1:16;
     O = .6*eye(16) + .003*(sin(i'*i)+cos(i'+i));
 end
-function [A,KF] = explicitSystem(k)
-    e = eye(size(k.O,1),1);
-    P = eye(size(k.O))-e*k.O(1,:)/k.O(1,1);
-    A = eye(size(k.O))-P*full(k.response)*k.O;
-    KF = P*full(k.response)-e*e.'/k.O(1,1);
+function [A,KF] = explicitSystem(oceanKernel, earthResponseKernel)
+    e = eye(size(oceanKernel,1),1);
+    P = eye(size(oceanKernel))-e*oceanKernel(1,:)/oceanKernel(1,1);
+    A = eye(size(oceanKernel))-P*full(earthResponseKernel)*oceanKernel;
+    KF = P*full(earthResponseKernel)-e*e.'/oceanKernel(1,1);
 end
 function p = unpack(v)
     p = zeros(20,size(v,2)); p(kernelorder(3),:) = v;

@@ -9,16 +9,20 @@ coefficients have kernel order, fields are columns, and loads use kg/m².
 ```matlab
 L = 96;
 ocean = GeoDomain('alloceans', Buffer=0.5);
-O = kernelcp_new(L, ocean, BeQuiet=true);
-kernels = prepareslekernels(L, O, Frame="CF", ...
+oceanKernel = kernelcp_new(L, ocean, BeQuiet=true);
+[earthResponseKernel, forcingKernel, waterDensity] = ...
+    prepareslekernels(L, oceanKernel, Frame="CF", ...
     LoveNumSource="ISSM", RotationFeedback=true);
 ```
 
-The returned struct contains ordinary numeric matrices: `O`, the sparse
-`response = G+R`, and the sparse forcing matrix `KF`. The ocean function is
-`O(:,1)` and the ocean area fraction is `O(1,1)`.
+The first two outputs are ordinary sparse numeric matrices: `earthResponseKernel`
+is `G+R`, and `forcingKernel` is the mass-constrained forcing matrix `KF`.
+The optional third output, `waterDensity`, is the scalar conversion factor
+from metres of sea level to kg/m². The ocean matrix stays with the caller;
+its first column is the ocean function and its `(1,1)` entry is the ocean
+area fraction. No kernel struct or model-metadata output is returned.
 
-With `e` the constant-harmonic unit vector, the system is
+Writing `O = oceanKernel` and `e` for the constant-harmonic unit vector, the system is
 
 ```text
 P  = I - e*O(1,:)/O(1,1)
@@ -34,7 +38,7 @@ The finite-bandwidth ocean matrix is not treated as an idempotent projection.
 
 ```matlab
 % F is an M-by-N matrix of forcing coefficients, M=(L+1)^2.
-S = solveslesystem(kernels, kernels.KF*F);
+S = solveslesystem(oceanKernel, earthResponseKernel, forcingKernel*F);
 ```
 
 The public `solvesle` function handles lmcosi/cosi packing, units and formatting.
@@ -44,7 +48,8 @@ It does not localize the supplied forcing to land.
 
 ```matlab
 [~, unknownIds] = lowdegreecoefficients(false, false, true);
-[knownToUnknownMap, knownIds] = preparelowdegreemap(kernels, unknownIds);
+[knownToUnknownMap, knownIds] = preparelowdegreemap( ...
+    oceanKernel, earthResponseKernel, forcingKernel, unknownIds);
 unknownLoads = knownToUnknownMap*knownLoads(knownIds,:);
 unknownStds = sqrt((knownToUnknownMap.^2)*knownVariances(knownIds,:));
 ```
@@ -57,8 +62,8 @@ The map builder solves `H*A = O(unknownIds,:)` using only one transposed system
 per selected coefficient, then forms `oceanResponseMap = H*KF*(I-O)` and
 
 ```matlab
-unknownConstraint = oceanResponseMap(:,unknownIds) - O(unknownIds,unknownIds);
-knownConstraint = O(unknownIds,knownIds) - oceanResponseMap(:,knownIds);
+unknownConstraint = oceanResponseMap(:,unknownIds) - oceanKernel(unknownIds,unknownIds);
+knownConstraint = oceanKernel(unknownIds,knownIds) - oceanResponseMap(:,knownIds);
 knownToUnknownMap = unknownConstraint \ knownConstraint;
 ```
 
@@ -70,7 +75,9 @@ and constraint matrices for inspection.
 `solvedegree1` performs these steps once for all epochs and handles GRACE
 loading, GIA, coefficient selection, units and dates. It never
 calls `solvesle`. `Method="uniform"` builds the analytical uniform-ocean map
-without an SLE solve. Both methods support joint C20, C30 and C21/S21 estimates.
+without an SLE solve; its low-level call is
+`preparelowdegreemap(oceanKernel, [], [], unknownIds, Method="uniform")`.
+Both methods support joint C20, C30 and C21/S21 estimates.
 
 `preparelowdegreemap` builds a map on every call and performs no file I/O.
 The returned map can be reused in memory while the kernels, coefficient

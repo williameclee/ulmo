@@ -1,11 +1,14 @@
 %% SOLVESLESYSTEM - Solves the SLE system or its transpose from numeric kernels.
 %
 % Syntax
-%   [X, diagnostics] = solveslesystem(kernels, B)
-%   X = solveslesystem(kernels, B, Transpose=true)
+%   [X, diagnostics] = solveslesystem(oceanKernel, earthResponseKernel, B)
+%   X = solveslesystem(oceanKernel, earthResponseKernel, B, Transpose=true)
 %
 % Input arguments
-%   kernels - Output of PREPARESLEKERNELS.
+%   oceanKernel - Ocean localization matrix in kernel order.
+%       Size: (M,M), M=(L+1)^2. Unit: dimensionless.
+%   earthResponseKernel - Sparse G+R matrix from PREPARESLEKERNELS.
+%       Size: (M,M). Unit: dimensionless.
 %   B - Right-hand sides, with coefficients in rows and fields in columns.
 %       Size: ((L+1)^2, N). Unit: inherited by X.
 %   Transpose (name-value) - Whether to solve A.'*X=B instead of A*X=B.
@@ -31,21 +34,29 @@
 % Created by
 %   2026/10/27, En-Chi Lee (williameclee@arizona.edu)
 
-function [X, diagnostics] = solveslesystem(kernels, B, options)
+function [X, diagnostics] = solveslesystem(oceanKernel, earthResponseKernel, B, options)
     arguments (Input)
-        kernels (1, 1) struct
+        oceanKernel (:, :) double {mustBeReal}
+        earthResponseKernel (:, :) double {mustBeReal}
         B (:, :) double {mustBeReal, mustBeFinite}
         options.Transpose (1, 1) logical = false
         options.RelativeTolerance (1, 1) double {mustBePositive, mustBeFinite, mustBeLessThan(options.RelativeTolerance, 1)} = 1e-12
         options.MaxIter (1, 1) double {mustBeInteger, mustBePositive} = 100
     end
-    if size(B, 1) ~= size(kernels.O, 1)
+    numCoeffs = size(oceanKernel, 1);
+    if numCoeffs == 0 || size(oceanKernel, 2) ~= numCoeffs || ...
+            ~isequal(size(earthResponseKernel), size(oceanKernel)) || ...
+            ~isfinite(oceanKernel(1, 1)) || oceanKernel(1, 1) <= 0
+        error('ULMO:solveslesystem:InvalidKernels', ...
+            'Kernels must be matching square matrices with positive finite ocean area.');
+    end
+    if size(B, 1) ~= size(oceanKernel, 1)
         error('ULMO:solveslesystem:InvalidSize', 'B must have one row per harmonic.');
     end
     X = zeros(size(B));
     diagnostics.RelativeResidual = zeros(1, size(B, 2));
     diagnostics.Iterations = zeros(1, size(B, 2));
-    apply = @(v) systemproduct(kernels, v, options.Transpose);
+    apply = @(v) systemproduct(oceanKernel, earthResponseKernel, v, options.Transpose);
     for j = 1:size(B, 2)
         b = full(B(:, j));
         scale = norm(b);
@@ -66,13 +77,13 @@ function [X, diagnostics] = solveslesystem(kernels, B, options)
     end
 end
 
-function y = systemproduct(kernels, x, transpose)
+function y = systemproduct(oceanKernel, earthResponseKernel, x, transpose)
     if transpose
-        p = x - kernels.O(1, :).' * (x(1, :) / kernels.oceanArea);
-        y = x - kernels.O.' * (kernels.response.' * p);
+        p = x - oceanKernel(1, :).' * (x(1, :) / oceanKernel(1, 1));
+        y = x - oceanKernel.' * (earthResponseKernel.' * p);
     else
-        r = kernels.response * (kernels.O * x);
-        r(1, :) = r(1, :) - kernels.O(1, :) * r / kernels.oceanArea;
+        r = earthResponseKernel * (oceanKernel * x);
+        r(1, :) = r(1, :) - oceanKernel(1, :) * r / oceanKernel(1, 1);
         y = x - r;
     end
 end

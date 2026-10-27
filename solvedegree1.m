@@ -191,14 +191,15 @@ function [coeffs, coeffStds, dates] = ...
 
     end
 
-    O = kernelcp_new(Lsle, ocnDom, "BeQuiet", beQuiet);
+    oceanKernel = kernelcp_new(Lsle, ocnDom, "BeQuiet", beQuiet);
     if strcmp(mthd, 'fingerprint')
-        kernels = prepareslekernels(Lsle, O);
+        [earthResponseKernel, forcingKernel] = prepareslekernels(Lsle, oceanKernel);
     else
-        kernels = struct('O', O);
+        earthResponseKernel = [];
+        forcingKernel = [];
     end
     [knownToUnknownMap, knownIds, ~, unknownConstraint, knownConstraint] = ...
-        preparelowdegreemap(kernels, coeffIds, Method=string(mthd), ...
+        preparelowdegreemap(oceanKernel, earthResponseKernel, forcingKernel, coeffIds, Method=string(mthd), ...
         RelativeTolerance=solveOpts.RelativeTolerance, MaxIter=solveOpts.SleMaxIter);
     known = packcoeffs(sdPlmt, kerOrder);
     knownStd = packcoeffs(sdStdPlmt, kerOrder);
