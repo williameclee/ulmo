@@ -49,6 +49,10 @@
 %       An empty value computes or loads the kernel.
 %       Size: ((L+1)^2, (L+1)^2).
 %       Default kernel: [].
+%   OceanVarianceKernel (name-value) - Precomputed mass-constrained variance kernel.
+%       An empty value computes the kernel.
+%       Size: ((L+1)^2, (L+1)^2).
+%       Default kernel: [].
 %   OceanFunction (name-value) - Legacy ocean function; accepted but unused.
 %       OceanKernel supplies the geometry.
 %       Default function: [].
@@ -101,13 +105,14 @@
 %       doi: 10.5194/essd-11-629-2019.
 %
 % See also
-%   GRACE2FINGERPRINT, SOLVEDEGREE1, KERNELCP_NEW, KERNELORDER, LOVENUMBER
+%   GRACE2FINGERPRINT, SOLVEDEGREE1, KERNELCP_NEW, KERNELORDER, LOVENUMBER,
+%   PREPAREOCEANVARIANCEKERNEL
 %
 % Created by
 %   2024/11/20, En-Chi Lee (williameclee@arizona.edu)
 %
 % Last modified
-%   2026/10/26, En-Chi Lee (williameclee@arizona.edu)
+%   2026/10/27, En-Chi Lee (williameclee@arizona.edu)
 
 function varargout = solvesle(varargin)
     %% Initialisation
@@ -116,7 +121,7 @@ function varargout = solvesle(varargin)
     % Parse input arguments
     [forcSdPlm, forcSdStdPlm, inclDO, doError, ...
          L, ocean, frame, loveNumSrc, doRotation, maxIter, ...
-         ocnKernel, ~, kernelOrder, initRslPlm, beQuiet, tol] = ...
+         ocnKernel, ocnVarKer, kernelOrder, initRslPlm, beQuiet, tol] = ...
         parseinputs(varargin{:});
 
     % Create progress bar
@@ -148,12 +153,13 @@ function varargout = solvesle(varargin)
 
     if doError
         % The mass adjustment correlates the constant term with the other
-        % harmonics. Apply that constraint before squaring the operator.
+        % harmonics. The variance kernel is not simply squaring the ocean kernel
         ocnWghts = ocnFunPlms / ocnArea;
-        cstredOcnKernel = ocnKernel - ocnWghts * ocnKernel(1, :);
-        cstredOcnKernel(:, 1) = 0;
-        cstredOceanKernelSq = cstredOcnKernel .^ 2;
-        clear cstredOcnKernel
+
+        if isempty(ocnVarKer)
+            ocnVarKer = prepareoceanvariancekernel(ocnKernel);
+        end
+
     end
 
     % Load the permutation order from cosi -> flat
@@ -292,11 +298,9 @@ function varargout = solvesle(varargin)
         if doError
             sdVarPlms = forcVarPlms + WATER_DENSITY ^ 2 * rslOcnVarPlms;
             rslVarPlms = sleKernelSq * sdVarPlms;
-            rslOcnVarPlms = cstredOceanKernelSq * rslVarPlms ...
-                + ocnWghtsSq * targetOcnVar;
+            rslOcnVarPlms = ocnVarKer * rslVarPlms + ocnWghtsSq * targetOcnVar;
             rslOcnVarPlms(1, :) = targetOcnVar;
-            rslVarPlms(1, :) = (targetOcnVar ...
-                + ocnMeanWghtsSq * rslVarPlms(2:end, :)) / ocnArea ^ 2;
+            rslVarPlms(1, :) = (targetOcnVar + ocnMeanWghtsSq * rslVarPlms(2:end, :)) / ocnArea ^ 2;
             crntStd = sqrt([rslVarPlms; rslOcnVarPlms]);
 
             if isempty(prevStd)
@@ -414,6 +418,8 @@ function varargout = parseinputs(varargin)
     addParameter(ip, 'LoveNumSource', 'ISSM', ...
         @(x) ischar(x) || isstring(x));
     addParameter(ip, 'OceanKernel', [], @(x) isnumeric(x));
+    addParameter(ip, 'OceanVarianceKernel', [], ...
+        @(x) isa(x, 'double') && isreal(x) && ismatrix(x));
     addParameter(ip, 'OceanFunction', [], @(x) isnumeric(x));
     addParameter(ip, 'KernelOrder', [], @(x) isnumeric(x));
     addParameter(ip, 'InitialRSL', [], @(x) isnumeric(x));
@@ -428,7 +434,7 @@ function varargout = parseinputs(varargin)
     doRotation = ip.Results.RotationFeedback;
     maxIter = ip.Results.maxIter;
     ocnKernel = ip.Results.OceanKernel;
-    ocnFunPlm = ip.Results.OceanFunction;
+    ocnVarKer = ip.Results.OceanVarianceKernel;
     kernelOrder = ip.Results.KernelOrder;
     initRslPlm = ip.Results.InitialRSL;
     beQuiet = logical(ip.Results.BeQuiet);
@@ -484,10 +490,26 @@ function varargout = parseinputs(varargin)
         L = finddegree(forcPlm(:, :, 1));
     end
 
+    if ~isempty(ocnVarKer)
+
+        if isempty(ocnKernel)
+            error('ULMO:solvesle:MissingOceanKernel', ...
+            'OceanVarianceKernel requires an explicit matching OceanKernel.');
+        end
+
+        expdSize = [(L + 1) ^ 2, (L + 1) ^ 2];
+
+        if ~isequal(size(ocnVarKer), size(ocnKernel), expdSize)
+            error('ULMO:solvesle:InvalidOceanVarianceKernelSize', ...
+            'OceanVarianceKernel and OceanKernel must both have size (L+1)^2 by (L+1)^2.');
+        end
+
+    end
+
     varargout = ...
         {forcPlm, forcStdPlm, inclDO, doError, ...
          L, ocnDom, frame, loveNumSrc, doRotation, maxIter, ...
-         ocnKernel, ocnFunPlm, kernelOrder, initRslPlm, beQuiet, ip.Results.Tolerance};
+         ocnKernel, ocnVarKer, kernelOrder, initRslPlm, beQuiet, ip.Results.Tolerance};
 end
 
 % Find the degree of the spherical harmonic coefficients based on the
