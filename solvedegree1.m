@@ -97,10 +97,11 @@
 %   The uniform method computes only land C00 and its variance, retaining
 %   contributions from every input harmonic to that ocean mass constraint.
 %   Fingerprint land setup applies I-K without storing a full land kernel;
-%   diagonal variances use the squared retained ocean columns and a
+%   diagonal variances use squared ocean columns and a
 %   diagonal correction, without row blocking.
-%   Fixed variance projections omit input columns that are exactly zero at
-%   every epoch. Signal projections retain all harmonics, including GIA.
+%   Fixed signal and variance projections independently select active input
+%   columns when at most half are nonzero across the epochs. Denser inputs
+%   use full-column products. Only exact zeros are omitted, after GIA removal.
 %   Cached solutions are assumed converged at sufficiently small tolerances;
 %   iteration settings are not part of cache filenames. Use ForceNew=true
 %   for other settings and SaveData=false to preserve an existing cache.
@@ -172,7 +173,6 @@ function varargout = solvedegree1(varargin)
 
 end
 
-%% Subfunctions
 % Heart of the programme
 function [coeffs, coeffStds, dates] = ...
         solvedegree1Core(prod, Lused, Lsle, giaMdl, inclC20, inclC30, inclC21S21, ocnDom, mthd, beQuiet, iterOpts)
@@ -247,36 +247,76 @@ function [coeffs, coeffStds, dates] = ...
     knownSdPlms = packcoeffs(sdPlmt, kernelOrder);
     knownSdVarPlms = packcoeffs(sdStdPlmt, kernelOrder) .^ 2;
 
-    knownOcnCoeffs = coeffOcnKernel * knownSdPlms;
-    % We don't need to project the whole thing, because most of it is 0 (padded to Lsle)
-    % For now we only apply this to the STD/variance
-    knownVarIds = find(any(knownSdVarPlms ~= 0, 2));
-    knownSdVarPlms = knownSdVarPlms(knownVarIds, :);
-    knownOcnCoeffVars = coeffOcnKernelSq(:, knownVarIds) * knownSdVarPlms;
+    % If most coefficients are 0 (because of the padding to Lsle),
+    % projecting all of them invokes multiplication of large matrices.
+    % This can be avoided by truncating the projection
+    maxAcvFrac = 0.5; % Truncate if below this threshold
+    actvSigIds = find(any(knownSdPlms ~= 0, 2));
+    useSigSubset = numel(actvSigIds) <= maxAcvFrac * size(knownSdPlms, 1);
+    actvVarIds = find(any(knownSdVarPlms ~= 0, 2));
+    useVarSubset = numel(actvVarIds) <= maxAcvFrac * size(knownSdVarPlms, 1);
+
+    if useSigSubset
+        actvSdPlms = knownSdPlms(actvSigIds, :);
+        knownOcnCoeffs = coeffOcnKernel(:, actvSigIds) * actvSdPlms;
+    else
+        knownOcnCoeffs = coeffOcnKernel * knownSdPlms;
+    end
+
+    if useVarSubset
+        knownSdVarPlms = knownSdVarPlms(actvVarIds, :);
+        knownOcnCoeffVars = coeffOcnKernelSq(:, actvVarIds) * knownSdVarPlms;
+    else
+        knownOcnCoeffVars = coeffOcnKernelSq * knownSdVarPlms;
+    end
 
     % Only the estimated coefficients change between outer iterations.
     % Keep the fixed land signal and variance, plus their update columns.
     % Uniform loading retains only the C00 row; fingerprints need all rows.
     if strcmp(mthd, 'uniform')
-        knownLndSdPlms = lndKernelSle * knownSdPlms;
-        knownLndVarPlms = (lndKernelSle(:, knownVarIds) .^ 2) * knownSdVarPlms;
+
+        if useSigSubset
+            knownLndSdPlms = lndKernelSle(:, actvSigIds) * actvSdPlms;
+        else
+            knownLndSdPlms = lndKernelSle * knownSdPlms;
+        end
+
+        if useVarSubset
+            knownLndVarPlms = (lndKernelSle(:, actvVarIds) .^ 2) * knownSdVarPlms;
+        else
+            knownLndVarPlms = (lndKernelSle .^ 2) * knownSdVarPlms;
+        end
+
         coeffLndKernel = lndKernelSle(:, coeffIds);
         clear lndKernelSle
     else
         % Land kernel = I-K
-        knownLndSdPlms = knownSdPlms - ocnKernelSle * knownSdPlms;
+
+        if useSigSubset
+            knownLndSdPlms = knownSdPlms - ocnKernelSle(:, actvSigIds) * actvSdPlms;
+        else
+            knownLndSdPlms = knownSdPlms - ocnKernelSle * knownSdPlms;
+        end
+
         % (I-K).^2 = K.^2 + diag(1-2*diag(K))
-        knownLndVarPlms = (ocnKernelSle(:, knownVarIds) .^ 2) * knownSdVarPlms;
         ocnDiag = diag(ocnKernelSle);
-        knownLndVarPlms(knownVarIds, :) = knownLndVarPlms(knownVarIds, :) ...
-            + (1 - 2 * ocnDiag(knownVarIds)) .* knownSdVarPlms;
+
+        if useVarSubset
+            knownLndVarPlms = (ocnKernelSle(:, actvVarIds) .^ 2) * knownSdVarPlms;
+            knownLndVarPlms(actvVarIds, :) = knownLndVarPlms(actvVarIds, :) ...
+                + (1 - 2 * ocnDiag(actvVarIds)) .* knownSdVarPlms;
+        else
+            knownLndVarPlms = (ocnKernelSle .^ 2) * knownSdVarPlms ...
+                + (1 - 2 * ocnDiag) .* knownSdVarPlms;
+        end
+
         coeffLndKernel = -ocnKernelSle(:, coeffIds);
         diagIds = sub2ind(size(coeffLndKernel), coeffIds, 1:nCoeffs);
         coeffLndKernel(diagIds) = coeffLndKernel(diagIds) + 1;
     end
 
     coeffLndKernelSq = coeffLndKernel .^ 2;
-    clear knownSdPlms knownVarPlms knownVarIds
+    clear knownSdPlms selectedSdPlms knownSdVarPlms knownSigIds knownVarIds
 
     %% Solving the degree-1 coefficients
     maxIter = iterOpts.MaxIter;
@@ -302,9 +342,9 @@ function [coeffs, coeffStds, dates] = ...
 
         switch mthd
             case 'fingerprint'
-                lndPlmt = coeff2lmcosi(knownLndSdPlms + coeffLndKernel * coeffs, ...
+                lndPlmt = plms2lmcosi(knownLndSdPlms + coeffLndKernel * coeffs, ...
                     kernelOrder, sdPlmt);
-                lndStdPlmt = coeff2lmcosi( ...
+                lndStdPlmt = plms2lmcosi( ...
                     sqrt(knownLndVarPlms + coeffLndKernelSq * coeffStds .^ 2), ...
                     kernelOrder, sdPlmt);
                 [ocnPlmt, ocnStdPlmt] = ...
@@ -369,6 +409,7 @@ function [coeffs, coeffStds, dates] = ...
 
 end
 
+%% Subfunctions
 % Parse input arguments
 function varargout = parseinputs(inputs)
     % Set default parameters
@@ -556,7 +597,7 @@ function coeffs = packcoeffs(plm, kernelOrder)
 end
 
 % Restore matching-bandwidth lmcosi coefficients, preserving degree/order columns.
-function plm = coeff2lmcosi(coeffs, kernelOrder, plm)
+function plm = plms2lmcosi(coeffs, kernelOrder, plm)
     nRows = size(plm, 1);
     nEpochs = size(plm, 3);
     vals = zeros(2 * nRows, nEpochs);

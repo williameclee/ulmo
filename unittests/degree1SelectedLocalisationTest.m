@@ -11,6 +11,8 @@
 % products and both signs of the diagonal correction against full fields.
 % Padded-input cases check exact variance support across epochs, empty
 % support, tiny nonzero uncertainties, and higher-degree GIA signals.
+% Independent signal/variance supports exercise empty, half-full and dense
+% projections, including support present only after the first epoch.
 %
 % Created by
 %   2026/10/26, En-Chi Lee (williameclee@arizona.edu)
@@ -32,6 +34,8 @@ classdef degree1SelectedLocalisationTest < matlab.unittest.TestCase
         fingerprintDegree = {15, 16, 23}
         oceanDiagonal = {0.25, 0.6, 0.95}
         varianceSupport = {'empty', 'mixed', 'tiny'}
+        signalCount = {0, 8, 9}
+        varianceCount = {0, 8, 9}
     end
 
     methods (TestClassSetup)
@@ -79,6 +83,50 @@ classdef degree1SelectedLocalisationTest < matlab.unittest.TestCase
     end
 
     methods (Test)
+
+        function projectionSupportThresholdMatchesReference(testCase, mthd, epochCnt, signalCount, varianceCount)
+            global JOINT_LOW_DEGREE_FIXTURE
+            [order, degree] = addmon(3);
+            meta = repmat([degree, order], 1, 1, epochCnt);
+            ko = kernelorder(3);
+            available = [16, 1, 9, 5, 12, 6, 15, 7, 13, 8, 10, 11, 14];
+            epochs = 1:epochCnt;
+
+            if epochCnt > 1
+                epochs(1) = 0;
+            end
+
+            values = zeros(20, epochCnt);
+            sigma = zeros(20, epochCnt);
+            values(ko(available(1:signalCount)), :) = (1:signalCount)' * epochs;
+            sigma(ko(available(1:varianceCount)), :) = (1:varianceCount)' * epochs / 10;
+            giaValues = zeros(10, 2, epochCnt);
+            giaValues(10, 2, :) = 0.125;
+            p = cat(2, meta, reshape(values, 10, 2, epochCnt) + giaValues);
+            s = cat(2, meta, reshape(sigma, 10, 2, epochCnt));
+            gia = cat(2, meta, giaValues);
+            dates = datetime(2003, (1:epochCnt)', 15);
+            indices = 1:16;
+            K = 0.6 * eye(16) + 0.002 * (sin(indices' * indices) + cos(indices' + indices));
+            JOINT_LOW_DEGREE_FIXTURE = struct('p', permute(p, [3, 1, 2]), ...
+                's', permute(s, [3, 1, 2]), 'gia', permute(gia, [3, 1, 2]), ...
+                'dates', dates, 'kernel', K);
+            [expc, expcStd] = fullFieldReference(p, s, gia, ...
+                [2, 1; 3, 1; 3, 2], [2, 3, 4], mthd, 0, 3);
+            [actl, actlStd, actlDates] = solvedegree1( ...
+                'CSR', 'RL06', 3, 3, 3, 'ICE6GD', GeoDomain('alloceans'), ...
+                'Method', mthd, 'Tolerance', 0, 'MaxIter', 3, ...
+                'ForceNew', true, 'SaveData', false, 'BeQuiet', true);
+            testCase.verifyEqual(actl, expc, 'AbsTol', 1e-10);
+            testCase.verifyEqual(actlStd, expcStd, 'AbsTol', 1e-10);
+            testCase.verifyEqual(actlDates, dates);
+
+            if epochCnt > 1
+                testCase.verifyEqual(actl(1, :), zeros(1, 3));
+                testCase.verifyEqual(actlStd(1, :), zeros(1, 3));
+            end
+
+        end
 
         function paddedVariancesPreserveFullSignal(testCase, mthd, epochCnt, varianceSupport)
             global JOINT_LOW_DEGREE_FIXTURE
