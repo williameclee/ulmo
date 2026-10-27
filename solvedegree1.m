@@ -200,18 +200,18 @@ function [coeffs, coeffStds, dates] = ...
 
     end
 
-    [ocnKer, coeffKer, coeffOcnKer, coeffLndKer, lnd2ocnKer, lndC00Ker, lndVarDiag] = ...
+    [ocnKer, coeffKer, coeffLndKer, ocnLeakKer, lnd2ocnKer, lndC00Ker, lndVarDiag] = ...
         preparekernels(Lsle, ocnDom, coeffIds, mthd, beQuiet);
-    coeffOcnKerSq = coeffOcnKer .^ 2;
+    ocnLeakKerSq = ocnLeakKer .^ 2;
     coeffLndKerSq = coeffLndKer .^ 2;
     lnd2ocnKerSq = lnd2ocnKer .^ 2;
     coeffVarMap = (coeffKer \ eye(nCoeffs)) .^ 2;
 
     %% Fixed projections
-    [knownOcnCoeffs, knownOcnCoeffVars, knownLndSdPlms, knownLndVarPlms] = ...
-        projectknownfields(sdPlmt, sdStdPlmt, kerOrder, ocnKer, ...
-        coeffOcnKer, coeffOcnKerSq, lndC00Ker, lndVarDiag, mthd);
-    clear lndC00Kernel lndVarDiag
+    [fxdOcnCoeffs, fxdOcnCoeffVars, fxdLndSdPlms, fxdLndVarPlms] = ...
+        projectfixedfields(sdPlmt, sdStdPlmt, kerOrder, ocnKer, ...
+        ocnLeakKer, ocnLeakKerSq, lndC00Ker, lndVarDiag, mthd);
+    clear lndC00Ker lndVarDiag
 
     %% Solving the degree-1 coefficients
     maxIter = iterOpts.MaxIter;
@@ -237,10 +237,10 @@ function [coeffs, coeffStds, dates] = ...
 
         switch mthd
             case 'fingerprint'
-                lndPlmt = plms2lmcosi(knownLndSdPlms + coeffLndKer * coeffs, ...
+                lndPlmt = plms2lmcosi(fxdLndSdPlms + coeffLndKer * coeffs, ...
                     kerOrder, sdPlmt);
                 lndStdPlmt = plms2lmcosi( ...
-                    sqrt(knownLndVarPlms + coeffLndKerSq * coeffStds .^ 2), ...
+                    sqrt(fxdLndVarPlms + coeffLndKerSq * coeffStds .^ 2), ...
                     kerOrder, sdPlmt);
                 [ocnPlmt, ocnStdPlmt] = ...
                     solvesle(lndPlmt, lndStdPlmt, Lsle, ocnDom, ...
@@ -248,23 +248,23 @@ function [coeffs, coeffStds, dates] = ...
                     "InitialRSL", sdPlmt / 1000, ... % kg/m^2 -> m
                     "RotationFeedback", true, "MaxIter", iterOpts.SleMaxIter, ...
                     "Tolerance", iterOpts.SleTolerance, "BeQuiet", true);
-                ocnCoeffs = coeffOcnKer * packcoeffs(ocnPlmt, kerOrder);
-                ocnCoeffVars = coeffOcnKerSq * packcoeffs(ocnStdPlmt, kerOrder) .^ 2;
+                ocnCoeffs = ocnLeakKer * packcoeffs(ocnPlmt, kerOrder);
+                ocnCoeffVars = ocnLeakKerSq * packcoeffs(ocnStdPlmt, kerOrder) .^ 2;
             case 'uniform'
-                lndC00 = knownLndSdPlms + coeffLndKer * coeffs;
-                lndC00Var = knownLndVarPlms + coeffLndKerSq * coeffStds .^ 2;
+                lndC00 = fxdLndSdPlms + coeffLndKer * coeffs;
+                lndC00Var = fxdLndVarPlms + coeffLndKerSq * coeffStds .^ 2;
                 ocnCoeffs = -lnd2ocnKer * lndC00;
                 ocnCoeffVars = lnd2ocnKerSq * lndC00Var;
         end
 
-        coeffs = coeffKer \ (ocnCoeffs - knownOcnCoeffs);
+        coeffs = coeffKer \ (ocnCoeffs - fxdOcnCoeffs);
 
         if strcmp(mthd, 'fingerprint')
             sdPlmt = putcoeffs(sdPlmt, coeffs, coeffLocs);
         end
 
         % STD
-        coeffStds = sqrt(coeffVarMap * (ocnCoeffVars + knownOcnCoeffVars));
+        coeffStds = sqrt(coeffVarMap * (ocnCoeffVars + fxdOcnCoeffVars));
 
         if any(~isfinite(coeffs), 'all') || any(~isfinite(coeffStds), 'all')
             error('ULMO:solvedegree1:NonFiniteIterate', ...
@@ -307,13 +307,13 @@ end
 % Output arguments
 %   ocnKer - Localises full SH to ocean domain
 %   coeffKer - Localises only unknown coefficients that are being solved to ocean domain
-%   coeffOcnKer - Projects leakage from known coefficients into the unkown coefficients in the ocean domain
-%   coeffLndKer - Projects leakage from known coefficients into the unkown coefficients in the land domain
-%   unfOcnScale - Projects a constant field to ocean domain with full SH
-function [ocnKer, coeffKer, coeffOcnKer, coeffLndKer, lnd2ocnKer, lndC00Ker, lndVarDiag] = preparekernels( ...
+%   coeffLndKer - Localises only unknown coefficients that are being solved to land domain
+%   ocnLeakKer - Projects leakage from known coefficients into the unkown coefficients in the ocean domain
+%   lnd2ocnKer - Projects a constant field to ocean domain with full SH
+function [ocnKer, coeffKer, coeffLndKer, ocnLeakKer, lnd2ocnKer, lndC00Ker, lndVarDiag] = preparekernels( ...
         Lsle, ocnDom, coeffIds, mthd, beQuiet)
     ocnKer = kernelcp_new(Lsle, ocnDom, "BeQuiet", beQuiet);
-    coeffOcnKer = ocnKer(coeffIds, :);
+    ocnLeakKer = ocnKer(coeffIds, :);
     coeffKer = ocnKer(coeffIds, coeffIds);
     lnd2ocnKer = [];
     lndC00Ker = [];
@@ -361,73 +361,72 @@ function [sdPlmt, sdStdPlmt, giaPlmt, dates] = preparedata( ...
     sdStdPlmt = putcoeffs(sdStdPlmt, 0, coeffLocs);
 end
 
-%% PROJECTKNOWNFIELDS - Projects the known signal and variance
+%% PROJECTFIXEDFIELDS - Projects the fixed (known) signal and variance
 % Output arguments
-%   knownOcnCoeffs - Leakage of the known coefficients onto the unkown coefficients in the ocean domain
-%   knownOcnCoeffVars - Variance of knownOcnCoeffs
-%   knownLndSdPlms - Full SH coefficients of the known cofficients' land signal
-%   knownLndVarPlms - Variance of knownLndSdPlms
-function [knownOcnCoeffs, knownOcnCoeffVars, knownLndSdPlms, knownLndVarPlms] = ...
-        projectknownfields(sdPlmt, sdStdPlmt, kernelOrder, ocnKernelSle, ...
-        coeffOcnKernel, coeffOcnKernelSq, lndC00Kernel, lndVarDiag, mthd)
-    knownSdPlms = packcoeffs(sdPlmt, kernelOrder);
-    knownSdVarPlms = packcoeffs(sdStdPlmt, kernelOrder) .^ 2;
+%   fxdOcnCoeffs - Leakage of the fixed coefficients onto the unkown coefficients in the ocean domain
+%   fxdOcnCoeffVars - Variance of fxdOcnCoeffs
+%   fxdLndSdPlms - Full SH coefficients of the fixed cofficients' land signal
+%   fxdLndVarPlms - Variance of fxdLndSdPlms
+function [fxdOcnCoeffs, fxdOcnCoeffVars, fxdLndSdPlms, fxdLndVarPlms] = projectfixedfields( ...
+        sdPlmt, sdStdPlmt, kerOrder, ocnKer, ocnLeakKer, ocnLeakKerSq, lndC00Ker, lndVarDiag, mthd)
+    fxdSdPlms = packcoeffs(sdPlmt, kerOrder);
+    fxdSdVarPlms = packcoeffs(sdStdPlmt, kerOrder) .^ 2;
 
     % If most coefficients are 0 (because of the padding to Lsle),
     % projecting all of them invokes multiplication of large matrices.
     % This can be avoided by truncating the projection
     maxAcvFrac = 0.5; % Truncate at or below this threshold
-    actvSigIds = find(any(knownSdPlms ~= 0, 2));
-    useSigSubset = numel(actvSigIds) <= maxAcvFrac * size(knownSdPlms, 1);
-    actvVarIds = find(any(knownSdVarPlms ~= 0, 2));
-    useVarSubset = numel(actvVarIds) <= maxAcvFrac * size(knownSdVarPlms, 1);
+    actvSigIds = find(any(fxdSdPlms ~= 0, 2));
+    useSigSubset = numel(actvSigIds) <= maxAcvFrac * size(fxdSdPlms, 1);
+    actvVarIds = find(any(fxdSdVarPlms ~= 0, 2));
+    useVarSubset = numel(actvVarIds) <= maxAcvFrac * size(fxdSdVarPlms, 1);
 
     if useSigSubset
-        actvSdPlms = knownSdPlms(actvSigIds, :);
-        knownOcnCoeffs = coeffOcnKernel(:, actvSigIds) * actvSdPlms;
+        actvSdPlms = fxdSdPlms(actvSigIds, :);
+        fxdOcnCoeffs = ocnLeakKer(:, actvSigIds) * actvSdPlms;
     else
-        knownOcnCoeffs = coeffOcnKernel * knownSdPlms;
+        fxdOcnCoeffs = ocnLeakKer * fxdSdPlms;
     end
 
     if useVarSubset
-        knownSdVarPlms = knownSdVarPlms(actvVarIds, :);
-        knownOcnCoeffVars = coeffOcnKernelSq(:, actvVarIds) * knownSdVarPlms;
+        fxdSdVarPlms = fxdSdVarPlms(actvVarIds, :);
+        fxdOcnCoeffVars = ocnLeakKerSq(:, actvVarIds) * fxdSdVarPlms;
     else
-        knownOcnCoeffVars = coeffOcnKernelSq * knownSdVarPlms;
+        fxdOcnCoeffVars = ocnLeakKerSq * fxdSdVarPlms;
     end
 
     % Uniform loading consumes only C00; fingerprints need all output rows.
     if strcmp(mthd, 'uniform')
 
         if useSigSubset
-            knownLndSdPlms = lndC00Kernel(:, actvSigIds) * actvSdPlms;
+            fxdLndSdPlms = lndC00Ker(:, actvSigIds) * actvSdPlms;
         else
-            knownLndSdPlms = lndC00Kernel * knownSdPlms;
+            fxdLndSdPlms = lndC00Ker * fxdSdPlms;
         end
 
         if useVarSubset
-            knownLndVarPlms = (lndC00Kernel(:, actvVarIds) .^ 2) * knownSdVarPlms;
+            fxdLndVarPlms = (lndC00Ker(:, actvVarIds) .^ 2) * fxdSdVarPlms;
         else
-            knownLndVarPlms = (lndC00Kernel .^ 2) * knownSdVarPlms;
+            fxdLndVarPlms = (lndC00Ker .^ 2) * fxdSdVarPlms;
         end
 
     else
         % Land kernel = I-K
 
         if useSigSubset
-            knownLndSdPlms = knownSdPlms - ocnKernelSle(:, actvSigIds) * actvSdPlms;
+            fxdLndSdPlms = fxdSdPlms - ocnKer(:, actvSigIds) * actvSdPlms;
         else
-            knownLndSdPlms = knownSdPlms - ocnKernelSle * knownSdPlms;
+            fxdLndSdPlms = fxdSdPlms - ocnKer * fxdSdPlms;
         end
 
         % (I-K).^2 = K.^2 + diag(1-2*diag(K))
         if useVarSubset
-            knownLndVarPlms = (ocnKernelSle(:, actvVarIds) .^ 2) * knownSdVarPlms;
-            knownLndVarPlms(actvVarIds, :) = knownLndVarPlms(actvVarIds, :) ...
-                + lndVarDiag(actvVarIds) .* knownSdVarPlms;
+            fxdLndVarPlms = (ocnKer(:, actvVarIds) .^ 2) * fxdSdVarPlms;
+            fxdLndVarPlms(actvVarIds, :) = fxdLndVarPlms(actvVarIds, :) ...
+                + lndVarDiag(actvVarIds) .* fxdSdVarPlms;
         else
-            knownLndVarPlms = (ocnKernelSle .^ 2) * knownSdVarPlms ...
-                + lndVarDiag .* knownSdVarPlms;
+            fxdLndVarPlms = (ocnKer .^ 2) * fxdSdVarPlms ...
+                + lndVarDiag .* fxdSdVarPlms;
         end
 
     end
