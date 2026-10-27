@@ -63,8 +63,8 @@ The ultimate goal is to drop the `_new` suffixes and replace the original functi
 | `lovenumber` | Reads the elastic Love numbers for geoid/VLM/HLM. | | [ISSM](https://github.com/ISSMteam/ISSM.git), [slepian_delta](https://github.com/csdms-contrib/slepian_delta.git), or [ALMA3](https://github.com/danielemelini/ALMA3.git) | Replacement for `lovenums` in [slepian_delta](https://github.com/csdms-contrib/slepian_delta.git). |
 | `slfa2plmt` | Reads and converts the *RSL* SLF calculated by [Adhikari et al. (2019)](https://doi.org/10.5194/essd-11-629-2019) to spherical harmonic fields. | | [Adhikari et al. (2019)](https://doi.org/10.5194/essd-11-629-2019) | WIP |
 | `slfa2slept` | Projects the *RSL* SLF calculated by [Adhikari et al. (2019)](https://doi.org/10.5194/essd-11-629-2019) to Slepian coefficients. | [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git) | See `slfa2plmt` | WIP |
-| `solvesle` | Solves the elastic/transient SLE for a given mass load and land water mask. | | none | |
-| `solvedegree1` | Solves the Stokes coefficients for the geocentric motion from GRACE data. | | GRACE | |
+| `solvesle` | Solves the fixed-ocean elastic SLE with full-response uncertainty propagation. | | Love numbers, ocean geometry | [Linear solver guide](linear-sle.md); legacy iteration remains available. |
+| `solvedegree1` | Estimates degree 1 and optional low-degree coefficients through a prepared linear response map. | | GRACE, GIA, Love numbers, ocean geometry | [Linear solver guide](linear-sle.md). |
 
 ### GIA Model Processing
 
