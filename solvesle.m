@@ -35,10 +35,17 @@
 %       Default source: 'ISSM'.
 %   RotationFeedback (name-value) - Whether to include rotation feedback.
 %       Default option: true.
+%   Solver (name-value) - Linear system or legacy fixed-point iteration.
+%       'linear' propagates independent input errors through the full response.
+%       'iteration' retains the previous intermediate diagonal approximation.
+%       Default solver: 'linear'.
+%   RelativeTolerance (name-value) - Relative residual of each linear solve.
+%       Used only by the linear solver. Default tolerance: 1e-12.
 %   Tolerance (name-value) - Absolute tolerance.
-%       Checks returned and ocean-localised coefficients, and standard
-%       deviations when supplied, at every epoch. Set 0 for exactly
-%       MaxIter steps.
+%       Linear mode checks the ocean mass residual. Iteration mode checks
+%       changes in returned/localized coefficients and standard deviations.
+%       Set 0 for exactly MaxIter legacy steps when Solver is omitted or
+%       'iteration'; an explicitly linear solver rejects this setting.
 %       Unit: m.
 %       Default tolerance: 1e-9.
 %   MaxIter (name-value) - Maximum iterations.
@@ -50,7 +57,7 @@
 %       Size: ((L+1)^2, (L+1)^2).
 %       Default kernel: [].
 %   OceanVarianceKernel (name-value) - Precomputed mass-constrained variance kernel.
-%       An empty value computes the kernel.
+%       Used only by Solver="iteration"; an empty value computes the kernel.
 %       Size: ((L+1)^2, (L+1)^2).
 %       Default kernel: [].
 %   OceanFunction (name-value) - Legacy ocean function; accepted but unused.
@@ -61,8 +68,8 @@
 %       Size: vector with (L+1)^2 elements.
 %       Default order: [].
 %   InitialRSL (name-value) - Initial relative sea-level coefficients.
-%       Uses the same layout as forcing. An empty value uses an internal
-%       initial guess.
+%       Used only by Solver="iteration", with the same layout as forcing.
+%       An empty value uses an internal initial guess.
 %       Size: same as forcing.
 %       Unit: m for coefficient columns.
 %       Default field: [].
@@ -89,11 +96,12 @@
 % Notes
 %   The ocean function is fixed. Its domain should include the polar oceans
 %   for global mass balance.
-%   Uncertainties use diagonal propagation. Correlations between forcing
-%   and iterated ocean load, between provisional response harmonics, and
-%   between target mass and that response are neglected.
-%   Positive tolerance requires convergence; reaching MaxIter without it
-%   raises an error. Tolerance=0 explicitly requests a fixed iteration count.
+%   Linear uncertainties assume independent input errors but retain all
+%   correlations induced by the response and mass constraint. They differ
+%   from the legacy iteration's intermediate diagonal approximations.
+%   Full-field uncertainty may require one large solve per uncertain input
+%   coefficient. Response columns are computed in blocks to bound memory.
+%   Failed linear solves or unconverged positive-tolerance iterations error.
 %
 % References
 %   Adhikari, S et al. (2016). ISSM-SESAW v1.0: mesh-based computation
@@ -121,7 +129,7 @@ function varargout = solvesle(varargin)
     % Parse input arguments
     [forcSdPlm, forcSdStdPlm, inclDO, doError, ...
          L, ocean, frame, loveNumSrc, doRotation, maxIter, ...
-         ocnKernel, ocnVarKer, kernelOrder, initRslPlm, beQuiet, tol] = ...
+         ocnKernel, ocnVarKer, kernelOrder, initRslPlm, beQuiet, tol, solver, relativeTolerance] = ...
         parseinputs(varargin{:});
 
     % Create progress bar
@@ -151,7 +159,7 @@ function varargout = solvesle(varargin)
         'OceanKernel must have a finite, positive ocean area in (1,1).');
     end
 
-    if doError
+    if doError && solver == "iteration"
         % The mass adjustment correlates the constant term with the other
         % harmonics. The variance kernel is not simply squaring the ocean kernel
         ocnWghts = ocnFunPlms / ocnArea;
@@ -191,144 +199,125 @@ function varargout = solvesle(varargin)
         waitbar(0, wbar, 'Constructing SLE kernel');
     end
 
-    [~, degree] = addmon(L);
-    degrees = [degree, degree];
-    degrees = degrees(kernelOrder);
-    llnGeoids = lovenumber(degrees, 'LLN geoid', frame, "Source", loveNumSrc);
-    llnVlms = lovenumber(degrees, 'LLN VLM', frame, "Source", loveNumSrc);
-    llnFactors = 1 + llnGeoids - llnVlms;
-    tlnGeoids = lovenumber(degrees, 'TLN geoid', frame, "Source", loveNumSrc);
-    tlnVlms = lovenumber(degrees, 'TLN VLM', frame, "Source", loveNumSrc);
-    tlnFactors = 1 + tlnGeoids - tlnVlms;
-    llnGeoid2 = lovenumber(2, 'LLN geoid', frame, "Source", loveNumSrc);
+    kernels = prepareslekernels(L, ocnKernel, Frame=string(frame), ...
+        LoveNumSource=string(loveNumSrc), RotationFeedback=doRotation, ...
+        KernelOrder=kernelOrder);
+    WATER_DENSITY = kernels.waterDensity;
+    sleKernel = kernels.response / WATER_DENSITY;
 
-    % Many values from Adhikari et al. (2016)
-    WATER_DENSITY = 1000; % to be consistent with other functions(mainly MASS2WEQ) and Adhikari et al. (2016)
-    EARTH_DENSITY = 5517; % to be consistent with PLM2POT
-    EARTH_RADIUS = 6371e3;
-    EARTH_ANGULAR_VELOCITY = 7.2921e-5;
-    EQUATORIAL_INERTIA = 8.0077e37;
-    POLAR_INERTIA = 8.0345e37;
-    SECULAR_LOVE_NUMBER = 0.942; % 'Secular (fluid) Love number '
-    CHANDLER_WOBBLE_FREQUENCY = EARTH_ANGULAR_VELOCITY ...
-        * (POLAR_INERTIA - EQUATORIAL_INERTIA) / EQUATORIAL_INERTIA ...
-        * (1 - tlnGeoids(5) / SECULAR_LOVE_NUMBER); % Should use the elastic Earth value
-    GRAVITY = 9.81;
-
-    % Construct the SLE kernel
-    % Gravitational potential
-    sleKernel = spdiags(3 / EARTH_DENSITY * llnFactors ./ (2 * degrees + 1), 0, ...
-        numel(degrees), numel(degrees));
-
-    if doRotation
-        cmnFac = (4 * pi / 3) * (1 + llnGeoid2) * EARTH_RADIUS ^ 6 * EARTH_ANGULAR_VELOCITY ^ 2 / GRAVITY;
-        c00c20Fac = 4/3 / POLAR_INERTIA;
-        c21s21Fac = EARTH_ANGULAR_VELOCITY / 5 / EQUATORIAL_INERTIA / CHANDLER_WOBBLE_FREQUENCY;
-
-        % C00
-        sleKernel(1, 1) = sleKernel(1, 1) - cmnFac * c00c20Fac;
-        sleKernel(1, 5) = sleKernel(1, 5) + cmnFac * c00c20Fac / sqrt(5);
-        % C20
-        sleKernel(5, 1) = sleKernel(5, 1) + cmnFac * c00c20Fac / sqrt(5) * tlnFactors(5);
-        sleKernel(5, 5) = sleKernel(5, 5) - cmnFac * c00c20Fac / 5 * tlnFactors(5);
-        % C21 and S21
-        sleKernel(6, 6) = sleKernel(6, 6) + cmnFac * c21s21Fac * tlnFactors(6);
-        sleKernel(7, 7) = sleKernel(7, 7) + cmnFac * c21s21Fac * tlnFactors(7);
-    end
-
-    %% Iteration
-    % Solve the SLE iteratively
-
-    % Initial guess
-    gmsl =- forcSdPlms(1, :) / ocnFunPlms(1, :) / WATER_DENSITY;
-
-    if ~isempty(initRslPlm)
-        rslPlms = initRslPlms;
+    if solver == "linear"
+        if any(~isfinite(forcSdPlms), 'all') || any(~isfinite(forcSdStdPlms), 'all')
+            error('ULMO:solvesle:NonFiniteIterate', 'Forcing and errors must be finite.');
+        end
+        rslSdPlms = solveslesystem(kernels, kernels.KF * forcSdPlms, ...
+            RelativeTolerance=relativeTolerance, MaxIter=maxIter);
+        rslPlms = rslSdPlms / WATER_DENSITY;
+        rslOcnPlms = ocnKernel * rslPlms;
+        % Tolerance remains an absolute physical residual check, in metres.
+        if max(abs(rslOcnPlms(1, :) + forcSdPlms(1, :) / WATER_DENSITY), [], 'all') > tol
+            error('ULMO:solvesle:NonConvergence', 'The ocean mass residual exceeds Tolerance.');
+        end
+        if doError
+            rslVarPlms = slevariance(kernels, forcSdStdPlms.^2, ...
+                RelativeTolerance=relativeTolerance, MaxIter=maxIter) / WATER_DENSITY^2;
+            targetOcnVar = forcSdStdPlms(1, :).^2 / WATER_DENSITY^2;
+        end
     else
-        rslPlms = ocnFunPlms * gmsl;
-    end
+        %% Iteration
+        % Solve the SLE iteratively
 
-    rslOcnPlms = rslPlms;
+        % Initial guess
+        gmsl =- forcSdPlms(1, :) / ocnFunPlms(1, :) / WATER_DENSITY;
 
-    if doError
-        % Carry variances through the iteration (to avoid taking square roots repeatedly); convert to STD only at output.
-        forcVarPlms = forcSdStdPlms .^ 2;
-        targetOcnVar = forcVarPlms(1, :) / WATER_DENSITY ^ 2;
-        sleKernelSq = sleKernel .^ 2;
-        ocnWghtsSq = ocnWghts .^ 2;
-        ocnMeanWghtsSq = ocnKernel(1, 2:end) .^ 2;
-        rslOcnVarPlms = ocnWghtsSq * targetOcnVar;
-    end
-
-    converged = false;
-    maxChange = Inf;
-    prevStd = [];
-
-    for iIter = 1:maxIter
-        prevRslPlms = rslPlms;
-        prevRslOcnPlms = rslOcnPlms;
-
-        if ~beQuiet
-            waitbar(iIter / maxIter, wbar, ...
-                sprintf('Solving SLE iteratively (%d/%d)', iIter, maxIter));
-
-            if getappdata(wbar, 'canceling')
-                error('ULMO:ProcessCancelledByUser', 'SLE computation cancelled');
-            end
-
+        if ~isempty(initRslPlm)
+            rslPlms = initRslPlms;
+        else
+            rslPlms = ocnFunPlms * gmsl;
         end
 
-        sdPlms = forcSdPlms + rslOcnPlms * WATER_DENSITY;
-
-        rslPlms = sleKernel * sdPlms;
-        rslOcnPlms = ocnKernel * rslPlms;
-
-        % Add a constant sea-level offset and its complete ocean footprint.
-        % Keep the iterated field equal to oceanKernel * the returned field.
-        massOffset = (-forcSdPlms(1, :) / WATER_DENSITY ...
-            - rslOcnPlms(1, :)) / ocnArea;
-        rslPlms(1, :) = rslPlms(1, :) + massOffset;
-        rslOcnPlms = rslOcnPlms + ocnFunPlms * massOffset;
-
-        % Require convergence of both returned and localized coefficients.
-        maxChange = max(absoluteiterationchange(rslPlms, prevRslPlms), ...
-            absoluteiterationchange(rslOcnPlms, prevRslOcnPlms));
+        rslOcnPlms = rslPlms;
 
         if doError
-            sdVarPlms = forcVarPlms + WATER_DENSITY ^ 2 * rslOcnVarPlms;
-            rslVarPlms = sleKernelSq * sdVarPlms;
-            rslOcnVarPlms = ocnVarKer * rslVarPlms + ocnWghtsSq * targetOcnVar;
-            rslOcnVarPlms(1, :) = targetOcnVar;
-            rslVarPlms(1, :) = (targetOcnVar + ocnMeanWghtsSq * rslVarPlms(2:end, :)) / ocnArea ^ 2;
-            crntStd = sqrt([rslVarPlms; rslOcnVarPlms]);
+            % Carry variances through the iteration (to avoid taking square roots repeatedly); convert to STD only at output.
+            forcVarPlms = forcSdStdPlms .^ 2;
+            targetOcnVar = forcVarPlms(1, :) / WATER_DENSITY ^ 2;
+            sleKernelSq = sleKernel .^ 2;
+            ocnWghtsSq = ocnWghts .^ 2;
+            ocnMeanWghtsSq = ocnKernel(1, 2:end) .^ 2;
+            rslOcnVarPlms = ocnWghtsSq * targetOcnVar;
+        end
 
-            if isempty(prevStd)
-                maxChange = Inf;
-            else
-                maxChange = max(maxChange, absoluteiterationchange(crntStd, prevStd));
+        converged = false;
+        maxChange = Inf;
+        prevStd = [];
+
+        for iIter = 1:maxIter
+            prevRslPlms = rslPlms;
+            prevRslOcnPlms = rslOcnPlms;
+
+            if ~beQuiet
+                waitbar(iIter / maxIter, wbar, ...
+                    sprintf('Solving SLE iteratively (%d/%d)', iIter, maxIter));
+
+                if getappdata(wbar, 'canceling')
+                    error('ULMO:ProcessCancelledByUser', 'SLE computation cancelled');
+                end
+
             end
 
-            prevStd = crntStd;
+            sdPlms = forcSdPlms + rslOcnPlms * WATER_DENSITY;
 
-            if any(~isfinite(crntStd), 'all')
-                error('ULMO:solvesle:NonFiniteIterate', 'SLE uncertainties became nonfinite.');
+            rslPlms = sleKernel * sdPlms;
+            rslOcnPlms = ocnKernel * rslPlms;
+
+            % Add a constant sea-level offset and its complete ocean footprint.
+            % Keep the iterated field equal to oceanKernel * the returned field.
+            massOffset = (-forcSdPlms(1, :) / WATER_DENSITY ...
+                - rslOcnPlms(1, :)) / ocnArea;
+            rslPlms(1, :) = rslPlms(1, :) + massOffset;
+            rslOcnPlms = rslOcnPlms + ocnFunPlms * massOffset;
+
+            % Require convergence of both returned and localized coefficients.
+            maxChange = max(absoluteiterationchange(rslPlms, prevRslPlms), ...
+                absoluteiterationchange(rslOcnPlms, prevRslOcnPlms));
+
+            if doError
+                sdVarPlms = forcVarPlms + WATER_DENSITY ^ 2 * rslOcnVarPlms;
+                rslVarPlms = sleKernelSq * sdVarPlms;
+                rslOcnVarPlms = ocnVarKer * rslVarPlms + ocnWghtsSq * targetOcnVar;
+                rslOcnVarPlms(1, :) = targetOcnVar;
+                rslVarPlms(1, :) = (targetOcnVar + ocnMeanWghtsSq * rslVarPlms(2:end, :)) / ocnArea ^ 2;
+                crntStd = sqrt([rslVarPlms; rslOcnVarPlms]);
+
+                if isempty(prevStd)
+                    maxChange = Inf;
+                else
+                    maxChange = max(maxChange, absoluteiterationchange(crntStd, prevStd));
+                end
+
+                prevStd = crntStd;
+
+                if any(~isfinite(crntStd), 'all')
+                    error('ULMO:solvesle:NonFiniteIterate', 'SLE uncertainties became nonfinite.');
+                end
+
+            end
+
+            if any(~isfinite(rslPlms), 'all') || any(~isfinite(rslOcnPlms), 'all')
+                error('ULMO:solvesle:NonFiniteIterate', 'SLE coefficients became nonfinite.');
+            elseif tol > 0 && maxChange <= tol
+                converged = true;
+                break
             end
 
         end
 
-        if any(~isfinite(rslPlms), 'all') || any(~isfinite(rslOcnPlms), 'all')
-            error('ULMO:solvesle:NonFiniteIterate', 'SLE coefficients became nonfinite.');
-        elseif tol > 0 && maxChange <= tol
-            converged = true;
-            break
+        if tol > 0 && ~converged
+            error('ULMO:solvesle:NonConvergence', ...
+                'SLE did not converge in %d iterations (maximum absolute change %.6g; tolerance %.6g).', ...
+                maxIter, maxChange, tol);
         end
 
-    end
-
-    if tol > 0 && ~converged
-        error('ULMO:solvesle:NonConvergence', ...
-            'SLE did not converge in %d iterations (maximum absolute change %.6g; tolerance %.6g).', ...
-            maxIter, maxChange, tol);
     end
 
     %% Post-processing
@@ -414,6 +403,9 @@ function varargout = parseinputs(varargin)
         @(x) isnumeric(x) && isscalar(x) && isfinite(x) && x >= 1 && x == fix(x));
     addParameter(ip, 'Tolerance', 1e-9, ...
         @(x) isnumeric(x) && isscalar(x) && isfinite(x) && x >= 0);
+    addParameter(ip, 'Solver', 'linear', @(x) any(strcmp(x, {'linear', 'iteration'})));
+    addParameter(ip, 'RelativeTolerance', 1e-12, ...
+        @(x) isnumeric(x) && isscalar(x) && isfinite(x) && x > 0 && x < 1);
     addParameter(ip, 'LoveNumSource', 'ISSM', ...
         @(x) ischar(x) || isstring(x));
     addParameter(ip, 'OceanKernel', [], @(x) isnumeric(x));
@@ -441,6 +433,15 @@ function varargout = parseinputs(varargin)
     if strcmpi(loveNumSrc, "Wahr")
         error(['Wahr''s (and slepian''s) love numbers are only provided for loading gravitational potential, which would not be sufficient for solving the SLE. ', ...
                'Consider using ISSM (preferred) or ALMA3 love numbers instead.']);
+    end
+
+    solver = string(ip.Results.Solver);
+    if ip.Results.Tolerance == 0
+        if solver == "linear" && ~ismember('Solver', ip.UsingDefaults)
+            error('ULMO:solvesle:FixedStepsRequireIteration', ...
+                'Tolerance=0 requires Solver="iteration".');
+        end
+        solver = "iteration";
     end
 
     % Check input sizes
@@ -507,7 +508,7 @@ function varargout = parseinputs(varargin)
     varargout = ...
         {forcPlm, forcStdPlm, inclDO, doError, ...
          L, ocnDom, frame, loveNumSrc, doRotation, maxIter, ...
-         ocnKernel, ocnVarKer, kernelOrder, initRslPlm, beQuiet, ip.Results.Tolerance};
+         ocnKernel, ocnVarKer, kernelOrder, initRslPlm, beQuiet, ip.Results.Tolerance, solver, ip.Results.RelativeTolerance};
 end
 
 % Find the degree of the spherical harmonic coefficients based on the
