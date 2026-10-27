@@ -80,21 +80,21 @@ classdef linearSleSystemTest < matlab.unittest.TestCase
         function massAndFullCovariance(testCase, rotation)
             k = prepareslekernels(3, ocean(), RotationFeedback=rotation);
             [A, KF] = explicitSystem(k);
-            T = A\KF;
+            fullSleResponse = A\KF;
             f = reshape(sin(1:48), 16, 3);
             sigma = reshape(abs(cos(1:48)), 16, 3)/10;
             sigma(:, 1) = 0;
             [s, ss, meanLevel, meanStd] = solvesle(unpack(f), unpack(sigma), ...
                 3, GeoDomain('alloceans'), 'OceanKernel', k.O, ...
                 'RotationFeedback', rotation, 'BeQuiet', true);
-            testCase.verifyEqual(pack(s), T*f, 'AbsTol', 2e-11);
-            testCase.verifyEqual(pack(ss).^2, (T.^2)*(sigma.^2), 'AbsTol', 2e-13);
+            testCase.verifyEqual(pack(s), fullSleResponse*f, 'AbsTol', 2e-11);
+            testCase.verifyEqual(pack(ss).^2, (fullSleResponse.^2)*(sigma.^2), 'AbsTol', 2e-13);
             local = k.O*pack(s);
             testCase.verifyEqual(local(1, :), -f(1, :), 'AbsTol', 2e-11);
             testCase.verifyEqual(meanLevel, (-f(1,:)/k.oceanArea).', 'AbsTol', 2e-11);
             testCase.verifyEqual(meanStd, (sigma(1,:)/k.oceanArea).', 'AbsTol', 2e-13);
             for epoch = 1:3
-                C = T*diag(sigma(:,epoch).^2)*T.';
+                C = fullSleResponse*diag(sigma(:,epoch).^2)*fullSleResponse.';
                 testCase.verifyEqual(pack(ss(:, :, epoch)).^2, diag(C), 'AbsTol', 2e-13);
             end
         end
@@ -105,22 +105,38 @@ classdef linearSleSystemTest < matlab.unittest.TestCase
             [A, KF] = explicitSystem(k);
             [locs, ids] = lowdegreecoefficients(c20, c30, cs21);
             if method == "fingerprint"
-                D = f.kernel(ids,:)*(A\KF)*(eye(16)-f.kernel);
+                expectedOceanResponse = f.kernel(ids,:)*(A\KF)*(eye(16)-f.kernel);
             else
                 % The uniform response consumes only the land C00 row.
-                D = -f.kernel(ids,1)/f.kernel(1,1)*( [1, zeros(1,15)]-f.kernel(1,:) );
+                expectedOceanResponse = -f.kernel(ids,1)/f.kernel(1,1)*( [1, zeros(1,15)]-f.kernel(1,:) );
             end
-            map = preparelowdegreemap(k, ids, Method=method);
+            [knownToUnknownMap, knownIds, oceanResponseMap, unknownConstraint, ...
+                knownConstraint, reciprocalCondition, relativeResiduals, iterationCounts] = ...
+                preparelowdegreemap(k, ids, Method=method);
             known = setdiff(1:16, ids);
-            T = (D(:,ids)-f.kernel(ids,ids)) \ (f.kernel(ids,known)-D(:,known));
-            testCase.verifyEqual(map.D, D, 'AbsTol', 2e-11);
-            testCase.verifyEqual(map.T, T, 'AbsTol', 2e-11);
+            expectedLoadResponse = (expectedOceanResponse(:,ids)-f.kernel(ids,ids)) \ (f.kernel(ids,known)-expectedOceanResponse(:,known));
+            testCase.verifyEqual(oceanResponseMap, expectedOceanResponse, 'AbsTol', 2e-11);
+            testCase.verifyEqual(knownToUnknownMap, expectedLoadResponse, 'AbsTol', 2e-11);
+            testCase.verifyEqual(knownIds, known);
+            testCase.verifyEqual(unknownConstraint, ...
+                expectedOceanResponse(:,ids)-f.kernel(ids,ids), 'AbsTol', 2e-11);
+            testCase.verifyEqual(knownConstraint, ...
+                f.kernel(ids,known)-expectedOceanResponse(:,known), 'AbsTol', 2e-11);
+            testCase.verifyEqual(reciprocalCondition, rcond(unknownConstraint));
+            testCase.verifySize(relativeResiduals, [1, numel(ids)]);
+            testCase.verifySize(iterationCounts, [1, numel(ids)]);
+            testCase.verifyLessThanOrEqual(max(relativeResiduals), 1e-12);
+            if method == "uniform"
+                testCase.verifyEqual(iterationCounts, zeros(1, numel(ids)));
+            else
+                testCase.verifyGreaterThan(iterationCounts, zeros(1, numel(ids)));
+            end
             p = pack(permute(f.p(:,:,3:4), [2,3,1]));
             sigma = pack(permute(f.s(:,:,3:4), [2,3,1]));
             gia = pack(permute(f.gia(:,:,3:4), [2,3,1]));
             p(5:end,:) = p(5:end,:)-gia(5:end,:);
-            expected = T*p(known,:);
-            expectedStd = sqrt((T.^2)*(sigma(known,:).^2));
+            expected = expectedLoadResponse*p(known,:);
+            expectedStd = sqrt((expectedLoadResponse.^2)*(sigma(known,:).^2));
             if numel(ids) > 3
                 expected(4:end,:) = expected(4:end,:)+gia(ids(4:end),:);
             end
@@ -143,20 +159,20 @@ classdef linearSleSystemTest < matlab.unittest.TestCase
             f = JOINT_LOW_DEGREE_FIXTURE;
             [~, ids] = lowdegreecoefficients(false, true, true);
             k = prepareslekernels(3, f.kernel);
-            map = preparelowdegreemap(k, ids, Method=method);
+            [knownToUnknownMap, knownIds] = preparelowdegreemap(k, ids, Method=method);
             x = pack(permute(f.p(:,:,3:4), [2,3,1]));
             sigma = pack(permute(f.s(:,:,3:4), [2,3,1]));
             gia = pack(permute(f.gia(:,:,3:4), [2,3,1]));
             x(10:end,:) = 0; sigma(10:end,:) = 0;
             x(5:end,:) = x(5:end,:)-gia(5:end,:);
-            expected = map.T*x(map.knownIds,:);
+            expected = knownToUnknownMap*x(knownIds,:);
             expected(4:end,:) = expected(4:end,:)+gia(ids(4:end),:);
             args = {'CSR','RL06',3,2,3,'ICE6GD',GeoDomain('alloceans'), ...
                 'IncludeC30',true,'IncludeC21S21',true,'Method',char(method), ...
                 'SaveData',false,'BeQuiet',true};
             [actual, actualStd] = solvedegree1(args{:});
             testCase.verifyEqual(actual,expected.','AbsTol',2e-11);
-            testCase.verifyEqual(actualStd,sqrt((map.T.^2)*(sigma(map.knownIds,:).^2)).','AbsTol',2e-11);
+            testCase.verifyEqual(actualStd,sqrt((knownToUnknownMap.^2)*(sigma(knownIds,:).^2)).','AbsTol',2e-11);
             [locs, ~] = lowdegreecoefficients(false,true,true);
             for j = 1:size(locs,1)
                 JOINT_LOW_DEGREE_FIXTURE.p(:,locs(j,1),locs(j,2)+2) = 1e9;

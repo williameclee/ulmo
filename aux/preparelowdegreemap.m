@@ -1,8 +1,11 @@
 %% PREPARELOWDEGREEMAP - Builds the linear map from known to unknown loads.
 %
 % Syntax
-%   map = preparelowdegreemap(kernels, unknownIds)
-%   map = preparelowdegreemap(kernels, unknownIds, Method="uniform")
+%   [knownToUnknownMap, knownIds] = preparelowdegreemap(kernels, unknownIds)
+%   [knownToUnknownMap, knownIds, oceanResponseMap, unknownConstraint, ...
+%       knownConstraint, reciprocalCondition, relativeResiduals, iterationCounts] = ...
+%       preparelowdegreemap(kernels, unknownIds)
+%   knownToUnknownMap = preparelowdegreemap(kernels, unknownIds, Method="uniform")
 %
 % Input arguments
 %   kernels - Output of PREPARESLEKERNELS. For Method="uniform", only O
@@ -17,17 +20,31 @@
 %       Default limit: 100.
 %
 % Output arguments
-%   map - Numeric response matrices and index metadata.
-%       D: selected ocean response to a full load, size (U,M).
-%       Dunknown, Dknown: the small-system blocks, sizes (U,U), (U,M-U).
-%       T: maps known loads to estimated loads, size (U,M-U).
-%       unknownIds, knownIds: row and column index order for T.
-%       reciprocalCondition: rcond(Dunknown); diagnostics: SLE solve accuracy.
+%   knownToUnknownMap - Maps known load coefficients to estimated coefficients.
+%       Rows follow unknownIds; columns follow knownIds.
+%       Size: (U, M-U). Unit: dimensionless.
+%   knownIds - Kernel-order indices of known coefficients, in ascending order.
+%       Size: (1, M-U).
+%   oceanResponseMap - Maps a full load to its selected ocean response.
+%       Rows follow unknownIds; columns use full kernel order.
+%       Size: (U, M). Unit: dimensionless.
+%   unknownConstraint - Unknown-coefficient block of the ocean constraint.
+%       Size: (U, U). Unit: dimensionless.
+%   knownConstraint - Known-coefficient block on the right-hand side.
+%       Size: (U, M-U). Unit: dimensionless.
+%   reciprocalCondition - Reciprocal condition number of unknownConstraint.
+%       Size: scalar. Unit: dimensionless.
+%   relativeResiduals - Relative residual of each transposed SLE solve.
+%       Size: (1, U). Zero for uniform loading, which needs no SLE solve.
+%   iterationCounts - GMRES iterations for each selected output direction.
+%       Size: (1, U). Zero for uniform loading.
 %
 % Notes
 %   For fingerprint loading, D=(O(unknownIds,:)/A)*KF*(I-O).
-%   Only U transposed systems are solved. All epochs then use T*knownLoads.
-%   Independent input variances propagate as (T.^2)*knownVariances.
+%   oceanResponseMap is D in this expression. Only U transposed systems are
+%   solved. knownToUnknownMap = unknownConstraint \ knownConstraint.
+%   All epochs use knownToUnknownMap*knownLoads. Independent input variances
+%   propagate as (knownToUnknownMap.^2)*knownVariances.
 %   Reuse this map only with the same ocean matrix, Earth response, bandwidth,
 %   coefficient selection and numerical accuracy. It is independent of epochs.
 %   Finite-bandwidth O is not assumed idempotent.
@@ -38,7 +55,9 @@
 % Created by
 %   2026/10/27, En-Chi Lee (williameclee@arizona.edu)
 
-function map = preparelowdegreemap(kernels, unknownIds, options)
+function [knownToUnknownMap, knownIds, oceanResponseMap, unknownConstraint, ...
+          knownConstraint, reciprocalCondition, relativeResiduals, iterationCounts] = ...
+        preparelowdegreemap(kernels, unknownIds, options)
     arguments (Input)
         kernels (1, 1) struct
         unknownIds (1, :) double {mustBeInteger, mustBePositive}
@@ -46,41 +65,41 @@ function map = preparelowdegreemap(kernels, unknownIds, options)
         options.RelativeTolerance (1, 1) double {mustBePositive, mustBeFinite, mustBeLessThan(options.RelativeTolerance, 1)} = 1e-12
         options.MaxIter (1, 1) double {mustBeInteger, mustBePositive} = 100
     end
-    O = kernels.O;
-    M = size(O, 1);
-    if isempty(unknownIds) || numel(unique(unknownIds)) ~= numel(unknownIds) || any(unknownIds > M)
+    oceanKernel = kernels.O;
+    numCoeffs = size(oceanKernel, 1);
+    if isempty(unknownIds) || numel(unique(unknownIds)) ~= numel(unknownIds) || any(unknownIds > numCoeffs)
         error('ULMO:preparelowdegreemap:InvalidIndices', 'Unknown indices must be distinct and within the bandwidth.');
     end
-    if size(O, 2) ~= M || ~isfinite(O(1, 1)) || O(1, 1) <= 0
-        error('ULMO:preparelowdegreemap:InvalidOceanKernel', 'O must be square with positive finite area.');
+    if size(oceanKernel, 2) ~= numCoeffs || ~isfinite(oceanKernel(1, 1)) || oceanKernel(1, 1) <= 0
+        error('ULMO:preparelowdegreemap:InvalidOceanKernel', 'oceanKernel must be square with positive finite area.');
     end
-    knownIds = setdiff(1:M, unknownIds);
-    Orows = O(unknownIds, :);
-    diagnostics = struct;
+    knownIds = setdiff(1:numCoeffs, unknownIds);
+    selectedOceanKernel = oceanKernel(unknownIds, :);
+    relativeResiduals = zeros(1, numel(unknownIds));
+    iterationCounts = zeros(1, numel(unknownIds));
     if options.Method == "uniform"
-        landC00 = -O(1, :);
-        landC00(1) = landC00(1) + 1;
-        D = -(O(unknownIds, 1) / O(1, 1)) * landC00;
+        landMassRow = -oceanKernel(1, :);
+        landMassRow(1) = landMassRow(1) + 1;
+        oceanResponseMap = -(oceanKernel(unknownIds, 1) / oceanKernel(1, 1)) * landMassRow;
     else
-        [Ht, diagnostics] = solveslesystem(kernels, Orows.', Transpose=true, ...
+        [adjointResponse, solverDiagnostics] = solveslesystem(kernels, selectedOceanKernel.', Transpose=true, ...
             RelativeTolerance=options.RelativeTolerance, MaxIter=options.MaxIter);
-        H = Ht.' * kernels.KF;
-        D = H - H * O;
+        relativeResiduals = solverDiagnostics.RelativeResidual;
+        iterationCounts = solverDiagnostics.Iterations;
+        forcingResponse = adjointResponse.' * kernels.KF;
+        oceanResponseMap = forcingResponse - forcingResponse * oceanKernel;
     end
-    Dunknown = D(:, unknownIds) - Orows(:, unknownIds);
-    Dknown = Orows(:, knownIds) - D(:, knownIds);
-    reciprocalCondition = rcond(Dunknown);
+    unknownConstraint = oceanResponseMap(:, unknownIds) - selectedOceanKernel(:, unknownIds);
+    knownConstraint = selectedOceanKernel(:, knownIds) - oceanResponseMap(:, knownIds);
+    reciprocalCondition = rcond(unknownConstraint);
     if ~isfinite(reciprocalCondition) || reciprocalCondition <= eps
         error('ULMO:preparelowdegreemap:SingularSystem', 'The selected ocean constraint is singular to working precision.');
     elseif reciprocalCondition < 1e-10
         warning('ULMO:preparelowdegreemap:IllConditionedSystem', ...
             'The selected ocean constraint has reciprocal condition %.6g.', reciprocalCondition);
     end
-    T = Dunknown \ Dknown;
-    if any(~isfinite(T), 'all')
+    knownToUnknownMap = unknownConstraint \ knownConstraint;
+    if any(~isfinite(knownToUnknownMap), 'all')
         error('ULMO:preparelowdegreemap:NonFiniteMap', 'The response map is nonfinite.');
     end
-    map = struct('D', D, 'Dunknown', Dunknown, 'Dknown', Dknown, 'T', T, ...
-        'unknownIds', unknownIds, 'knownIds', knownIds, ...
-        'reciprocalCondition', reciprocalCondition, 'diagnostics', diagnostics);
 end

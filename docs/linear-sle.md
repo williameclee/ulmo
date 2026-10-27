@@ -44,9 +44,9 @@ It does not localize the supplied forcing to land.
 
 ```matlab
 [~, unknownIds] = lowdegreecoefficients(false, false, true);
-map = preparelowdegreemap(kernels, unknownIds);
-unknownLoads = map.T*knownLoads(map.knownIds,:);
-unknownStds = sqrt((map.T.^2)*knownVariances(map.knownIds,:));
+[knownToUnknownMap, knownIds] = preparelowdegreemap(kernels, unknownIds);
+unknownLoads = knownToUnknownMap*knownLoads(knownIds,:);
+unknownStds = sqrt((knownToUnknownMap.^2)*knownVariances(knownIds,:));
 ```
 
 Here `knownLoads` and `knownVariances` are full-bandwidth packed arrays; the
@@ -54,13 +54,18 @@ unknown rows are ignored. GIA removal and restoration remain the caller's
 responsibility when using this low-level interface.
 
 The map builder solves `H*A = O(unknownIds,:)` using only one transposed system
-per selected coefficient, then forms `D = H*KF*(I-O)` and
+per selected coefficient, then forms `oceanResponseMap = H*KF*(I-O)` and
 
 ```matlab
-Dunknown = D(:,unknownIds) - O(unknownIds,unknownIds);
-Dknown = O(unknownIds,knownIds) - D(:,knownIds);
-T = Dunknown \ Dknown;
+unknownConstraint = oceanResponseMap(:,unknownIds) - O(unknownIds,unknownIds);
+knownConstraint = O(unknownIds,knownIds) - oceanResponseMap(:,knownIds);
+knownToUnknownMap = unknownConstraint \ knownConstraint;
 ```
+
+The matrices, `knownIds`, reciprocal condition number, relative residuals and
+iteration counts are returned as separate outputs. The first two outputs are
+sufficient for applying the map; additional outputs expose the ocean-response
+and constraint matrices for inspection.
 
 `solvedegree1` performs these steps once for all epochs and handles GRACE
 loading, GIA, coefficient selection, units and dates. Its linear path never
@@ -88,7 +93,7 @@ intermediate diagonal approximation. GIA/model uncertainty is not included.
 For full SLE fields, `slevariance` computes response columns in blocks and omits
 exactly zero input variances. This bounds temporary memory but may still require
 one large solve for every uncertain input harmonic. Low-degree uncertainty uses
-only the small prepared `T` and is inexpensive.
+only the small prepared `knownToUnknownMap` and is inexpensive.
 
 `RelativeTolerance` controls the relative Euclidean residual of each linear
 solve; its default is `1e-12`. `MaxIter` in `solvesle`, and `SleMaxIter` in

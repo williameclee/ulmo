@@ -211,13 +211,14 @@ function [coeffs, coeffStds, dates] = ...
         else
             kernels = struct('O', O);
         end
-        map = preparelowdegreemap(kernels, coeffIds, Method=string(mthd), ...
+        [knownToUnknownMap, knownIds, ~, unknownConstraint, knownConstraint] = ...
+            preparelowdegreemap(kernels, coeffIds, Method=string(mthd), ...
             RelativeTolerance=iterOpts.RelativeTolerance, MaxIter=iterOpts.SleMaxIter);
         known = packcoeffs(sdPlmt, kerOrder);
         knownStd = packcoeffs(sdStdPlmt, kerOrder);
-        coeffs = map.T * known(map.knownIds, :);
-        coeffStds = sqrt((map.T.^2) * knownStd(map.knownIds, :).^2);
-        residual = map.Dunknown * coeffs - map.Dknown * known(map.knownIds, :);
+        coeffs = knownToUnknownMap * known(knownIds, :);
+        coeffStds = sqrt((knownToUnknownMap.^2) * knownStd(knownIds, :).^2);
+        residual = unknownConstraint * coeffs - knownConstraint * known(knownIds, :);
         if any(~isfinite(coeffs), 'all') || any(~isfinite(coeffStds), 'all')
             error('ULMO:solvedegree1:NonFiniteIterate', 'Estimated coefficients or uncertainties became nonfinite.');
         end
