@@ -38,8 +38,13 @@ The finite-bandwidth ocean matrix is not treated as an idempotent projection.
 
 ```matlab
 % F is an M-by-N matrix of forcing coefficients, M=(L+1)^2.
-S = solveslesystem(oceanKernel, earthResponseKernel, forcingKernel*F);
+[solutionCoefficients, relativeResiduals, iterationCounts] = ...
+    solveslesystem(oceanKernel, earthResponseKernel, forcingKernel*F);
 ```
+
+`relativeResiduals` and `iterationCounts` are separate numeric row vectors,
+with one entry per right-hand side. Both entries are zero for a zero
+right-hand side. The same output convention applies to `Transpose=true`.
 
 The public `solvesle` function handles lmcosi/cosi packing, units and formatting.
 It does not localize the supplied forcing to land.

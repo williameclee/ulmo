@@ -69,13 +69,36 @@ classdef linearSleSystemTest < matlab.unittest.TestCase
             [earthResponseKernel, forcingKernel, waterDensity] = ...
                 prepareslekernels(3, oceanKernel, RotationFeedback=rotation);
             [A, KF] = explicitSystem(oceanKernel, earthResponseKernel);
-            b = reshape(sin(1:48), 16, 3);
-            [x, info] = solveslesystem(oceanKernel, earthResponseKernel, b);
-            xt = solveslesystem(oceanKernel, earthResponseKernel, b, Transpose=true);
-            testCase.verifyEqual(x, A\b, 'AbsTol', 2e-11);
-            testCase.verifyEqual(xt, A.'\b, 'AbsTol', 2e-11);
+            rightHandSides = reshape(sin(1:48), 16, 3);
+            rightHandSides(:,2) = 0;
+            [solutionCoefficients, relativeResiduals, iterationCounts] = ...
+                solveslesystem(oceanKernel, earthResponseKernel, rightHandSides);
+            [transposeSolution, transposeResiduals, transposeIterations] = ...
+                solveslesystem(oceanKernel, earthResponseKernel, rightHandSides, Transpose=true);
+            testCase.verifyEqual(solutionCoefficients, A\rightHandSides, 'AbsTol', 2e-11);
+            testCase.verifyEqual(transposeSolution, A.'\rightHandSides, 'AbsTol', 2e-11);
             testCase.verifyEqual(full(forcingKernel), KF, 'AbsTol', 1e-14);
-            testCase.verifyLessThanOrEqual(max(info.RelativeResidual), 1e-12);
+            testCase.verifyClass(relativeResiduals, 'double');
+            testCase.verifyClass(iterationCounts, 'double');
+            testCase.verifySize(relativeResiduals, [1,3]);
+            testCase.verifySize(iterationCounts, [1,3]);
+            testCase.verifySize(transposeResiduals, [1,3]);
+            testCase.verifySize(transposeIterations, [1,3]);
+            testCase.verifyEqual(relativeResiduals(2), 0);
+            testCase.verifyEqual(iterationCounts(2), 0);
+            testCase.verifyEqual(transposeResiduals(2), 0);
+            testCase.verifyEqual(transposeIterations(2), 0);
+            testCase.verifyGreaterThan(iterationCounts([1,3]), zeros(1,2));
+            testCase.verifyGreaterThan(transposeIterations([1,3]), zeros(1,2));
+            testCase.verifyLessThanOrEqual(relativeResiduals, 1e-12);
+            testCase.verifyLessThanOrEqual(transposeResiduals, 1e-12);
+            for column = [1,3]
+                rhs = rightHandSides(:,column);
+                testCase.verifyEqual(relativeResiduals(column), ...
+                    norm(A*solutionCoefficients(:,column)-rhs)/norm(rhs), 'AbsTol', 2e-15);
+                testCase.verifyEqual(transposeResiduals(column), ...
+                    norm(A.'*transposeSolution(:,column)-rhs)/norm(rhs), 'AbsTol', 2e-15);
+            end
             testCase.verifyTrue(issparse(earthResponseKernel) && issparse(forcingKernel));
             testCase.verifyClass(earthResponseKernel, 'double');
             testCase.verifyClass(forcingKernel, 'double');

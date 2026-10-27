@@ -1,17 +1,19 @@
 %% SOLVESLESYSTEM - Solves the SLE system or its transpose from numeric kernels.
 %
 % Syntax
-%   [X, diagnostics] = solveslesystem(oceanKernel, earthResponseKernel, B)
-%   X = solveslesystem(oceanKernel, earthResponseKernel, B, Transpose=true)
+%   [solutionCoefficients, relativeResiduals, iterationCounts] = ...
+%       solveslesystem(oceanKernel, earthResponseKernel, rightHandSides)
+%   solutionCoefficients = solveslesystem(oceanKernel, earthResponseKernel, ...
+%       rightHandSides, Transpose=true)
 %
 % Input arguments
 %   oceanKernel - Ocean localization matrix in kernel order.
 %       Size: (M,M), M=(L+1)^2. Unit: dimensionless.
 %   earthResponseKernel - Sparse G+R matrix from PREPARESLEKERNELS.
 %       Size: (M,M). Unit: dimensionless.
-%   B - Right-hand sides, with coefficients in rows and fields in columns.
-%       Size: ((L+1)^2, N). Unit: inherited by X.
-%   Transpose (name-value) - Whether to solve A.'*X=B instead of A*X=B.
+%   rightHandSides - Right-hand sides, with coefficients in rows and fields in columns.
+%       Size: ((L+1)^2, N). Unit: inherited by solutionCoefficients.
+%   Transpose (name-value) - Whether to solve the transposed SLE system.
 %       Default option: false.
 %   RelativeTolerance (name-value) - Relative Euclidean residual tolerance.
 %       Default tolerance: 1e-12.
@@ -19,8 +21,11 @@
 %       Default limit: 100.
 %
 % Output arguments
-%   X - Solutions with the same size and units as B.
-%   diagnostics - RelativeResidual and Iterations, one per right-hand side.
+%   solutionCoefficients - Solutions with the same size and units as rightHandSides.
+%   relativeResiduals - Relative Euclidean residuals, one per right-hand side.
+%       Size: (1,N). Zero for a zero right-hand side.
+%   iterationCounts - GMRES iteration counts, one per right-hand side.
+%       Size: (1,N). Zero for a zero right-hand side.
 %
 % Notes
 %   A=I-P*(G+R)*O. GMRES uses products of the supplied ordinary matrices;
@@ -34,11 +39,12 @@
 % Created by
 %   2026/10/27, En-Chi Lee (williameclee@arizona.edu)
 
-function [X, diagnostics] = solveslesystem(oceanKernel, earthResponseKernel, B, options)
+function [solutionCoefficients, relativeResiduals, iterationCounts] = ...
+        solveslesystem(oceanKernel, earthResponseKernel, rightHandSides, options)
     arguments (Input)
         oceanKernel (:, :) double {mustBeReal}
         earthResponseKernel (:, :) double {mustBeReal}
-        B (:, :) double {mustBeReal, mustBeFinite}
+        rightHandSides (:, :) double {mustBeReal, mustBeFinite}
         options.Transpose (1, 1) logical = false
         options.RelativeTolerance (1, 1) double {mustBePositive, mustBeFinite, mustBeLessThan(options.RelativeTolerance, 1)} = 1e-12
         options.MaxIter (1, 1) double {mustBeInteger, mustBePositive} = 100
@@ -50,40 +56,42 @@ function [X, diagnostics] = solveslesystem(oceanKernel, earthResponseKernel, B, 
         error('ULMO:solveslesystem:InvalidKernels', ...
             'Kernels must be matching square matrices with positive finite ocean area.');
     end
-    if size(B, 1) ~= size(oceanKernel, 1)
-        error('ULMO:solveslesystem:InvalidSize', 'B must have one row per harmonic.');
+    if size(rightHandSides, 1) ~= size(oceanKernel, 1)
+        error('ULMO:solveslesystem:InvalidSize', 'rightHandSides must have one row per harmonic.');
     end
-    X = zeros(size(B));
-    diagnostics.RelativeResidual = zeros(1, size(B, 2));
-    diagnostics.Iterations = zeros(1, size(B, 2));
-    apply = @(v) systemproduct(oceanKernel, earthResponseKernel, v, options.Transpose);
-    for j = 1:size(B, 2)
-        b = full(B(:, j));
-        scale = norm(b);
-        if scale == 0
+    solutionCoefficients = zeros(size(rightHandSides));
+    relativeResiduals = zeros(1, size(rightHandSides, 2));
+    iterationCounts = zeros(1, size(rightHandSides, 2));
+    applySystem = @(inputCoefficients) systemproduct( ...
+        oceanKernel, earthResponseKernel, inputCoefficients, options.Transpose);
+    for rightHandSideIndex = 1:size(rightHandSides, 2)
+        rightHandSide = full(rightHandSides(:, rightHandSideIndex));
+        rightHandSideNorm = norm(rightHandSide);
+        if rightHandSideNorm == 0
             continue
         end
         % Normalize before solving to make accuracy independent of load units.
-        [x, flag, ~, iterations] = gmres(apply, b / scale, [], ...
-            options.RelativeTolerance, min(options.MaxIter, size(B, 1)));
-        residual = norm(apply(x) - b / scale);
-        if flag ~= 0 || ~isfinite(residual) || residual > options.RelativeTolerance
+        [normalizedSolution, convergenceFlag, ~, solverIterations] = ...
+            gmres(applySystem, rightHandSide / rightHandSideNorm, [], ...
+            options.RelativeTolerance, min(options.MaxIter, size(rightHandSides, 1)));
+        relativeResidual = norm(applySystem(normalizedSolution) - rightHandSide / rightHandSideNorm);
+        if convergenceFlag ~= 0 || ~isfinite(relativeResidual) || relativeResidual > options.RelativeTolerance
             error('ULMO:solveslesystem:NonConvergence', ...
-                'SLE system failed at right-hand side %d (relative residual %.6g).', j, residual);
+                'SLE system failed at right-hand side %d (relative residual %.6g).', rightHandSideIndex, relativeResidual);
         end
-        X(:, j) = x * scale;
-        diagnostics.RelativeResidual(j) = residual;
-        diagnostics.Iterations(j) = iterations(end);
+        solutionCoefficients(:, rightHandSideIndex) = normalizedSolution * rightHandSideNorm;
+        relativeResiduals(rightHandSideIndex) = relativeResidual;
+        iterationCounts(rightHandSideIndex) = solverIterations(end);
     end
 end
 
-function y = systemproduct(oceanKernel, earthResponseKernel, x, transpose)
-    if transpose
-        p = x - oceanKernel(1, :).' * (x(1, :) / oceanKernel(1, 1));
-        y = x - oceanKernel.' * (earthResponseKernel.' * p);
+function systemResponse = systemproduct(oceanKernel, earthResponseKernel, inputCoefficients, doTranspose)
+    if doTranspose
+        projectedCoefficients = inputCoefficients - oceanKernel(1, :).' * (inputCoefficients(1, :) / oceanKernel(1, 1));
+        systemResponse = inputCoefficients - oceanKernel.' * (earthResponseKernel.' * projectedCoefficients);
     else
-        r = earthResponseKernel * (oceanKernel * x);
-        r(1, :) = r(1, :) - oceanKernel(1, :) * r / oceanKernel(1, 1);
-        y = x - r;
+        loadResponse = earthResponseKernel * (oceanKernel * inputCoefficients);
+        loadResponse(1, :) = loadResponse(1, :) - oceanKernel(1, :) * loadResponse / oceanKernel(1, 1);
+        systemResponse = inputCoefficients - loadResponse;
     end
 end
