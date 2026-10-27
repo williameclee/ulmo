@@ -49,8 +49,8 @@
 %       An empty value computes or loads the kernel.
 %       Size: ((L+1)^2, (L+1)^2).
 %       Default kernel: [].
-%   OceanVarianceKernel (name-value) - Prepared mass-constrained variance kernel.
-%       An empty value computes or loads the kernel.
+%   OceanVarianceKernel (name-value) - Precomputed mass-constrained variance kernel.
+%       An empty value computes the kernel.
 %       Size: ((L+1)^2, (L+1)^2).
 %       Default kernel: [].
 %   OceanFunction (name-value) - Legacy ocean function; accepted but unused.
