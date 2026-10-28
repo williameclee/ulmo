@@ -35,6 +35,16 @@ classdef jointLowDegreeTest < matlab.unittest.TestCase
             original = getenv('GRACEDATA');
             cleanup = onCleanup(@() restoreFolder(original, folder));
             setenv('GRACEDATA', folder);
+            previousData = getenv('IFILES');
+            testCase.addTeardown(@() setenv('IFILES', previousData));
+            setenv('IFILES', folder);
+            mkdir(fullfile(folder, 'EARTHMODELS', 'CONSTANTS'));
+            Earth = struct('GM_EGM96', 3.986004415e14, 'a_EGM96', 6378136.3);
+            save(fullfile(folder, 'EARTHMODELS', 'CONSTANTS', 'Earth.mat'), 'Earth');
+            mkdir(fullfile(folder, 'LOVENUMS'));
+            loadinggravitationalpotential = [0; .021; -.3];
+            save(fullfile(folder, 'LOVENUMS', 'lovenumbers-ISSM.mat'), ...
+                'loadinggravitationalpotential');
             product = {'CSR', 'RL06', 60};
             domain = GeoDomain('alloceans', 'Buffer', 0.5);
             cacheFolder = fullfile(folder, 'Degree1', 'new');

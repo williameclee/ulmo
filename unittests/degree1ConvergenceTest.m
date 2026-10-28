@@ -20,6 +20,7 @@ classdef degree1ConvergenceTest < matlab.unittest.TestCase
             repo = fileparts(fileparts(mfilename('fullpath')));
             testCase.applyFixture(PathFixture(repo));
             testCase.applyFixture(PathFixture(fullfile(repo, 'aux')));
+            testCase.applyFixture(PathFixture(fullfile(repo, 'legacy')));
             temp = testCase.applyFixture(TemporaryFolderFixture); testCase.Folder = temp.Folder;
             fixtures = fullfile(repo, 'unittests', 'fixtures', 'degree1convergence');
             files = dir(fullfile(fixtures, '*.txt'));
@@ -203,7 +204,7 @@ classdef degree1ConvergenceTest < matlab.unittest.TestCase
 end
 
 function varargout = runSolver(varargin)
-    [varargout{1:nargout}] = solvedegree1('CSR', 'RL06', 2, 2, 2, 'ICE6GD', GeoDomain('alloceans'), ...
+    [varargout{1:nargout}] = solvedegree1_iteration('CSR', 'RL06', 2, 2, 2, 'ICE6GD', GeoDomain('alloceans'), ...
         "Method", 'uniform', "BeQuiet", true, "SaveData", false, varargin{:});
 end
 

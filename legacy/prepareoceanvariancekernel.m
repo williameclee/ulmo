@@ -1,6 +1,6 @@
 %% PREPAREOCEANVARIANCEKERNEL - Squares the mass-constrained ocean operator.
 % Constructs the operator in column blocks without storing the complete
-% unsquared constrained matrix.
+% unsquared constrained matrix. Used by the legacy iteration solvers.
 %
 % Syntax
 %   Q = prepareoceanvariancekernel(K)
@@ -15,7 +15,7 @@
 %       Size: (n, n).
 %
 % See also
-%   SOLVESLE, SOLVEDEGREE1, KERNELCP_NEW
+%   SOLVESLE_ITERATION, SOLVEDEGREE1_ITERATION, KERNELCP_NEW
 %
 % Created by
 %   2026/10/27, En-Chi Lee (williameclee@gmail.com)

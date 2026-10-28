@@ -12,6 +12,8 @@ Research findings using this code were presented at the [AGU24 Fall Meeting](htt
 
 See the [Functions](docs/functions.md) page for a list of public functions in this repository, along with their descriptions and dependencies.
 
+See [Linear sea-level and low-degree solvers](docs/linear-sle.md) for the shared matrices, response maps, uncertainty propagation and cache reuse.
+
 ## Installation
 
 1. Download or clone this repository to your local machine.
