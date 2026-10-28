@@ -76,14 +76,32 @@
 %       Unit: mm.
 %
 % Notes
+%   The mass-density SLE and its linear solve are
+%       S = KS * S + KF * F,
+%   where:
+%     - KS: RSL load's response kernel to itself (not explicitly constructed)
+%     - KF: RSL load's response kernel to forcing (forcKer)
+%     - S: Globally extended RSL load coefficients (rslSdPlms)
+%
+%   Mass conservation and barystatic sea level satisfy
+%       e00^T * O * S + e00^T * F = 0,
+%       gmsl = 1e3 * (e00^T * O * S) / (rhoW * O00).
+%   The mass residual is checked in metres against Tolerance (tol).
+%
+%   Independent forcing variances propagate through the complete response:
+%       T = A \ KF,
+%       V[S] = (T.^2) * V[F],
+%       V[gmsl] = (1e3 / (rhoW * O00))^2 * V[F00].
+%   where:
+%     - T: Full forcing-to-RSL response, computed in blocks by SLEVARIANCE
+%     - V[F]: Forcing variances (forcSdStdPlms.^2)
+%     - V[S]: RSL load variances
+%
 %   The ocean function is fixed. Its domain should include the polar oceans
 %   for global mass balance.
 %   Linear uncertainties assume independent input errors but retain all
-%   correlations induced by the response and mass constraint. They differ
-%   from the legacy iteration's intermediate diagonal approximations.
-%   Full-field uncertainty may require one large solve per uncertain input
-%   coefficient. Response columns are computed in blocks to bound memory.
-%   Failed linear solves raise an error.
+%   correlations induced by the response and mass constraint.
+%   Response columns are computed in blocks to bound memory.
 %
 % References
 %   Adhikari, S et al. (2016). ISSM-SESAW v1.0: mesh-based computation
@@ -102,7 +120,7 @@
 %   2024/11/20, En-Chi Lee (williameclee@arizona.edu)
 %
 % Last modified
-%   2026/10/27, En-Chi Lee (williameclee@arizona.edu)
+%   2026/10/28, En-Chi Lee (williameclee@arizona.edu)
 
 function varargout = solvesle(varargin)
     %% Initialisation
@@ -111,29 +129,29 @@ function varargout = solvesle(varargin)
     % Parse input arguments
     [forcSdPlm, forcSdStdPlm, inclDO, doError, ...
          L, ocean, frame, loveNumSrc, doRotation, maxIter, ...
-         ocnKernel, kernelOrder, beQuiet, tol, relativeTolerance] = ...
+         ocnKer, kerOrder, beQuiet, tol, solverTol] = ...
         parseinputs(varargin{:});
 
     % Create progress bar
     if ~beQuiet
-        wbar = waitbar(0, 'Initialising', ...
-            "Name", upper(mfilename), "CreateCancelBtn", 'setappdata(gcbf,''canceling'',1)');
+        wbar = waitbar(0, 'Initialising', "Name", upper(mfilename));
         cleanup = onCleanup(@() deleteWaitbar(wbar));
     end
 
+    %% Data preparation
     % Load the ocean kernel if not provided
-    if isempty(ocnKernel)
+    if isempty(ocnKer)
 
         if ~beQuiet
             waitbar(0, wbar, 'Computing ocean kernel');
         end
 
-        ocnKernel = kernelcp_new(L, ocean, "BeQuiet", true);
+        ocnKer = kernelcp_new(L, ocean, "BeQuiet", true);
     end
 
     % Multiplying a constant field by the ocean mask gives this column.
     % Use the same geometry for localization, mass balance and ocean area.
-    ocnFunPlms = ocnKernel(:, 1);
+    ocnFunPlms = ocnKer(:, 1);
     ocnArea = ocnFunPlms(1);
 
     if ~isfinite(ocnArea) || ocnArea <= 0
@@ -142,11 +160,11 @@ function varargout = solvesle(varargin)
     end
 
     % Load the permutation order from cosi -> flat
-    if isempty(kernelOrder)
-        kernelOrder = kernelorder(L);
+    if isempty(kerOrder)
+        kerOrder = kernelorder(L);
     end
 
-    kernelOrder = kernelOrder(:);
+    kerOrder = kerOrder(:);
 
     % Flatten the SH arrays to 2D
     forcSdPlm = ensureplmdegree(forcSdPlm, L, 'traditional');
@@ -154,37 +172,46 @@ function varargout = solvesle(varargin)
 
     forcSdPlm = reshape(forcSdPlm, [], size(forcSdPlm, 3));
     forcSdStdPlm = reshape(forcSdStdPlm, [], size(forcSdStdPlm, 3));
-    forcSdPlms = forcSdPlm(kernelOrder, :);
-    forcSdStdPlms = forcSdStdPlm(kernelOrder, :);
+    forcSdPlms = forcSdPlm(kerOrder, :);
+    forcSdStdPlms = forcSdStdPlm(kerOrder, :);
 
-    %% Constants
-    % Define constants and precompute SLE kernel
+    %% Kernel preparation
+    % Prepare G+R and KF for the mass-density SLE.
 
     if ~beQuiet
         waitbar(0, wbar, 'Constructing SLE kernel');
     end
 
-    [earthResponseKernel, forcingKernel, waterDensity] = prepareslekernels(L, ocnKernel, Frame = string(frame), ...
-        LoveNumSource = string(loveNumSrc), RotationFeedback = doRotation, ...
-        KernelOrder = kernelOrder);
+    [earthRespKer, forcKer, waterDen] = prepareslekernels( ...
+        L, ocnKer, Frame = frame, ...
+        LoveNumSource = loveNumSrc, RotationFeedback = doRotation, ...
+        KernelOrder = kerOrder);
 
     if any(~isfinite(forcSdPlms), 'all') || any(~isfinite(forcSdStdPlms), 'all')
         error('ULMO:solvesle:NonFiniteIterate', 'Forcing and errors must be finite.');
     end
 
-    rslSdPlms = solveslesystem(ocnKernel, earthResponseKernel, forcingKernel * forcSdPlms, ...
-        RelativeTolerance = relativeTolerance, MaxIter = maxIter);
-    rslPlms = rslSdPlms / waterDensity;
-    rslOcnPlms = ocnKernel * rslPlms;
-    % Tolerance remains an absolute physical residual check, in metres.
-    if max(abs(rslOcnPlms(1, :) + forcSdPlms(1, :) / waterDensity), [], 'all') > tol
-        error('ULMO:solvesle:NonConvergence', 'The ocean mass residual exceeds Tolerance.');
+    %% SLE solution
+    % Solve A * S = KF * F for all epochs
+    rslSdPlms = solveslesystem(ocnKer, earthRespKer, forcKer * forcSdPlms, ...
+        RelativeTolerance = solverTol, MaxIter = maxIter);
+    % Convert S to metres, then apply O for the ocean mass check
+    rslPlms = rslSdPlms / waterDen;
+    rslOcnPlms = ocnKer * rslPlms;
+    % Tolerance remains an absolute physical residual check, in metres
+    if max(abs(rslOcnPlms(1, :) + forcSdPlms(1, :) / waterDen), [], 'all') > tol
+        error('ULMO:solvesle:NonConvergence', ...
+            ['The ocean mass residual (%.5g) exceeds tolerance (%.5g); ', ...
+         'the relative tolerance (%.5g) in the kernel solver is likely too high.'], ...
+            max(abs(rslOcnPlms(1, :) + forcSdPlms(1, :) / waterDen), [], 'all'), tol, solverTol);
     end
 
+    %% Variance propagation
     if doError
-        rslVarPlms = slevariance(ocnKernel, earthResponseKernel, forcingKernel, forcSdStdPlms .^ 2, ...
-            RelativeTolerance = relativeTolerance, MaxIter = maxIter) / waterDensity ^ 2;
-        targetOcnVar = forcSdStdPlms(1, :) .^ 2 / waterDensity ^ 2;
+        rslSdStdPlms = sqrt(slevariance(ocnKer, earthRespKer, forcKer, forcSdStdPlms .^ 2, ...
+            RelativeTolerance = solverTol, MaxIter = maxIter));
+        % Mass conservation gives sigma[(O*S)00] = sigma[F00].
+        gmslStd = abs(forcSdStdPlms(1, :)) / ocnArea / waterDen * 1e3; % kg/m^2 -> mm
     end
 
     %% Post-processing
@@ -192,15 +219,16 @@ function varargout = solvesle(varargin)
         waitbar(1, wbar, 'Post-processing results');
     end
 
-    rslSdPlms = rslPlms * waterDensity;
+    rslSdPlms = rslPlms * waterDen;
+    % Ocean C00 divided by O00 gives the ocean mean.
     gmsl = rslOcnPlms(1, :) ./ ocnFunPlms(1, :) * 1e3; % m -> mm (= kg/m^2)
 
     if isvector(rslSdPlms)
         rslSdPlm = zeros([addmup(L), 2]);
-        rslSdPlm(kernelOrder) = rslSdPlms;
+        rslSdPlm(kerOrder) = rslSdPlms;
     else
         rslSdPlm = zeros([addmup(L) * 2, size(rslSdPlms, 2)]);
-        rslSdPlm(kernelOrder, :) = rslSdPlms;
+        rslSdPlm(kerOrder, :) = rslSdPlms;
         rslSdPlm = ...
             reshape(rslSdPlm, [addmup(L), 2, size(rslSdPlms, 2)]);
     end
@@ -223,18 +251,13 @@ function varargout = solvesle(varargin)
         return
     end
 
-    % Post-process the standard deviation
-    rslSdStdPlms = sqrt(rslVarPlms) * waterDensity;
-    gmslStd = sqrt(targetOcnVar) / ocnArea * 1e3; % m -> mm
-
     if isvector(rslSdStdPlms)
         rslSdStdPlm = zeros([addmup(L), 2]);
-        rslSdStdPlm(kernelOrder) = rslSdStdPlms;
+        rslSdStdPlm(kerOrder) = rslSdStdPlms;
     else
         rslSdStdPlm = zeros([addmup(L) * 2, size(rslSdStdPlms, 2)]);
-        rslSdStdPlm(kernelOrder, :) = rslSdStdPlms;
-        rslSdStdPlm = ...
-            reshape(rslSdStdPlm, [addmup(L), 2, size(rslSdStdPlms, 2)]);
+        rslSdStdPlm(kerOrder, :) = rslSdStdPlms;
+        rslSdStdPlm = reshape(rslSdStdPlm, [addmup(L), 2, size(rslSdStdPlms, 2)]);
     end
 
     if inclDO

@@ -2,8 +2,8 @@
 %
 % Syntax
 %   [known2unknownMap, knownIds] = preparelowdegreemap(ocnKer, earthRespKer, forcKer, unknownIds)
-%   [known2unknownMap, knownIds, oceanResponseMap, unknownConstraint, ...
-%       knownConstraint, reciprocalCondition, relativeResiduals, iterationCounts] = ...
+%   [known2unknownMap, knownIds, ocnRespMap, unknownConstraint, ...
+%       knownConstraint, reciprocalCondition, relativeResiduals, iterCnts] = ...
 %       preparelowdegreemap(ocnKer, earthRespKer, forcKer, unknownIds)
 %   known2unknownMap = preparelowdegreemap(ocnKer, [], [], unknownIds, Method="uniform")
 %
@@ -16,11 +16,13 @@
 %       Size: Same as ocnKer.
 %       Unit: dimensionless.
 %   forcKer - Mass-constrained forcing matrix from PREPARESLEKERNELS.
-%       All kernels have size (M,M), M=(L+1)^2, and are dimensionless.
 %       For Method="uniform", pass [] for earthRespKer and forcKer;
 %       only ocnKer is used, with no Earth response or SLE solve.
+%       Size: same as ocnKer.
+%       Unit: dimensionless.
 %   unknownIds - Distinct kernel-order indices of the estimated coefficients.
-%       Size: (1, U). Order is retained in the output.
+%       Order is retained in the output.
+%       Size: (1, U).
 %   Method (name-value) - Ocean constraint, fingerprint or uniform.
 %       Default method: fingerprint.
 %   RelativeTolerance (name-value) - Relative residual tolerance for SLE solves.
@@ -35,7 +37,7 @@
 %       Unit: dimensionless.
 %   knownIds - Kernel-order indices of known coefficients, in ascending order.
 %       Size: (1, M - U).
-%   oceanResponseMap - Maps a full load to its selected ocean response.
+%   ocnRespMap - Maps a full load to its selected ocean response.
 %       Rows follow unknownIds; columns use full kernel order.
 %       Size: (U, M).
 %       Unit: dimensionless.
@@ -56,13 +58,52 @@
 %       Size: (1, U).
 %
 % Notes
-%   For fingerprint loading, D=(O(unknownIds,:)/A)*KF*(I-O).
-%   oceanResponseMap is D in this expression. Only U transposed systems are
-%   solved. known2unknownMap = unknownConstraint \ knownConstraint.
-%   All epochs use known2unknownMap*knownLoads. Independent input variances
-%   propagate as (known2unknownMap.^2)*knownVariances.
-%   Reuse this map only with the same ocean matrix, Earth response, bandwidth,
-%   coefficient selection and numerical accuracy. It is independent of epochs.
+%   The selected ocean response to a full load is
+%       D = EU^T * O * A^(-1) * KF * (I - O),
+%       A = I - KS.
+%   This is evaluated by solving for H^T, then forming D:
+%       A^T * H^T = O^T * EU,
+%       D = H * KF * (I - O).
+%   where:
+%     - O: Ocean localisation kernel (ocnKer)
+%     - G+R: Earth's response kernel to load (earthRespKer)
+%     - KS: RSL load's response kernel to itself, applied by SOLVESLESYSTEM
+%     - KF: RSL load's response kernel to forcing (forcKer)
+%     - EU: Unit vectors selecting the unknown coefficients (unknownIds)
+%     - EU^T * O: Selected rows of the ocean kernel (selectedOcnKer)
+%     - H^T: Adjoint response from the transposed solve (adjointResp)
+%     - H * KF: Selected response to forcing (forcResp)
+%     - D: Selected ocean response to a full load (ocnRespMap)
+%
+%   Matching the modelled and observed ocean coefficients gives
+%       DU * LU = DnotU * LnotU,
+%       DU = D * EU - OU,
+%       DnotU = OnotU - D * EnotU,
+%       T = DU \ DnotU,
+%       LU = T * LnotU.
+%   where:
+%     - EnotU: Unit vectors selecting the known coefficients (knownIds)
+%     - OU = EU^T * O * EU: selectedOcnKer(:,unknownIds)
+%     - OnotU = EU^T * O * EnotU: selectedOcnKer(:,knownIds)
+%     - DU: Unknown-coefficient constraint matrix (unknownConstraint)
+%     - DnotU: Known-coefficient constraint matrix (knownConstraint)
+%     - T: Map from known to unknown load coefficients (known2unknownMap)
+%     - LU, LnotU: Unknown and known load coefficients, supplied by the caller
+%   U and notU denote the unknown set and its complement. The selection
+%   matrices EU and EnotU are applied by indexing, without constructing them.
+%
+%   For uniform loading, the selected ocean response is instead
+%       D = -(EU^T * O * e00 / O00) * e00^T * (I - O).
+%   where:
+%     - e00^T * (I - O): Land C00 projection (landMassRow)
+%     - O00: Ocean area fraction (ocnKer(1,1))
+%     - e00: Unit vector with its first entry equal to 1
+%   The same DU, DnotU and T construction applies to this response.
+%
+%   All epochs use the same T. Independent input variances propagate as
+%       Var(LU) = (T.^2) * Var(LnotU),
+%   where .^2 squares each entry. Reuse requires the same ocean matrix,
+%   Earth response, bandwidth, coefficient selection and numerical accuracy.
 %   Finite-bandwidth O is not assumed idempotent.
 %
 % See also
@@ -70,6 +111,9 @@
 %
 % Created by
 %   2026/10/27, En-Chi Lee (williameclee@arizona.edu)
+%
+% Last modified
+%   2026/10/28, En-Chi Lee (williameclee@arizona.edu)
 
 function [known2unknownMap, knownIds, ocnRespMap, unknownConstraint, knownConstraint, reciprocalCondition, relativeResiduals, iterCnts] = ...
         preparelowdegreemap(ocnKer, earthRespKer, forcKer, unknownIds, options)
@@ -84,6 +128,7 @@ function [known2unknownMap, knownIds, ocnRespMap, unknownConstraint, knownConstr
         options.MaxIter (1, 1) double {mustBeInteger, mustBePositive} = 100
     end
 
+    %% Initialisation
     numCoeffs = size(ocnKer, 1);
 
     if isempty(unknownIds) || numel(unique(unknownIds)) ~= numel(unknownIds) || any(unknownIds > numCoeffs)
@@ -96,29 +141,36 @@ function [known2unknownMap, knownIds, ocnRespMap, unknownConstraint, knownConstr
         'Ocean kernel must be square with positive finite area.');
     end
 
+    % Select the known coefficients and the ocean rows for the unknowns.
     knownIds = setdiff(1:numCoeffs, unknownIds);
     selectedOcnKer = ocnKer(unknownIds, :);
     relativeResiduals = zeros(1, numel(unknownIds));
     iterCnts = zeros(1, numel(unknownIds));
 
+    %% Ocean response map
     if strcmpi(options.Method, "uniform")
+        % Uniform loading: land C00 supplies the compensating ocean mass.
         landMassRow = -ocnKer(1, :);
         landMassRow(1) = landMassRow(1) + 1;
         ocnRespMap =- (ocnKer(unknownIds, 1) / ocnKer(1, 1)) * landMassRow;
     else
 
         if ~isequal(size(forcKer), size(ocnKer))
-            error('ULMO:preparelowdegreemap:InvalidforcKer', ...
+            error('ULMO:preparelowdegreemap:InvalidForcingKernel', ...
             'forcKer must match the ocean matrix size.');
         end
 
+        % Solve A^T * H^T = O^T * EU for the selected output directions.
         [adjointResp, relativeResiduals, iterCnts] = ...
             solveslesystem(ocnKer, earthRespKer, selectedOcnKer.', Transpose = true, ...
             RelativeTolerance = options.RelativeTolerance, MaxIter = options.MaxIter);
+        % D = H * KF * (I - O).
         forcResp = adjointResp.' * forcKer;
         ocnRespMap = forcResp - forcResp * ocnKer;
     end
 
+    %% Ocean constraint
+    % DU = D * EU - OU; DnotU = OnotU - D * EnotU.
     unknownConstraint = ocnRespMap(:, unknownIds) - selectedOcnKer(:, unknownIds);
     knownConstraint = selectedOcnKer(:, knownIds) - ocnRespMap(:, knownIds);
     reciprocalCondition = rcond(unknownConstraint);
@@ -131,6 +183,8 @@ function [known2unknownMap, knownIds, ocnRespMap, unknownConstraint, knownConstr
             'The selected ocean constraint has reciprocal condition %.6g.', reciprocalCondition);
     end
 
+    %% Load response map
+    % T = DU \ DnotU, so LU = T * LnotU for each epoch.
     known2unknownMap = unknownConstraint \ knownConstraint;
 
     if any(~isfinite(known2unknownMap), 'all')

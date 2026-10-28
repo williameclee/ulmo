@@ -86,16 +86,43 @@
 %       Size: (K, 2).
 %
 % Notes
+%   Match the selected ocean coefficients of the observed load and SLE:
+%       D = EU^T * O * A^(-1) * KF * (I - O),
+%       A = I - KS,
+%       DU = D * EU - EU^T * O * EU,
+%       DnotU = EU^T * O * EnotU - D * EnotU,
+%       DU * LU = DnotU * LnotU,
+%       T = DU \ DnotU,
+%       LU = T * LnotU.
+%   where:
+%     - O: Ocean localisation kernel (ocnKer)
+%     - KS: RSL load's response kernel to itself, applied by SOLVESLESYSTEM
+%     - KF: RSL load's response kernel to forcing (forcKer)
+%     - EU: Unit vectors selecting the unknown coefficients (coeffIds)
+%     - EnotU: Unit vectors selecting the known coefficients (knownIds)
+%     - D: Selected ocean response, constructed by PREPARELOWDEGREEMAP
+%     - DU: Unknown-coefficient constraint matrix (unknownConstraint)
+%     - DnotU: Known-coefficient constraint matrix (knownConstraint)
+%     - T: Map from known to unknown loads (known2unknownMap)
+%     - LnotU: Known load coefficients (known(knownIds,:))
+%     - LU: Estimated load coefficients (coeffs before transposing)
+%   For Method='uniform', it instead uses
+%       D = -(EU^T * O * e00 / O00) * e00^T * (I - O),
+%   where O00 = ocnKer(1,1) and e00 selects the first (C00) coefficient.
+%
+%   Independent known-coefficient variances propagate as
+%       V[LU] = (T.^2) * V[LnotU].
+%   where:
+%     - V[LnotU]: Input variances (knownStd(knownIds,:).^2)
+%   The variance formula assumes C[LnotU] is diagonal.
+%
+%   Check the ocean constraint before restoring GIA:
+%       residual = DU * LU - DnotU * LnotU.
+%   Each entry must be within Tolerance, in kg/m^2.
+%
 %   GIA is removed for degrees >= 2 during estimation and restored for
 %   estimated coefficients of those degrees. Degree 1 remains GIA-free.
-%   Prepares a selected response map once for all epochs. Input
-%   coefficient errors are assumed independent; all induced correlations are
-%   retained through the final map. GIA uncertainty is excluded.
-%   All new estimates use the linear map without calling SOLVESLE.
-%   A response map is prepared for each fresh coefficient calculation.
-%   Coefficient caches retain the original filenames without solver or
-%   accuracy suffixes. Use ForceNew=true when recomputation is needed;
-%   SaveData=false preserves an existing cache.
+%   GIA uncertainty is excluded.
 %
 % References
 %   Sun, Y, Ditmar, P, and Riva, REM. (2015). Observed changes
@@ -114,7 +141,7 @@
 %   2025/03/18, En-Chi Lee (williameclee@arizona.edu)
 %
 % Last modified
-%   2026/10/27, En-Chi Lee (williameclee@arizona.edu)
+%   2026/10/28, En-Chi Lee (williameclee@arizona.edu)
 
 function varargout = solvedegree1(varargin)
     %% Initialisation
@@ -184,21 +211,32 @@ function [coeffs, coeffStds, dates] = solvedegree1Core( ...
         forcKer = [];
     end
 
-    [known2unknownMap, knownIds, ~, unknownConstraint, knownConstraint] = ...
-        preparelowdegreemap(ocnKer, earthRespKer, forcKer, coeffIds, Method = mthd, ...
+    %% Ocean constraint
+    % T = DU \ DnotU; reuse the map for every epoch
+    [kn2unknMap, knIds, ~, unknCstr, knCstr] = preparelowdegreemap( ...
+        ocnKer, earthRespKer, forcKer, coeffIds, Method = mthd, ...
         RelativeTolerance = solveOpts.RelativeTolerance, MaxIter = solveOpts.SleMaxIter);
+    % Pack loads and standard deviations with epochs in columns
     known = packcoeffs(sdPlmt, kerOrder);
     knownStd = packcoeffs(sdStdPlmt, kerOrder);
-    coeffs = known2unknownMap * known(knownIds, :);
-    coeffStds = sqrt((known2unknownMap .^ 2) * knownStd(knownIds, :) .^ 2);
-    residual = unknownConstraint * coeffs - knownConstraint * known(knownIds, :);
+    % LU = T * LnotU
+    coeffs = kn2unknMap * known(knIds, :);
+    % sqrt(V[LU]) = sqrt((T.^2) * V[LnotU])
+    coeffStds = sqrt((kn2unknMap .^ 2) * knownStd(knIds, :) .^ 2);
 
     if any(~isfinite(coeffs), 'all') || any(~isfinite(coeffStds), 'all')
-        error('ULMO:solvedegree1:NonFiniteIterate', 'Estimated coefficients or uncertainties became nonfinite.');
+        error('ULMO:solvedegree1:NonFiniteIterate', ...
+        'Estimated coefficients or uncertainties became nonfinite.');
     end
 
-    if max(abs(residual), [], 'all') > solveOpts.Tolerance
-        error('ULMO:solvedegree1:NonConvergence', 'The low-degree constraint residual exceeds Tolerance.');
+    % Check DU * LU - DnotU * LnotU in surface mass density units.
+    resid = unknCstr * coeffs - knCstr * known(knIds, :);
+
+    if max(abs(resid), [], 'all') > solveOpts.Tolerance
+        error('ULMO:solvedegree1:NonConvergence', ...
+            ['The low-degree constraint residual (max: %.5g) exceeds tolerance (%.5g); ', ...
+         'the relative tolerance (%.5g) in the response map solver is likely too high.'], ...
+            max(abs(resid), [], 'all'), solveOpts.Tolerance, solveOpts.RelativeTolerance);
     end
 
     coeffs = coeffs'; % traditional -> timefirst
