@@ -5,6 +5,9 @@
 %
 % Created by
 %   2026/10/28, En-Chi Lee (williameclee@arizona.edu)
+%
+% Last modified
+%   2026/10/29, En-Chi Lee (williameclee@arizona.edu)
 
 classdef linearSleSystemTest < matlab.unittest.TestCase
 
@@ -13,6 +16,7 @@ classdef linearSleSystemTest < matlab.unittest.TestCase
     end
 
     properties (TestParameter)
+        kernelSource = {"ocean", "sle", "all"}
         rotation = {false, true}
         method = {"fingerprint", "uniform"}
         c20 = {false, true}
@@ -146,11 +150,11 @@ classdef linearSleSystemTest < matlab.unittest.TestCase
 
         end
 
-        function selectedMapsAndPublicSolver(testCase, method, c20, c30, cs21)
+        function selectedMapsAndPublicSolver(testCase, method, c20, c30, cs21, rotation)
             global JOINT_LOW_DEGREE_FIXTURE
             f = JOINT_LOW_DEGREE_FIXTURE;
             ocnKer = f.kernel;
-            [earthRespKer, forcKer] = prepareslekernels(3, ocnKer);
+            [earthRespKer, forcKer] = prepareslekernels(3, ocnKer, RotationFeedback = rotation);
             [A, KF] = explicitSystem(ocnKer, earthRespKer);
             [locs, ids] = lowdegreecoefficients(c20, c30, cs21);
 
@@ -197,16 +201,111 @@ classdef linearSleSystemTest < matlab.unittest.TestCase
             opts = {'IncludeC20', c20, 'IncludeC30', c30, 'IncludeC21S21', cs21, ...
                         'Method', char(method), 'ForceNew', true, 'SaveData', false, 'BeQuiet', true};
             [actlCoeffs, actlCoeffStds, dates, ~, actlLocs] = solvedegree1( ...
-                'CSR', 'RL06', 3, 3, 3, 'ICE6GD', GeoDomain('alloceans'), opts{:});
+                'CSR', 'RL06', 3, 3, 3, 'ICE6GD', GeoDomain('alloceans'), opts{:}, ...
+                'RotationFeedback', rotation);
             testCase.verifyEqual(actlCoeffs, expLoad.', 'AbsTol', 2e-11);
             testCase.verifyEqual(actlCoeffStds, expLoadStd.', 'AbsTol', 2e-11);
             testCase.verifyEqual(dates, f.dates);
             testCase.verifyEqual(actlLocs, locs);
             % Independently check the central coefficients against converged iteration.
-            legacy = solvedegree1_iteration('CSR', 'RL06', 3, 3, 3, 'ICE6GD', ...
-                GeoDomain('alloceans'), opts{:}, ...
-                'Tolerance', 1e-12, 'SleTolerance', 1e-14);
-            testCase.verifyEqual(actlCoeffs, legacy, 'AbsTol', 2e-9);
+            if rotation || method == "uniform"
+                legacy = solvedegree1_iteration('CSR', 'RL06', 3, 3, 3, 'ICE6GD', ...
+                    GeoDomain('alloceans'), opts{:}, ...
+                    'Tolerance', 1e-12, 'SleTolerance', 1e-14);
+                testCase.verifyEqual(actlCoeffs, legacy, 'AbsTol', 2e-9);
+            end
+        end
+
+        function suppliedKernelsSkipConstructionAndCache(testCase, rotation, kernelSource)
+            global JOINT_LOW_DEGREE_FIXTURE
+            args = solverArgs();
+            [expected, expectedStd, dates] = solvedegree1(args{:}, ...
+                'RotationFeedback', rotation, 'SaveData', true);
+            files = dir(fullfile(testCase.Folder, 'Degree1', 'new', '*.mat'));
+            testCase.assertNumElements(files, 1);
+            % A sentinel cache must never hide explicitly supplied matrices.
+            coeffs = expected + 100;
+            coeffStds = expectedStd + 100;
+            save(fullfile(files.folder, files.name), 'coeffs', 'coeffStds', 'dates');
+            ocnKer = ocean();
+            [earthRespKer, forcKer] = prepareslekernels(3, ocnKer, RotationFeedback = rotation);
+            supplied = {};
+
+            if kernelSource == "ocean" || kernelSource == "all"
+                supplied = {'OceanKernel', ocnKer};
+                % Invalid fallback geometry proves the supplied ocean matrix is used.
+                JOINT_LOW_DEGREE_FIXTURE.kernel = NaN(16);
+            end
+
+            if kernelSource == "sle" || kernelSource == "all"
+                supplied = [supplied, {'EarthResponseKernel', earthRespKer, 'ForcingKernel', forcKer}];
+                % Missing Love numbers prove the SLE matrices are not rebuilt.
+                movefile(fullfile(testCase.Folder, 'LOVENUMS', 'lovenumbers-ISSM.mat'), ...
+                    fullfile(testCase.Folder, 'saved-lovenumbers.mat'));
+            end
+
+            [actual, actualStd, actualDates] = solvedegree1(args{:}, supplied{:}, ...
+                'RotationFeedback', rotation, 'SaveData', false);
+            testCase.verifyEqual(actual, expected, 'AbsTol', 2e-11);
+            testCase.verifyEqual(actualStd, expectedStd, 'AbsTol', 2e-11);
+            testCase.verifyEqual(actualDates, dates);
+            stored = load(fullfile(files.folder, files.name));
+            testCase.verifyEqual(stored.coeffs, coeffs);
+        end
+
+        function rotationCachesAreSeparate(testCase)
+            global JOINT_LOW_DEGREE_FIXTURE
+            args = solverArgs();
+            [withRotation, withStd] = solvedegree1(args{:}, 'SaveData', true);
+            [withoutRotation, withoutStd] = solvedegree1(args{:}, ...
+                'RotationFeedback', false, 'SaveData', true);
+            testCase.verifyGreaterThan(norm(withRotation - withoutRotation), 1e-8);
+            files = dir(fullfile(testCase.Folder, 'Degree1', 'new', '*.mat'));
+            dom = GeoDomain('alloceans');
+            stem = sprintf('CSRRL063_ICE6GD-Ld3_Ls3-%s', dom.Id);
+            testCase.verifyEqual(sort({files.name}), sort({[stem, '-SD.mat'], [stem, '-NRot-SD.mat']}));
+            % Remove valid source data to verify each filename is read independently.
+            JOINT_LOW_DEGREE_FIXTURE.p = [];
+            [actual, actualStd] = solvedegree1(args{:}, 'RotationFeedback', true);
+            testCase.verifyEqual(actual, withRotation);
+            testCase.verifyEqual(actualStd, withStd);
+            [actual, actualStd] = solvedegree1(args{:}, 'RotationFeedback', false);
+            testCase.verifyEqual(actual, withoutRotation);
+            testCase.verifyEqual(actualStd, withoutStd);
+        end
+
+        function uniformIgnoresRotationAndSleKernels(testCase)
+            args = solverArgs();
+            [expected, expectedStd] = solvedegree1(args{:}, 'Method', 'uniform', 'SaveData', true);
+            [actual, actualStd] = solvedegree1(args{:}, 'Method', 'uniform', ...
+                'RotationFeedback', false, 'OceanKernel', ocean(), ...
+                'EarthResponseKernel', zeros(16), 'ForcingKernel', zeros(16), 'SaveData', true);
+            testCase.verifyEqual(actual, expected);
+            testCase.verifyEqual(actualStd, expectedStd);
+            files = dir(fullfile(testCase.Folder, 'Degree1', 'new', '*.mat'));
+            testCase.verifyNumElements(files, 1);
+            testCase.verifyTrue(endsWith(files.name, '-uniform-SD.mat'));
+        end
+
+        function invalidKernelsFailBeforeCacheRead(testCase)
+            args = solverArgs();
+            solvedegree1(args{:}, 'SaveData', true);
+            names = {'OceanKernel', 'EarthResponseKernel', 'ForcingKernel'};
+            bad = {eye(9), NaN(16), complex(eye(16), eye(16)), Inf(16), ones(16, 16, 2)};
+
+            for k = 1:numel(names)
+                for j = 1:numel(bad)
+                    testCase.verifyError(@() solvedegree1(args{:}, names{k}, bad{j}), ...
+                        'ULMO:solvedegree1:InvalidKernel');
+                end
+            end
+
+            testCase.verifyError(@() solvedegree1(args{:}, 'OceanKernel', zeros(16)), ...
+                'ULMO:solvedegree1:InvalidKernel');
+            testCase.verifyError(@() solvedegree1(args{:}, 'EarthResponseKernel', eye(16)), ...
+                'ULMO:solvedegree1:IncompleteSleKernels');
+            testCase.verifyError(@() solvedegree1(args{:}, 'ForcingKernel', eye(16)), ...
+                'ULMO:solvedegree1:IncompleteSleKernels');
         end
 
         function paddedInputsIgnoreImportedUnknowns(testCase, method)
@@ -336,4 +435,9 @@ end
 
 function clearFixture()
     clear global JOINT_LOW_DEGREE_FIXTURE
+end
+
+% Default fingerprint call with synthetic degree-3 input and output in SD.
+function args = solverArgs()
+    args = {'CSR', 'RL06', 3, 3, 3, 'ICE6GD', GeoDomain('alloceans'), 'BeQuiet', true};
 end
