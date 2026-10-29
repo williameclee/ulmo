@@ -26,6 +26,8 @@
 %   HIO is not GSM: it excludes atmosphere and solid Earth and has no DEAL
 %   subtraction. One epoch demonstrates ingestion, not trend recovery.
 %   Requires the standard ULMO paths, Earth constants and ISSM Love numbers.
+%   Exact GRACE-window means are formed from cached raw samples. These can
+%   differ from the calendar-month means returned by ESM2PLMT("midmonth").
 %   ESM inputs are read from $IFILES/ESM/ESAESM2/raw/COMPONENT.
 %
 % See also
@@ -54,14 +56,14 @@ function products = esm2plmt_demo(graceFile, outputFolder, options)
     mass = struct;
     products = struct;
     for component = ["H", "I", "O"]
-        [gravity, uncertainty, dates] = esm2plmt(intervals, ...
+        [gravity, uncertainty, dates] = epochmean(intervals, graceDate, ...
             'Component', component, 'Unit', 'GRAV');
         assert(isequal(dates, datenum(graceDate)), 'ESM and GRACE epoch dates differ.');
         assert(options.Loutput <= gravity(1, end, 1), ...
             'Demo output degree must not exceed the source degree.');
         stem = fullfile(outputFolder, prefix + component + suffix);
         products.(component).nativeGRAV = savefield(stem, gravity, uncertainty, dates, "GRAV");
-        [density, uncertainty, dates] = esm2plmt(intervals, ...
+        [density, uncertainty, dates] = epochmean(intervals, graceDate, ...
             'Component', component, 'Unit', 'SD');
         mass.(component) = density;
         products.(component).nativeSD = savefield(stem, density, uncertainty, dates, "SD");
@@ -95,4 +97,22 @@ end
 function file = savetruncated(stem, field, uncertainty, dates, degree)
     nRows = (degree + 1) * (degree + 2) / 2;
     file = savefield(stem, field(:, 1:nRows, :), uncertainty(:, 1:nRows, :), dates, "SD");
+end
+
+function [plmt, uncertainty, dates] = epochmean(interval, midpoint, options)
+    arguments
+        interval (1, 2) datetime
+        midpoint (1, 1) datetime
+        options.Component (1, 1) string
+        options.Unit (1, 1) string
+    end
+    [raw, rawStd, rawDates] = esm2plmt([], [interval(1), interval(2) - hours(6)], ...
+        'Component', options.Component, 'Unit', options.Unit, 'TimeFormat', 'datetime');
+    expected = (interval(1):hours(6):interval(2) - hours(6))';
+    assert(isequal(rawDates, expected), 'ULMO:esm2plmt:IncompleteSampling', ...
+        'The cached raw data do not cover the complete GRACE interval.');
+    plmt = raw(1, :, :);
+    plmt(:, :, 3:4) = mean(raw(:, :, 3:4), 1);
+    uncertainty = rawStd(1, :, :);
+    dates = datenum(midpoint); %#ok<DATNM>
 end

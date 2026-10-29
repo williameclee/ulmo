@@ -1,4 +1,4 @@
-%% ESM2PLMTTEST - Tests interval averaging and ESM coefficient conventions.
+%% ESM2PLMTTEST - Tests raw/monthly caching and ESM coefficient conventions.
 % Synthetic fields exercise boundary selection, missing-data rejection and
 % physical unit conversion independently of the downloaded ESM samples.
 %
@@ -36,37 +36,151 @@ classdef esm2plmtTest < matlab.unittest.TestCase
             file = testCase.fixture(0, 1);
             copyfile(file, testCase.Scratch);
             range = [testCase.Start, testCase.Start + hours(6)];
-            p = esm2plmt(range, 'Component', 'H', 'Unit', 'GRAV');
+            p = esm2plmt([], range, 'Component', 'H', 'Unit', 'GRAV');
             testCase.verifyEqual(p(1, 1, 3), 1e-10);
         end
         function requiresConfiguredDataRoot(testCase)
             range = [testCase.Start, testCase.Start + hours(6)];
             setenv('IFILES', '');
-            testCase.verifyError(@() esm2plmt(range), 'ULMO:esm2plmt:MissingDataRoot');
+            testCase.verifyError(@() esm2plmt([], range), 'ULMO:esm2plmt:MissingDataRoot');
             setenv('IFILES', testCase.Scratch);
-            testCase.verifyError(@() esm2plmt(range, 'Component', 'O'), ...
+            testCase.verifyError(@() esm2plmt([], range, 'Component', 'O'), ...
                 'ULMO:esm2plmt:MissingDataFolder');
         end
-        function averageAndExclusiveBoundary(testCase)
-            % A large sample at the end belongs only to the next interval.
+        function rawTimeRangeIsInclusive(testCase)
             for k = 0:4
                 testCase.fixture(k, k + 1);
             end
-            ranges = [testCase.Start, testCase.Start + hours(12); ...
-                testCase.Start + hours(12), testCase.Start + hours(24)];
-            [p, s, dates] = esm2plmt(ranges, ...
+            range = testCase.Start + hours([6, 18]);
+            [p, s, dates] = esm2plmt([], datenum(range), ...
                 'Component', 'H', 'Unit', 'GRAV');
-            testCase.verifySize(p, [2, 6, 4]);
-            testCase.verifyEqual(p(:, 1, 3), [1.5; 3.5] * 1e-10, 'RelTol', 1e-14);
+            testCase.verifySize(p, [3, 6, 4]);
+            testCase.verifyEqual(p(:, 1, 3), [2; 3; 4] * 1e-10, 'RelTol', 1e-14);
             testCase.verifyEqual(s(:, :, 1:2), p(:, :, 1:2));
             testCase.verifyTrue(all(isnan(s(:, :, 3:4)), 'all'));
-            testCase.verifyEqual(dates, datenum(testCase.Start + hours([6; 18])));
+            testCase.verifyEqual(dates, datenum(testCase.Start + hours([6; 12; 18])));
             testCase.verifyEqual(nargout('esm2plmt'), 3);
+            cached = load(testCase.cachepath());
+            testCase.verifySize(cached.esmPlmt, [5, 6, 4]);
+        end
+        function monthlyCachePrecedesSelectionAndTruncation(testCase)
+            % Unequal month lengths and a leap day exercise true calendar bins.
+            testCase.Start = datetime(2004, 1, 1);
+            testCase.fullmonth(0, 2);
+            testCase.fullmonth(1, 7);
+            range = [datetime(2004, 2, 15), datetime(2004, 2, 16)];
+            [p, s, dates] = esm2plmt('midmonth', range, 'Component', 'H', ...
+                'Unit', 'GRAV', 'Loutput', 1, 'TimeFormat', 'datetime', ...
+                'OutputFormat', 'traditional');
+            testCase.verifySize(p, [3, 4]);
+            testCase.verifyEqual(p(:, 3), 7e-10 * (1:3)', 'RelTol', 2e-14);
+            testCase.verifyEqual(dates, datetime(2004, 2, 15, 12, 0, 0));
+            testCase.verifyTrue(all(isnan(s(:, 3:4)), 'all'));
+            cached = load(testCase.cachepath('midmonth'));
+            testCase.verifySize(cached.esmPlmt, [2, 6, 4]);
+            testCase.verifyEqual(cached.esmPlmt(:, 1, 3), [2; 7] * 1e-10, 'RelTol', 2e-14);
+            testCase.verifyEqual(cached.dates, ...
+                [datetime(2004, 1, 16, 12, 0, 0); datetime(2004, 2, 15, 12, 0, 0)]);
+            testCase.verifyEqual(sort(string(fieldnames(cached))), ...
+                sort(["dates"; "esmPlmt"; "esmStdPlmt"]));
+            raw = load(testCase.cachepath());
+            testCase.verifySize(raw.esmPlmt, [240, 6, 4]);
+            % The monthly cache remains usable without either underlying input.
+            delete(testCase.cachepath());
+            rmdir(testCase.RawFolder, 's');
+            [allFields, ~, d] = esm2plmt("midmonth", [], 'Component', 'H', 'Unit', 'GRAV', ...
+                'TimeFormat', 'datetime');
+            testCase.verifyEqual(allFields, cached.esmPlmt);
+            testCase.verifyEqual(d, cached.dates);
+        end
+        function rawCacheAvoidsSourceReads(testCase)
+            testCase.fixture(0, 1);
+            testCase.fixture(2, 3); % Raw data may have gaps.
+            p = esm2plmt([], [], 'Component', 'H', 'Unit', 'GRAV', 'Loutput', 1);
+            rmdir(testCase.RawFolder, 's');
+            full = esm2plmt([], [], 'Component', 'H', 'Unit', 'GRAV');
+            testCase.verifySize(full, [2, 6, 4]);
+            testCase.verifyEqual(p, full(:, 1:3, :));
+        end
+        function forceNewRefreshesBothCaches(testCase)
+            testCase.fullmonth(0, 1);
+            first = esm2plmt('midmonth', [], 'Component', 'H', 'Unit', 'GRAV');
+            testCase.fixture(0, 125);
+            cached = esm2plmt('midmonth', [], 'Component', 'H', 'Unit', 'GRAV');
+            testCase.verifyEqual(cached, first);
+            updated = esm2plmt('midmonth', [], 'Component', 'H', 'Unit', 'GRAV', 'ForceNew', true);
+            testCase.verifyEqual(updated(1, 1, 3), 2e-10, 'RelTol', 2e-14);
+            testCase.fixture(0, 249);
+            esm2plmt([], [], 'Component', 'H', 'Unit', 'GRAV', 'ForceNew', true);
+            testCase.verifyFalse(isfile(testCase.cachepath('midmonth')));
+            updated = esm2plmt('midmonth', [], 'Component', 'H', 'Unit', 'GRAV');
+            testCase.verifyEqual(updated(1, 1, 3), 3e-10, 'RelTol', 2e-14);
+        end
+        function saveDataFalseWritesNeitherCache(testCase)
+            testCase.fullmonth(0, 1);
+            esm2plmt('midmonth', [], 'Component', 'H', 'Unit', 'GRAV', 'SaveData', false);
+            testCase.verifyFalse(isfile(testCase.cachepath()));
+            testCase.verifyFalse(isfile(testCase.cachepath('midmonth')));
+        end
+        function monthlyUsesRawCache(testCase)
+            testCase.fullmonth(0, 3);
+            esm2plmt([], [], 'Component', 'H', 'Unit', 'GRAV');
+            rmdir(testCase.RawFolder, 's');
+            p = esm2plmt('midmonth', [], 'Component', 'H', 'Unit', 'GRAV');
+            testCase.verifyEqual(p(1, 1, 3), 3e-10, 'RelTol', 2e-14);
+        end
+        function incompleteMonthsDoNotBecomeBiasedMeans(testCase)
+            testCase.fixture(0, 100);
+            testCase.verifyWarning(@() esm2plmt('midmonth', [], 'Component', 'H', ...
+                'Unit', 'GRAV'), 'ULMO:esm2plmt:IncompleteMonth');
+            p = esm2plmt('midmonth', [], 'Component', 'H', 'Unit', 'GRAV');
+            testCase.verifyTrue(all(isnan(p(:, :, 3:4)), 'all'));
+            testCase.verifyEqual(squeeze(p(1, :, 1:2)), [0 0; 1 0; 1 1; 2 0; 2 1; 2 2]);
+        end
+        function emptySelectionRetainsOutputShape(testCase)
+            testCase.fixture(0, 1);
+            range = testCase.Start + days([2, 3]);
+            [p, s, d] = esm2plmt([], range, 'Component', 'H', 'Unit', 'GRAV', 'Loutput', 3);
+            testCase.verifySize(p, [0, 10, 4]);
+            testCase.verifySize(s, [0, 10, 4]);
+            testCase.verifySize(d, [0, 1]);
+        end
+        function forceWithoutSavingPreservesCaches(testCase)
+            testCase.fullmonth(0, 1);
+            original = esm2plmt('midmonth', [], 'Component', 'H', 'Unit', 'GRAV');
+            testCase.fixture(0, 125);
+            fresh = esm2plmt('midmonth', [], 'Component', 'H', 'Unit', 'GRAV', ...
+                'ForceNew', true, 'SaveData', false);
+            testCase.verifyEqual(fresh(1, 1, 3), 2e-10, 'RelTol', 2e-14);
+            cached = esm2plmt('midmonth', [], 'Component', 'H', 'Unit', 'GRAV');
+            testCase.verifyEqual(cached, original);
+            raw = load(testCase.cachepath());
+            testCase.verifyEqual(raw.esmPlmt(1, 1, 3), 1e-10);
+        end
+        function incompleteCacheIsRebuilt(testCase)
+            testCase.fixture(0, 2);
+            dates = testCase.Start;
+            save(testCase.cachepath(), 'dates');
+            p = esm2plmt([], [], 'Component', 'H', 'Unit', 'GRAV');
+            testCase.verifyEqual(p(1, 1, 3), 2e-10);
+            testCase.verifyEqual(numel(who('-file', testCase.cachepath())), 3);
+        end
+        function missingInteriorMonthHasNaNs(testCase)
+            testCase.fullmonth(0, 2);
+            testCase.fullmonth(2, 7);
+            testCase.verifyWarning(@() esm2plmt('midmonth', [], 'Component', 'H', ...
+                'Unit', 'GRAV'), 'ULMO:esm2plmt:IncompleteMonth');
+            [p, ~, d] = esm2plmt('midmonth', [], 'Component', 'H', 'Unit', 'GRAV', ...
+                'TimeFormat', 'datetime');
+            testCase.verifySize(p, [3, 6, 4]);
+            testCase.verifyTrue(all(isnan(p(2, :, 3:4)), 'all'));
+            testCase.verifyEqual(p([1, 3], 1, 3), [2; 7] * 1e-10, 'RelTol', 2e-14);
+            testCase.verifyEqual(d(2), datetime(2003, 2, 15));
         end
         function densityConversionPreservesLowDegrees(testCase)
             % Explicit physical factors include the CF k1 = 0.021 term.
             testCase.fixture(0, 2);
-            [p, ~] = esm2plmt(...
+            [p, ~] = esm2plmt([], ...
                 [testCase.Start, testCase.Start + hours(6)], 'Component', 'H');
             degree = [0; 1; 1; 2; 2; 2];
             love = [0; 0.021; 0.021; 0; 0; 0];
@@ -77,28 +191,25 @@ classdef esm2plmtTest < matlab.unittest.TestCase
         function formatsTruncationAndPadding(testCase)
             testCase.fixture(0, 1);
             range = [testCase.Start, testCase.Start + hours(6)];
-            [p, s, d] = esm2plmt(range, 'Component', 'H', ...
+            [p, s, d] = esm2plmt([], range, 'Component', 'H', ...
                 'Unit', 'POT', 'Loutput', 1, 'OutputFormat', 'traditional', ...
                 'TimeFormat', 'datetime');
             testCase.verifySize(p, [3, 4]);
             testCase.verifyEqual(p(:, 3), 6378137e-10 * (1:3)', 'RelTol', 1e-14);
             testCase.verifyEqual(s(:, 1:2), p(:, 1:2));
-            testCase.verifyEqual(d, testCase.Start + hours(3));
-            p = esm2plmt(range, 'Component', 'H', ...
+            testCase.verifyEqual(d, testCase.Start);
+            p = esm2plmt([], range, 'Component', 'H', ...
                 'Unit', 'GRAV', 'Loutput', 3);
             testCase.verifySize(p, [1, 10, 4]);
             testCase.verifyTrue(all(isnan(p(1, 7:10, 3:4)), 'all'));
             testCase.verifyEqual(squeeze(p(1, 7:10, 1:2)), [3, 0; 3, 1; 3, 2; 3, 3]);
         end
-        function rejectMissingAndDuplicateSamples(testCase)
+        function rejectDuplicateSamples(testCase)
             file = testCase.fixture(0, 1);
-            range = [testCase.Start, testCase.Start + hours(12)];
-            call = @() esm2plmt(range, 'Component', 'H', 'Unit', 'GRAV');
-            testCase.verifyError(call, 'ULMO:esm2plmt:IncompleteSampling');
-            testCase.fixture(1, 2);
             mkdir(fullfile(testCase.RawFolder, 'duplicate'));
             copyfile(file, fullfile(testCase.RawFolder, 'duplicate'));
-            testCase.verifyError(call, 'ULMO:esm2plmt:IncompleteSampling');
+            testCase.verifyError(@() esm2plmt([], [], 'Component', 'H', 'Unit', 'GRAV'), ...
+                'ULMO:esm2plmt:InvalidSampling');
         end
         function ignoresHeaderMetadata(testCase)
             % Header descriptions are not validated; radius still sets units.
@@ -110,25 +221,40 @@ classdef esm2plmtTest < matlab.unittest.TestCase
             testCase.rewrite(file, 'mtmshc_H_20030101_06', 'different-model-name');
             testCase.rewrite(file, 'earth_gravity_constant 3.986005D14', 'unused_key ignored');
             range = [testCase.Start, testCase.Start + hours(12)];
-            p = esm2plmt(range, 'Component', 'H', 'Unit', 'GRAV');
-            testCase.verifySize(p, [1, 6, 4]);
-            testCase.verifyEqual(p(1, 1, 3), 1.5e-10, 'RelTol', 1e-14);
-            p = esm2plmt(range, 'Component', 'H', 'Unit', 'POT');
-            testCase.verifyEqual(p(1, 1, 3), (6378137 + 2 * 6378136) * 1e-10 / 2, ...
+            p = esm2plmt([], range, 'Component', 'H', 'Unit', 'GRAV');
+            testCase.verifySize(p, [2, 6, 4]);
+            testCase.verifyEqual(p(:, 1, 3), [1; 2] * 1e-10, 'RelTol', 1e-14);
+            p = esm2plmt([], range, 'Component', 'H', 'Unit', 'POT');
+            testCase.verifyEqual(p(:, 1, 3), [6378137; 2 * 6378136] * 1e-10, ...
                 'RelTol', 1e-14);
         end
-        function rejectBadHarmonicsAndIntervals(testCase)
+        function rejectBadHarmonicsAndInputs(testCase)
             file = testCase.fixture(0, 1);
             range = [testCase.Start, testCase.Start + hours(6)];
             testCase.rewrite(file, 'gfc 2 2', 'gfc 2 1');
-            testCase.verifyError(@() esm2plmt(range, ...
+            testCase.verifyError(@() esm2plmt([], range, ...
                 'Component', 'H', 'Unit', 'GRAV'), 'ULMO:esm2plmt:InvalidCoefficients');
-            range(2) = range(2) - minutes(1);
-            testCase.verifyError(@() esm2plmt(range), ...
-                'ULMO:esm2plmt:InvalidIntervals');
+            testCase.verifyError(@() esm2plmt(hours(6)), 'ULMO:esm2plmt:InvalidTimeStep');
+            testCase.verifyError(@() esm2plmt([], [range; range]), 'ULMO:notValidTimeRange');
         end
     end
     methods (Access = private)
+        function path = cachepath(testCase, timestep)
+            if nargin < 2 || isempty(timestep)
+                name = 'ESAESM2_H_GRAV.mat';
+            else
+                name = 'ESAESM2_H_GRAV-Tmidmonth-mean.mat';
+            end
+            path = fullfile(testCase.Scratch, 'ESM', 'ESAESM2', name);
+        end
+        function fullmonth(testCase, offset, amplitude)
+            first = testCase.Start + calmonths(offset);
+            last = first + calmonths(1);
+            steps = hours(first - testCase.Start) / 6:hours(last - testCase.Start) / 6 - 1;
+            for step = steps
+                testCase.fixture(step, amplitude);
+            end
+        end
         function file = fixture(testCase, step, amplitude)
             timestamp = testCase.Start + hours(6 * step);
             timestamp.Format = 'yyyyMMdd_HH';
