@@ -56,7 +56,7 @@ interval from the same GRACE file used by the downloader:
 graceFile = string(getenv("GRACE_FILE"));
 esmFolder = string(getenv("ESM_DIR"));
 [~, ~, ~, intervals] = parsegracesourcefile(graceFile);
-[esmPlmt, esmStdPlmt, dates, metadata] = esm2plmt(esmFolder, intervals, ...
+[esmPlmt, esmStdPlmt, dates] = esm2plmt(esmFolder, intervals, ...
     "Component", "O", "Unit", "SD", "Loutput", 60);
 ```
 
@@ -71,7 +71,6 @@ days within that window.
 | `esmPlmt` | N-by-M-by-4, columns degree, order, C and S |
 | `esmStdPlmt` | Same labels; coefficient uncertainties are NaN |
 | `dates` | N-by-1 MATLAB datenums at interval midpoints |
-| `metadata` | Source files, sampling, interval and reference/conversion settings |
 
 M is `(Loutput+1)*(Loutput+2)/2`: 16,471 rows at degree 180 or 1,891 at degree
 60. Omitting `Loutput` retains the native degree. A larger requested degree pads
@@ -84,8 +83,9 @@ conversion data. `SD` uses the existing `convertgravity` implementation, source
 radius, project density of 5517 kg/m³, and the selected load Love numbers
 (default ISSM, with CF degree 1). Its units are kg/m², numerically equal to mm
 of fresh water. `POT` follows the existing radius-times-Stokes convention.
-File GM/radius and fully normalized harmonics are validated and retained;
-mixed metadata and missing/duplicate harmonic rows fail.
+The source radius is read for unit conversion. Header metadata are not checked
+or returned; the input is assumed to follow ESAESM2's fully normalized
+coefficient convention. Missing or duplicate harmonic rows still fail.
 
 ## Save and plot components
 
@@ -97,8 +97,9 @@ products = esm2plmt_demo(graceFile, esmFolder, fullfile(esmFolder, "processed"))
 
 This saves native GRAV fields for H/I/O, native and degree-60 SD fields for
 H/I/O/HI/HIO, and a two-column PNG comparing native with truncated H/I/O fields.
-All MAT files contain the four outputs above. `HI` and `HIO` add coefficient
-columns while preserving one set of harmonic labels. Use `Loutput=45` to choose
+All MAT files contain the three outputs above, without a metadata variable.
+`HI` and `HIO` add coefficient columns while preserving one set of harmonic
+labels. Use `Loutput=45` to choose
 a different truncated bandwidth or `MakeFigure=false` to skip plotting.
 
 The figure synthesizes the complete fields on a 0.5-degree grid; it does not
@@ -134,11 +135,12 @@ data. Plotting does not change the coefficients or the source data.
 ## Validation
 
 ```sh
-python3 -B -m unittest discover -s unittests -p esmDownloadTest.py
+python3 -B -m pytest unittests/test_esm_download.py
 python3 data/verify_esm_epoch.py "$ESM_DIR" --output "$ESM_DIR/verification"
 ```
 
-The verifier checks file hashes, complete six-hour sampling and all degree-180
+The downloader tests require pytest and use its temporary-directory and
+monkeypatch fixtures. The verifier checks file hashes, complete six-hour sampling and all degree-180
 harmonics, and independently averages each component using Python's standard
 library. It writes `reference_COMPONENT.bin` as little-endian float64 values,
 with C/S interleaved in ascending degree/order, and `raw_validation.json`.
