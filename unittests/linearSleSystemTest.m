@@ -216,14 +216,14 @@ classdef linearSleSystemTest < matlab.unittest.TestCase
             end
         end
 
-        function suppliedKernelsSkipConstructionAndCache(testCase, rotation, kernelSource)
+        function suppliedKernelsRespectCacheAndSkipConstruction(testCase, rotation, kernelSource)
             global JOINT_LOW_DEGREE_FIXTURE
             args = solverArgs();
             [expected, expectedStd, dates] = solvedegree1(args{:}, ...
                 'RotationFeedback', rotation, 'SaveData', true);
             files = dir(fullfile(testCase.Folder, 'Degree1', 'new', '*.mat'));
             testCase.assertNumElements(files, 1);
-            % A sentinel cache must never hide explicitly supplied matrices.
+            % A sentinel cache distinguishes loading from explicit recomputation.
             coeffs = expected + 100;
             coeffStds = expectedStd + 100;
             save(fullfile(files.folder, files.name), 'coeffs', 'coeffStds', 'dates');
@@ -244,8 +244,13 @@ classdef linearSleSystemTest < matlab.unittest.TestCase
                     fullfile(testCase.Folder, 'saved-lovenumbers.mat'));
             end
 
-            [actual, actualStd, actualDates] = solvedegree1(args{:}, supplied{:}, ...
+            [cached, cachedStd, cachedDates] = solvedegree1(args{:}, supplied{:}, ...
                 'RotationFeedback', rotation, 'SaveData', false);
+            testCase.verifyEqual(cached, coeffs);
+            testCase.verifyEqual(cachedStd, coeffStds);
+            testCase.verifyEqual(cachedDates, dates);
+            [actual, actualStd, actualDates] = solvedegree1(args{:}, supplied{:}, ...
+                'RotationFeedback', rotation, 'ForceNew', true, 'SaveData', false);
             testCase.verifyEqual(actual, expected, 'AbsTol', 2e-11);
             testCase.verifyEqual(actualStd, expectedStd, 'AbsTol', 2e-11);
             testCase.verifyEqual(actualDates, dates);
@@ -279,7 +284,8 @@ classdef linearSleSystemTest < matlab.unittest.TestCase
             [expected, expectedStd] = solvedegree1(args{:}, 'Method', 'uniform', 'SaveData', true);
             [actual, actualStd] = solvedegree1(args{:}, 'Method', 'uniform', ...
                 'RotationFeedback', false, 'OceanKernel', ocean(), ...
-                'EarthResponseKernel', zeros(16), 'ForcingKernel', zeros(16), 'SaveData', true);
+                'EarthResponseKernel', zeros(16), 'ForcingKernel', zeros(16), ...
+                'ForceNew', true, 'SaveData', true);
             testCase.verifyEqual(actual, expected);
             testCase.verifyEqual(actualStd, expectedStd);
             files = dir(fullfile(testCase.Folder, 'Degree1', 'new', '*.mat'));
@@ -287,9 +293,10 @@ classdef linearSleSystemTest < matlab.unittest.TestCase
             testCase.verifyTrue(endsWith(files.name, '-uniform-SD.mat'));
         end
 
-        function invalidKernelsFailBeforeCacheRead(testCase)
+        function invalidKernelsFailOnRecomputation(testCase)
             args = solverArgs();
             solvedegree1(args{:}, 'SaveData', true);
+            args = [args, {'ForceNew', true}];
             names = {'OceanKernel', 'EarthResponseKernel', 'ForcingKernel'};
             bad = {eye(9), NaN(16), complex(eye(16), eye(16)), Inf(16), ones(16, 16, 2)};
 

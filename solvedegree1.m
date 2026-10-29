@@ -108,10 +108,10 @@
 %       Size: (K, 2).
 %
 % Notes
-%   Explicitly supplied kernels bypass coefficient-cache reads. SaveData still
-%   controls writes to the filename for the selected settings. Matrix contents
-%   cannot establish their ocean or rotation provenance: the caller must supply
-%   matching kernels, or use SaveData=false for custom physical settings.
+%   Supplied kernels are assumed to match those used for cached coefficients.
+%   Existing coefficients are loaded normally unless ForceNew=true. Kernels
+%   are validated and used only when coefficients must be computed. SaveData
+%   controls writes to the filename for the selected settings.
 %
 %   Match the selected ocean coefficients of the observed load and SLE:
 %       D = EU^T * O * A^(-1) * KF * (I - O),
@@ -183,7 +183,7 @@ function varargout = solvedegree1(varargin)
 
     vars = {'coeffs', 'coeffStds', 'dates'};
 
-    if ~forceNew && ~solveOpts.HasKernels && exist(dataPath, 'file') && ...
+    if ~forceNew && exist(dataPath, 'file') && ...
             all(ismember(vars, who('-file', dataPath)))
         data = load(dataPath, vars{:});
 
@@ -227,6 +227,7 @@ function [coeffs, coeffStds, dates] = solvedegree1Core( ...
     kerOrder = kernelorder(Lsle);
 
     %% Data and kernel preparation
+    validatekernels(solveOpts, Lsle);
     [sdPlmt, sdStdPlmt, giaPlmt, dates] = ...
         preparedata(prod, Lused, Lsle, giaMdl, coeffLocs, beQuiet);
 
@@ -410,9 +411,6 @@ function varargout = parseinputs(inputs)
         'OceanKernel', ip.Results.OceanKernel, ...
         'EarthResponseKernel', ip.Results.EarthResponseKernel, ...
         'ForcingKernel', ip.Results.ForcingKernel);
-    solveOpts.HasKernels = ~isempty(solveOpts.OceanKernel) || ...
-        ~isempty(solveOpts.EarthResponseKernel) || ~isempty(solveOpts.ForcingKernel);
-    validatekernels(solveOpts, Lsle);
 
     if ~isempty(regexp(lower(giaMdl), '^ice[-]?6g[_-]?d$', 'once'))
         giaMdl = 'ICE6GD';
@@ -428,7 +426,7 @@ function varargout = parseinputs(inputs)
           forceNew, saveData, beQuiet, callChain};
 end
 
-% Validate caller-supplied matrices before reading any coefficient cache.
+% Validate caller-supplied matrices when computing coefficients.
 function validatekernels(options, L)
     names = {'OceanKernel', 'EarthResponseKernel', 'ForcingKernel'};
     nCoeffs = (L + 1) ^ 2;
