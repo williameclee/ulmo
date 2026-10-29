@@ -9,6 +9,9 @@
 %       Ltruncation, Lsle, GiaModel, OceanDomain)
 %   [coeffs, coeffStds, dates, gracePlmt, coeffLocs] = solvedegree1(__)
 %   [coeffs, coeffStds, dates] = solvedegree1(__, "IncludeC21S21", true)
+%   [coeffs, coeffStds, dates] = solvedegree1(__, RotationFeedback=false)
+%   [coeffs, coeffStds, dates] = solvedegree1(__, OceanKernel=O, ...
+%       EarthResponseKernel=G, ForcingKernel=F, RotationFeedback=false)
 %
 % Input arguments
 %   Pcenter (optional) - GRACE data centre.
@@ -39,6 +42,25 @@
 %   Method (name-value) - Method used for the ocean constraint.
 %       'fingerprint': use the elastic SLE; 'uniform': use a uniform ocean load.
 %       Default method: 'fingerprint'.
+%   RotationFeedback (name-value) - Whether to include rotational feedback.
+%       Applies to Method='fingerprint'; ignored for Method='uniform'.
+%       Results without rotation use the filename suffix -NRot.
+%       Default option: true.
+%   OceanKernel (name-value) - Precomputed ocean-localisation matrix.
+%       Must match OceanDomain and Lsle, in kernelorder(Lsle) order.
+%       Size: ((Lsle+1)^2, (Lsle+1)^2). Unit: dimensionless.
+%       Default kernel: [] (compute or load with KERNELCP_NEW).
+%   EarthResponseKernel (name-value) - Precomputed elastic Earth response.
+%       Supply together with ForcingKernel, as returned by PREPARESLEKERNELS
+%       for the same ocean kernel, Lsle and RotationFeedback, using its
+%       default CF frame and ISSM Love numbers. Ignored for Method='uniform'.
+%       Size and ordering: same as OceanKernel. Unit: dimensionless.
+%       Default kernel: [] (construct both SLE kernels).
+%   ForcingKernel (name-value) - Precomputed mass-constrained forcing matrix.
+%       Supply together with EarthResponseKernel; see its matching requirements.
+%       Ignored for Method='uniform'.
+%       Size and ordering: same as OceanKernel. Unit: dimensionless.
+%       Default kernel: [] (construct both SLE kernels).
 %   TimeRange (name-value) - Inclusive start and end dates for the output.
 %       Size: (1, 2) or (2, 1).
 %       Default range: [] (all dates).
@@ -86,6 +108,11 @@
 %       Size: (K, 2).
 %
 % Notes
+%   Explicitly supplied kernels bypass coefficient-cache reads. SaveData still
+%   controls writes to the filename for the selected settings. Matrix contents
+%   cannot establish their ocean or rotation provenance: the caller must supply
+%   matching kernels, or use SaveData=false for custom physical settings.
+%
 %   Match the selected ocean coefficients of the observed load and SLE:
 %       D = EU^T * O * A^(-1) * KF * (I - O),
 %       A = I - KS,
@@ -135,13 +162,13 @@
 %       doi: 10.1002/2016JB013073.
 %
 % See also
-%   GRACE2PLMT_NEW, GRACE2FINGERPRINT, SOLVESLE
+%   GRACE2PLMT_NEW, GRACE2FINGERPRINT, SOLVESLE, PREPARESLEKERNELS, PREPARELOWDEGREEMAP
 %
 % Created by
 %   2025/03/18, En-Chi Lee (williameclee@arizona.edu)
 %
 % Last modified
-%   2026/10/28, En-Chi Lee (williameclee@arizona.edu)
+%   2026/10/29, En-Chi Lee (williameclee@arizona.edu)
 
 function varargout = solvedegree1(varargin)
     %% Initialisation
@@ -151,11 +178,12 @@ function varargout = solvedegree1(varargin)
          forceNew, saveData, beQuiet, callChain] = ...
         parseinputs(varargin);
 
-    dataPath = getoutputfile(prod, giaMdl, inclC20, inclC30, inclCS21, Lused, Lsle, ocnDom, mthd);
+    dataPath = getoutputfile(prod, giaMdl, inclC20, inclC30, inclCS21, ...
+        Lused, Lsle, ocnDom, mthd, solveOpts.RotationFeedback);
 
     vars = {'coeffs', 'coeffStds', 'dates'};
 
-    if ~forceNew && exist(dataPath, 'file') && ...
+    if ~forceNew && ~solveOpts.HasKernels && exist(dataPath, 'file') && ...
             all(ismember(vars, who('-file', dataPath)))
         data = load(dataPath, vars{:});
 
@@ -202,10 +230,20 @@ function [coeffs, coeffStds, dates] = solvedegree1Core( ...
     [sdPlmt, sdStdPlmt, giaPlmt, dates] = ...
         preparedata(prod, Lused, Lsle, giaMdl, coeffLocs, beQuiet);
 
-    ocnKer = kernelcp_new(Lsle, ocnDom, "BeQuiet", beQuiet);
+    ocnKer = solveOpts.OceanKernel;
+
+    if isempty(ocnKer)
+        ocnKer = kernelcp_new(Lsle, ocnDom, "BeQuiet", beQuiet);
+    end
 
     if strcmp(mthd, 'fingerprint')
-        [earthRespKer, forcKer] = prepareslekernels(Lsle, ocnKer);
+        earthRespKer = solveOpts.EarthResponseKernel;
+        forcKer = solveOpts.ForcingKernel;
+
+        if isempty(earthRespKer)
+            [earthRespKer, forcKer] = prepareslekernels(Lsle, ocnKer, ...
+                RotationFeedback = solveOpts.RotationFeedback);
+        end
     else
         earthRespKer = [];
         forcKer = [];
@@ -321,6 +359,11 @@ function varargout = parseinputs(inputs)
         @(x) ischar(validatestring(x, {'GRAV', 'POT', 'SD'})));
     valdLimit = @(x) isnumeric(x) && isscalar(x) && isfinite(x) && x >= 1 && x == fix(x);
     valdTol = @(x) isnumeric(x) && isscalar(x) && isfinite(x) && x >= 0;
+    addParameter(ip, 'RotationFeedback', true, ...
+        @(x) (islogical(x) || isnumeric(x)) && isscalar(x) && isreal(x) && ismember(x, [0, 1]));
+    addParameter(ip, 'OceanKernel', [], @isnumeric);
+    addParameter(ip, 'EarthResponseKernel', [], @isnumeric);
+    addParameter(ip, 'ForcingKernel', [], @isnumeric);
     addParameter(ip, 'RelativeTolerance', 1e-12, ...
         @(x) isnumeric(x) && isscalar(x) && isfinite(x) && x > 0 && x < 1);
     addParameter(ip, 'Tolerance', 1e-6, valdTol);
@@ -362,7 +405,14 @@ function varargout = parseinputs(inputs)
     end
 
     solveOpts = struct('RelativeTolerance', ip.Results.RelativeTolerance, ...
-        'Tolerance', ip.Results.Tolerance, 'SleMaxIter', ip.Results.SleMaxIter);
+        'Tolerance', ip.Results.Tolerance, 'SleMaxIter', ip.Results.SleMaxIter, ...
+        'RotationFeedback', logical(ip.Results.RotationFeedback), ...
+        'OceanKernel', ip.Results.OceanKernel, ...
+        'EarthResponseKernel', ip.Results.EarthResponseKernel, ...
+        'ForcingKernel', ip.Results.ForcingKernel);
+    solveOpts.HasKernels = ~isempty(solveOpts.OceanKernel) || ...
+        ~isempty(solveOpts.EarthResponseKernel) || ~isempty(solveOpts.ForcingKernel);
+    validatekernels(solveOpts, Lsle);
 
     if ~isempty(regexp(lower(giaMdl), '^ice[-]?6g[_-]?d$', 'once'))
         giaMdl = 'ICE6GD';
@@ -378,9 +428,50 @@ function varargout = parseinputs(inputs)
           forceNew, saveData, beQuiet, callChain};
 end
 
+% Validate caller-supplied matrices before reading any coefficient cache.
+function validatekernels(options, L)
+    names = {'OceanKernel', 'EarthResponseKernel', 'ForcingKernel'};
+    nCoeffs = (L + 1) ^ 2;
+
+    for k = 1:numel(names)
+        matrix = options.(names{k});
+
+        if isempty(matrix)
+            continue
+        end
+
+        if ~isreal(matrix) || ~isequal(size(matrix), [nCoeffs, nCoeffs])
+            error('ULMO:solvedegree1:InvalidKernel', ...
+                '%s must be a real (Lsle+1)^2 by (Lsle+1)^2 matrix.', names{k});
+        end
+
+        % Bound validation memory for dense high-degree ocean kernels.
+        for first = 1:256:nCoeffs
+
+            if any(~isfinite(matrix(:, first:min(first + 255, nCoeffs))), 'all')
+                error('ULMO:solvedegree1:InvalidKernel', ...
+                    '%s must contain only finite values.', names{k});
+            end
+
+        end
+
+    end
+
+    if ~isempty(options.OceanKernel) && options.OceanKernel(1, 1) <= 0
+        error('ULMO:solvedegree1:InvalidKernel', ...
+        'OceanKernel must have positive ocean area in (1,1).');
+    end
+
+    if xor(isempty(options.EarthResponseKernel), isempty(options.ForcingKernel))
+        error('ULMO:solvedegree1:IncompleteSleKernels', ...
+        'Supply EarthResponseKernel and ForcingKernel together.');
+    end
+
+end
+
 % Get the input and output file names
 function outPath = getoutputfile( ...
-        prod, giaMdl, inclC20, inclC30, inclC21S21, Lused, Lsle, ocnDom, mthd)
+        prod, giaMdl, inclC20, inclC30, inclC21S21, Lused, Lsle, ocnDom, mthd, doRotation)
     outFolder = fullfile(getenv('GRACEDATA'), 'Degree1', 'new');
 
     if ~exist(outFolder, 'dir')
@@ -408,6 +499,11 @@ function outPath = getoutputfile( ...
     switch mthd
         case 'fingerprint'
             mthdFlag = '';
+
+            if ~doRotation
+                mthdFlag = '-NRot';
+            end
+
         case 'uniform'
             mthdFlag = '-uniform';
     end
