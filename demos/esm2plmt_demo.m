@@ -21,7 +21,7 @@
 %       have nativeSD and truncatedSD. Figure path is returned when generated.
 %
 % Output file content
-%   esmPlmt, esmStdPlmt, dates, metadata - See ESM2PLMT.
+%   esmPlmt, esmStdPlmt, dates - See ESM2PLMT.
 %
 % Notes
 %   HIO is not GSM: it excludes atmosphere and solid Earth and has no DEAL
@@ -52,45 +52,35 @@ function products = esm2plmt_demo(graceFile, esmFolder, outputFolder, options)
     stamp = string(intervals, 'yyyyMMdd_HH');
     prefix = "ESAESM2_";
     suffix = "_" + stamp(1) + "_" + stamp(2);
-    [~, graceName, extension] = fileparts(graceFile);
     mass = struct;
-    info = struct;
     products = struct;
     for component = ["H", "I", "O"]
-        [gravity, uncertainty, dates, metadata] = esm2plmt(esmFolder, intervals, ...
+        [gravity, uncertainty, dates] = esm2plmt(esmFolder, intervals, ...
             'Component', component, 'Unit', 'GRAV');
         assert(isequal(dates, datenum(graceDate)), 'ESM and GRACE epoch dates differ.');
-        assert(options.Loutput <= metadata.sourceDegree, ...
+        assert(options.Loutput <= gravity(1, end, 1), ...
             'Demo output degree must not exceed the source degree.');
-        metadata.graceSource = graceName + extension;
         stem = fullfile(outputFolder, prefix + component + suffix);
-        products.(component).nativeGRAV = savefield(stem, gravity, uncertainty, dates, metadata);
-        density = convertgravity(gravity, 'GRAV', 'SD', ...
-            metadata.gravityParam, metadata.equatorRadius, 'LoveNumSource', 'ISSM');
-        metadata.unit = "SD";
+        products.(component).nativeGRAV = savefield(stem, gravity, uncertainty, dates, "GRAV");
+        [density, uncertainty, dates] = esm2plmt(esmFolder, intervals, ...
+            'Component', component, 'Unit', 'SD');
         mass.(component) = density;
-        info.(component) = metadata;
-        products.(component).nativeSD = savefield(stem, density, uncertainty, dates, metadata);
+        products.(component).nativeSD = savefield(stem, density, uncertainty, dates, "SD");
         products.(component).truncatedSD = savetruncated(stem, density, uncertainty, ...
-            dates, metadata, options.Loutput);
+            dates, options.Loutput);
     end
     for component = ["HI", "HIO"]
         density = mass.H;
         density(:, :, 3:4) = mass.H(:, :, 3:4) + mass.I(:, :, 3:4);
-        inputs = [products.H.nativeSD, products.I.nativeSD];
         if component == "HIO"
             density(:, :, 3:4) = density(:, :, 3:4) + mass.O(:, :, 3:4);
-            inputs(end + 1) = products.O.nativeSD;
         end
-        metadata = rmfield(info.H, {'files', 'sampleDates'});
-        metadata.component = component;
-        metadata.componentFiles = inputs;
         uncertainty = density;
         uncertainty(:, :, 3:4) = NaN;
         stem = fullfile(outputFolder, prefix + component + suffix);
-        products.(component).nativeSD = savefield(stem, density, uncertainty, dates, metadata);
+        products.(component).nativeSD = savefield(stem, density, uncertainty, dates, "SD");
         products.(component).truncatedSD = savetruncated(stem, density, uncertainty, ...
-            dates, metadata, options.Loutput);
+            dates, options.Loutput);
     end
     if options.MakeFigure
         products.figure = fullfile(outputFolder, "ESAESM2" + suffix + ".png");
@@ -98,13 +88,12 @@ function products = esm2plmt_demo(graceFile, esmFolder, outputFolder, options)
     end
 end
 
-function file = savefield(stem, esmPlmt, esmStdPlmt, dates, metadata)
-    file = stem + "_L" + metadata.outputDegree + "_" + metadata.unit + ".mat";
-    save(file, 'esmPlmt', 'esmStdPlmt', 'dates', 'metadata');
+function file = savefield(stem, esmPlmt, esmStdPlmt, dates, unit)
+    file = stem + "_L" + esmPlmt(1, end, 1) + "_" + unit + ".mat";
+    save(file, 'esmPlmt', 'esmStdPlmt', 'dates');
 end
 
-function file = savetruncated(stem, field, uncertainty, dates, metadata, degree)
+function file = savetruncated(stem, field, uncertainty, dates, degree)
     nRows = (degree + 1) * (degree + 2) / 2;
-    metadata.outputDegree = degree;
-    file = savefield(stem, field(:, 1:nRows, :), uncertainty(:, 1:nRows, :), dates, metadata);
+    file = savefield(stem, field(:, 1:nRows, :), uncertainty(:, 1:nRows, :), dates, "SD");
 end

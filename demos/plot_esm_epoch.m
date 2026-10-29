@@ -36,25 +36,23 @@ function plot_esm_epoch(products, outputFile, options)
     variants = ["nativeSD", "truncatedSD"];
     fields = cell(3, 2);
     degrees = zeros(3, 2);
-    referenceInterval = [];
+    referenceDate = [];
     for row = 1:3
         for column = 1:2
             data = load(products.(components(row)).(variants(column)));
-            assert(size(data.esmPlmt, 1) == 1 && data.metadata.outputFormat == "timefirst" ...
-                && data.metadata.unit == "SD" && data.metadata.component == components(row), ...
+            assert(size(data.esmPlmt, 1) == 1 && size(data.esmPlmt, 3) == 4 && ...
+                isscalar(data.dates), ...
                 'Expected one timefirst SD epoch of the requested component.');
-            if isempty(referenceInterval)
-                referenceInterval = data.metadata.intervals;
-                sampleCount = data.metadata.sampleCounts;
+            if isempty(referenceDate)
+                referenceDate = data.dates;
             else
-                assert(isequal(data.metadata.intervals, referenceInterval) && ...
-                    isequal(data.metadata.sampleCounts, sampleCount), 'ESM intervals differ.');
+                assert(isequal(data.dates, referenceDate), 'ESM epoch dates differ.');
             end
             coefficients = reshape(data.esmPlmt, [], 4);
             [fields{row, column}, lon, lat] = plm2xyz(coefficients, ...
                 0.5, [-180, 90, 180, -90], 'BeQuiet', true);
             assert(all(isfinite(fields{row, column}), 'all'));
-            degrees(row, column) = data.metadata.outputDegree;
+            degrees(row, column) = coefficients(end, 1);
         end
     end
     coast = load('coastlines');
@@ -63,9 +61,8 @@ function plot_esm_epoch(products, outputFile, options)
     annotation(figureHandle, 'textbox', [0.02, 0.956, 0.96, 0.04], ...
         'String', 'ESAESM2  |  Component mass anomalies', 'FontSize', 23, 'FontWeight', 'bold', ...
         'EdgeColor', 'none', 'HorizontalAlignment', 'center');
-    intervalText = string(referenceInterval, 'dd MMM yyyy HH:mm');
-    caption = "GRACE interval: " + intervalText(1) + " – " + intervalText(2) + ...
-        " UTC  |  " + sampleCount + " six-hour samples per component" + newline + ...
+    epoch = datetime(referenceDate, 'ConvertFrom', 'datenum');
+    caption = "Epoch midpoint: " + string(epoch, 'dd MMM yyyy HH:mm') + " UTC" + newline + ...
         "Mean mass anomalies, not trends  |  Equivalent water height [mm]";
     annotation(figureHandle, 'textbox', [0.02, 0.904, 0.96, 0.05], 'String', caption, ...
         'FontSize', 13, 'EdgeColor', 'none', 'HorizontalAlignment', 'center');

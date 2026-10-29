@@ -3,7 +3,7 @@
 % the same coefficient layout, units and date conventions as GRACE2PLMT_NEW.
 %
 % Syntax
-%   [esmPlmt, esmStdPlmt, dates, metadata] = esm2plmt(folder, intervals)
+%   [esmPlmt, esmStdPlmt, dates] = esm2plmt(folder, intervals)
 %   [esmPlmt, esmStdPlmt, dates] = esm2plmt(folder, intervals, ...
 %       "Component", "H", "Unit", "GRAV", "Loutput", 60)
 %
@@ -36,17 +36,17 @@
 %   esmStdPlmt - Same layout, with NaN uncertainties and valid degree/order.
 %       ESAESM2 supplies no formal uncertainties; NaN does not mean zero error.
 %   dates - Interval midpoints, size (N, 1), in TimeFormat.
-%   metadata - Source files, timestamps, intervals, reference parameters,
-%       sampling, normalization and conversion settings for reproducibility.
 %
 % Notes
 %   Uses an arithmetic mean of all six-hour samples in [start, end).
-%   Missing or duplicate samples, incomplete harmonics and mixed reference
-%   parameters fail. This is an interval match, not GRACE orbit weighting.
+%   Missing or duplicate samples and incomplete harmonics fail.
+%   This is an interval match, not GRACE orbit weighting.
 %   ESM fields are anomalies. No WGS84 subtraction, demeaning, low-degree
 %   replacement, de-aliasing, GIA correction or filtering is applied.
-%   Component C00 and degree 1 are preserved. Source GM/radius are retained;
-%   matching the layout does not imply the same physical signal as GSM.
+%   Component C00 and degree 1 are preserved. The source radius is read for
+%   unit conversion; header metadata are not checked or returned. Inputs are
+%   assumed to follow the fully normalized ESAESM2 coefficient convention.
+%   Matching the layout does not imply the same physical signal as GSM.
 %   SD uses the same density (5517 kg/m^3) and conversion as GRACE2PLMT_NEW.
 %   Selecting ISSM ensures pipeline consistency, not an exact inversion of
 %   the Love-number spectrum originally used to construct ESAESM2.
@@ -61,7 +61,7 @@
 % Created by
 %   2026/10/29
 
-function [esmPlmt, esmStdPlmt, dates, metadata] = esm2plmt(folder, intervals, options)
+function [esmPlmt, esmStdPlmt, dates] = esm2plmt(folder, intervals, options)
     arguments (Input)
         folder (1, 1) string {mustBeFolder}
         intervals (:, 2) datetime
@@ -99,16 +99,7 @@ function [esmPlmt, esmStdPlmt, dates, metadata] = esm2plmt(folder, intervals, op
     end
 
     nEpochs = size(intervals, 1);
-    metadata = struct('dataset', "ESAESM2", 'component', component, ...
-        'intervals', intervals, 'endExclusive', true, 'samplingHours', 6, ...
-        'normalization', "fully_normalized", 'frame', "CF", ...
-        'unit', options.Unit, 'loveNumSource', options.LoveNumSource, ...
-        'earthDensity', 5517, 'outputFormat', options.OutputFormat, ...
-        'timeFormat', options.TimeFormat, 'uncertaintyAvailable', false);
-    metadata.files = cell(nEpochs, 1);
-    metadata.sampleDates = cell(nEpochs, 1);
-    metadata.sampleCounts = zeros(nEpochs, 1);
-    reference = [];
+    sourceLabels = [];
     for iEpoch = 1:nEpochs
         expected = (intervals(iEpoch, 1):hours(6):intervals(iEpoch, 2) - hours(6))';
         ids = find(fileDates >= intervals(iEpoch, 1) & fileDates < intervals(iEpoch, 2));
@@ -119,10 +110,10 @@ function [esmPlmt, esmStdPlmt, dates, metadata] = esm2plmt(folder, intervals, op
         paths = string(fullfile({files(ids).folder}, {files(ids).name}))';
         total = [];
         for k = 1:numel(ids)
-            [plm, header] = readesmfile(paths(k));
-            if isempty(reference)
-                reference = header;
-                nativeDegree = header.maxDegree;
+            [plm, equatorRadius] = readesmfile(paths(k));
+            if isempty(sourceLabels)
+                sourceLabels = plm(:, 1:2);
+                nativeDegree = plm(end, 1);
                 outDegree = options.Loutput;
                 if isempty(outDegree)
                     outDegree = nativeDegree;
@@ -132,13 +123,13 @@ function [esmPlmt, esmStdPlmt, dates, metadata] = esm2plmt(folder, intervals, op
                 esmPlmt = nan(nEpochs, nRows, 4);
                 esmPlmt(:, :, 1:2) = repmat(reshape(labels, 1, nRows, 2), nEpochs, 1, 1);
                 esmStdPlmt = esmPlmt;
-                metadata.sourceDegree = nativeDegree;
-                metadata.outputDegree = outDegree;
-                metadata.gravityParam = header.gravityParam;
-                metadata.equatorRadius = header.equatorRadius;
             else
-                assert(isequal(header, reference), 'ULMO:esm2plmt:MixedMetadata', ...
-                    'ESM degree, normalization or reference parameters differ: %s', paths(k));
+                assert(isequal(plm(:, 1:2), sourceLabels), ...
+                    'ULMO:esm2plmt:InvalidCoefficients', 'Harmonic rows differ: %s', paths(k));
+            end
+            if options.Unit ~= "GRAV"
+                plm = convertgravity(plm, 'GRAV', options.Unit, ...
+                    'EquatorRadius', equatorRadius, 'LoveNumSource', options.LoveNumSource);
             end
             if isempty(total)
                 total = zeros(size(plm, 1), 2);
@@ -146,16 +137,8 @@ function [esmPlmt, esmStdPlmt, dates, metadata] = esm2plmt(folder, intervals, op
             total = total + plm(:, 3:4);
         end
         plm(:, 3:4) = total / numel(ids);
-        if options.Unit ~= "GRAV"
-            plm = convertgravity(plm, 'GRAV', options.Unit, ...
-                reference.gravityParam, reference.equatorRadius, ...
-                'LoveNumSource', options.LoveNumSource);
-        end
         nCopy = min(size(plm, 1), size(esmPlmt, 2));
         esmPlmt(iEpoch, 1:nCopy, 3:4) = reshape(plm(1:nCopy, 3:4), 1, nCopy, 2);
-        metadata.files{iEpoch} = paths;
-        metadata.sampleDates{iEpoch} = actual;
-        metadata.sampleCounts(iEpoch) = numel(ids);
     end
     dates = intervals(:, 1) + (intervals(:, 2) - intervals(:, 1)) / 2;
     if options.TimeFormat == "datenum"
@@ -167,45 +150,24 @@ function [esmPlmt, esmStdPlmt, dates, metadata] = esm2plmt(folder, intervals, op
     end
 end
 
-function [plm, header] = readesmfile(path)
+function [plm, equatorRadius] = readesmfile(path)
     contents = fileread(path);
     endHeader = regexp(contents, '(?m)^end_of_head[^\r\n]*\r?\n', 'end', 'once');
     assert(~isempty(endHeader), 'ULMO:esm2plmt:InvalidHeader', ...
         'Missing end_of_head in %s', path);
-    head = contents(1:endHeader);
-    normalization = headertext(head, 'norm');
-    assert(strcmp(normalization, 'fully_normalized') && ...
-        strcmp(headertext(head, 'product_type'), 'gravity_field') && ...
-        strcmp(headertext(head, 'error'), 'no'), 'ULMO:esm2plmt:InvalidHeader', ...
-        'Expected fully normalized ESAESM2 gravity coefficients without formal errors.');
-    [~, stem] = fileparts(path);
-    assert(strcmp(headertext(head, 'modelname'), stem), ...
-        'ULMO:esm2plmt:InvalidHeader', 'Model name does not match filename: %s', path);
-    header.gravityParam = headernumber(head, 'earth_gravity_constant');
-    header.equatorRadius = headernumber(head, 'radius');
-    header.maxDegree = headernumber(head, 'max_degree');
-    header.normalization = normalization;
-    assert(header.gravityParam > 0 && header.equatorRadius > 0 && ...
-        header.maxDegree >= 0 && header.maxDegree == fix(header.maxDegree), ...
-        'ULMO:esm2plmt:InvalidHeader', 'Invalid reference constants or degree.');
+    radiusText = regexp(contents(1:endHeader), '(?m)^radius[ \t]+(\S+)', 'tokens', 'once');
+    equatorRadius = [];
+    if ~isempty(radiusText)
+        equatorRadius = str2double(regexprep(radiusText{1}, '[dD]', 'E'));
+    end
     data = regexprep(contents(endHeader + 1:end), '[dD]', 'E');
     columns = textscan(data, '%s%f%f%f%f', 'ReturnOnError', false);
     plm = [columns{2:5}];
     plm = sortrows(plm, [1, 2]);
-    assert(all(strcmp(columns{1}, 'gfc')) && all(isfinite(plm), 'all') && ...
-        isequal(plm(:, 1:2), harmoniclabels(header.maxDegree)), ...
+    assert(~isempty(plm) && all(strcmp(columns{1}, 'gfc')) && all(isfinite(plm), 'all') && ...
+        all(plm(:, 1:2) >= 0 & plm(:, 1:2) == fix(plm(:, 1:2)), 'all') && ...
+        isequal(plm(:, 1:2), harmoniclabels(plm(end, 1))), ...
         'ULMO:esm2plmt:InvalidCoefficients', 'Incomplete or invalid harmonics in %s', path);
-end
-
-function value = headertext(head, key)
-    match = regexp(head, ['(?m)^', key, '[ \t]+(\S+)[ \t]*\r?$'], 'tokens', 'once');
-    assert(~isempty(match), 'ULMO:esm2plmt:InvalidHeader', 'Missing header key %s.', key);
-    value = match{1};
-end
-
-function value = headernumber(head, key)
-    value = str2double(regexprep(headertext(head, key), '[dD]', 'E'));
-    assert(isfinite(value), 'ULMO:esm2plmt:InvalidHeader', 'Invalid header value %s.', key);
 end
 
 function labels = harmoniclabels(degree)

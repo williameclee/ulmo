@@ -35,15 +35,14 @@ classdef esm2plmtTest < matlab.unittest.TestCase
             end
             ranges = [testCase.Start, testCase.Start + hours(12); ...
                 testCase.Start + hours(12), testCase.Start + hours(24)];
-            [p, s, dates, meta] = esm2plmt(testCase.Scratch, ranges, ...
+            [p, s, dates] = esm2plmt(testCase.Scratch, ranges, ...
                 'Component', 'H', 'Unit', 'GRAV');
             testCase.verifySize(p, [2, 6, 4]);
             testCase.verifyEqual(p(:, 1, 3), [1.5; 3.5] * 1e-10, 'RelTol', 1e-14);
             testCase.verifyEqual(s(:, :, 1:2), p(:, :, 1:2));
             testCase.verifyTrue(all(isnan(s(:, :, 3:4)), 'all'));
             testCase.verifyEqual(dates, datenum(testCase.Start + hours([6; 18])));
-            testCase.verifyEqual(meta.sampleCounts, [2; 2]);
-            testCase.verifyEqual(meta.gravityParam, 3.986005e14);
+            testCase.verifyEqual(nargout('esm2plmt'), 3);
         end
         function densityConversionPreservesLowDegrees(testCase)
             % Explicit physical factors include the CF k1 = 0.021 term.
@@ -82,16 +81,22 @@ classdef esm2plmtTest < matlab.unittest.TestCase
             copyfile(file, fullfile(testCase.Scratch, 'duplicate'));
             testCase.verifyError(call, 'ULMO:esm2plmt:IncompleteSampling');
         end
-        function rejectInconsistentHeaders(testCase)
+        function ignoresHeaderMetadata(testCase)
+            % Header descriptions are not validated; radius still sets units.
             testCase.fixture(0, 1);
             file = testCase.fixture(1, 2);
             testCase.rewrite(file, '6378137', '6378136');
+            testCase.rewrite(file, 'fully_normalized', 'unused-description');
+            testCase.rewrite(file, 'max_degree 2', 'max_degree 99');
+            testCase.rewrite(file, 'mtmshc_H_20030101_06', 'different-model-name');
+            testCase.rewrite(file, 'earth_gravity_constant 3.986005D14', 'unused_key ignored');
             range = [testCase.Start, testCase.Start + hours(12)];
-            testCase.verifyError(@() esm2plmt(testCase.Scratch, range, ...
-                'Component', 'H', 'Unit', 'GRAV'), 'ULMO:esm2plmt:MixedMetadata');
-            testCase.rewrite(file, 'fully_normalized', 'unnormalized');
-            testCase.verifyError(@() esm2plmt(testCase.Scratch, range, ...
-                'Component', 'H', 'Unit', 'GRAV'), 'ULMO:esm2plmt:InvalidHeader');
+            p = esm2plmt(testCase.Scratch, range, 'Component', 'H', 'Unit', 'GRAV');
+            testCase.verifySize(p, [1, 6, 4]);
+            testCase.verifyEqual(p(1, 1, 3), 1.5e-10, 'RelTol', 1e-14);
+            p = esm2plmt(testCase.Scratch, range, 'Component', 'H', 'Unit', 'POT');
+            testCase.verifyEqual(p(1, 1, 3), (6378137 + 2 * 6378136) * 1e-10 / 2, ...
+                'RelTol', 1e-14);
         end
         function rejectBadHarmonicsAndIntervals(testCase)
             file = testCase.fixture(0, 1);
