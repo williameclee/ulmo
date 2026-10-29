@@ -8,6 +8,7 @@
 classdef esm2plmtTest < matlab.unittest.TestCase
     properties
         Scratch
+        RawFolder
         Start = datetime(2003, 1, 1)
     end
     methods (TestMethodSetup)
@@ -18,6 +19,8 @@ classdef esm2plmtTest < matlab.unittest.TestCase
             original = getenv('IFILES');
             testCase.addTeardown(@() setenv('IFILES', original));
             setenv('IFILES', testCase.Scratch);
+            testCase.RawFolder = fullfile(testCase.Scratch, 'ESM', 'ESAESM2', 'raw', 'H');
+            mkdir(testCase.RawFolder);
             mkdir(fullfile(testCase.Scratch, 'EARTHMODELS', 'CONSTANTS'));
             Earth = struct('GM_EGM96', 3.986004415e14, 'a_EGM96', 6378136.3);
             save(fullfile(testCase.Scratch, 'EARTHMODELS', 'CONSTANTS', 'Earth.mat'), 'Earth');
@@ -28,6 +31,22 @@ classdef esm2plmtTest < matlab.unittest.TestCase
         end
     end
     methods (Test)
+        function usesConfiguredDataRoot(testCase)
+            % A duplicate outside the fixed raw folder must not be discovered.
+            file = testCase.fixture(0, 1);
+            copyfile(file, testCase.Scratch);
+            range = [testCase.Start, testCase.Start + hours(6)];
+            p = esm2plmt(range, 'Component', 'H', 'Unit', 'GRAV');
+            testCase.verifyEqual(p(1, 1, 3), 1e-10);
+        end
+        function requiresConfiguredDataRoot(testCase)
+            range = [testCase.Start, testCase.Start + hours(6)];
+            setenv('IFILES', '');
+            testCase.verifyError(@() esm2plmt(range), 'ULMO:esm2plmt:MissingDataRoot');
+            setenv('IFILES', testCase.Scratch);
+            testCase.verifyError(@() esm2plmt(range, 'Component', 'O'), ...
+                'ULMO:esm2plmt:MissingDataFolder');
+        end
         function averageAndExclusiveBoundary(testCase)
             % A large sample at the end belongs only to the next interval.
             for k = 0:4
@@ -35,7 +54,7 @@ classdef esm2plmtTest < matlab.unittest.TestCase
             end
             ranges = [testCase.Start, testCase.Start + hours(12); ...
                 testCase.Start + hours(12), testCase.Start + hours(24)];
-            [p, s, dates] = esm2plmt(testCase.Scratch, ranges, ...
+            [p, s, dates] = esm2plmt(ranges, ...
                 'Component', 'H', 'Unit', 'GRAV');
             testCase.verifySize(p, [2, 6, 4]);
             testCase.verifyEqual(p(:, 1, 3), [1.5; 3.5] * 1e-10, 'RelTol', 1e-14);
@@ -47,7 +66,7 @@ classdef esm2plmtTest < matlab.unittest.TestCase
         function densityConversionPreservesLowDegrees(testCase)
             % Explicit physical factors include the CF k1 = 0.021 term.
             testCase.fixture(0, 2);
-            [p, ~] = esm2plmt(testCase.Scratch, ...
+            [p, ~] = esm2plmt(...
                 [testCase.Start, testCase.Start + hours(6)], 'Component', 'H');
             degree = [0; 1; 1; 2; 2; 2];
             love = [0; 0.021; 0.021; 0; 0; 0];
@@ -58,14 +77,14 @@ classdef esm2plmtTest < matlab.unittest.TestCase
         function formatsTruncationAndPadding(testCase)
             testCase.fixture(0, 1);
             range = [testCase.Start, testCase.Start + hours(6)];
-            [p, s, d] = esm2plmt(testCase.Scratch, range, 'Component', 'H', ...
+            [p, s, d] = esm2plmt(range, 'Component', 'H', ...
                 'Unit', 'POT', 'Loutput', 1, 'OutputFormat', 'traditional', ...
                 'TimeFormat', 'datetime');
             testCase.verifySize(p, [3, 4]);
             testCase.verifyEqual(p(:, 3), 6378137e-10 * (1:3)', 'RelTol', 1e-14);
             testCase.verifyEqual(s(:, 1:2), p(:, 1:2));
             testCase.verifyEqual(d, testCase.Start + hours(3));
-            p = esm2plmt(testCase.Scratch, range, 'Component', 'H', ...
+            p = esm2plmt(range, 'Component', 'H', ...
                 'Unit', 'GRAV', 'Loutput', 3);
             testCase.verifySize(p, [1, 10, 4]);
             testCase.verifyTrue(all(isnan(p(1, 7:10, 3:4)), 'all'));
@@ -74,11 +93,11 @@ classdef esm2plmtTest < matlab.unittest.TestCase
         function rejectMissingAndDuplicateSamples(testCase)
             file = testCase.fixture(0, 1);
             range = [testCase.Start, testCase.Start + hours(12)];
-            call = @() esm2plmt(testCase.Scratch, range, 'Component', 'H', 'Unit', 'GRAV');
+            call = @() esm2plmt(range, 'Component', 'H', 'Unit', 'GRAV');
             testCase.verifyError(call, 'ULMO:esm2plmt:IncompleteSampling');
             testCase.fixture(1, 2);
-            mkdir(fullfile(testCase.Scratch, 'duplicate'));
-            copyfile(file, fullfile(testCase.Scratch, 'duplicate'));
+            mkdir(fullfile(testCase.RawFolder, 'duplicate'));
+            copyfile(file, fullfile(testCase.RawFolder, 'duplicate'));
             testCase.verifyError(call, 'ULMO:esm2plmt:IncompleteSampling');
         end
         function ignoresHeaderMetadata(testCase)
@@ -91,10 +110,10 @@ classdef esm2plmtTest < matlab.unittest.TestCase
             testCase.rewrite(file, 'mtmshc_H_20030101_06', 'different-model-name');
             testCase.rewrite(file, 'earth_gravity_constant 3.986005D14', 'unused_key ignored');
             range = [testCase.Start, testCase.Start + hours(12)];
-            p = esm2plmt(testCase.Scratch, range, 'Component', 'H', 'Unit', 'GRAV');
+            p = esm2plmt(range, 'Component', 'H', 'Unit', 'GRAV');
             testCase.verifySize(p, [1, 6, 4]);
             testCase.verifyEqual(p(1, 1, 3), 1.5e-10, 'RelTol', 1e-14);
-            p = esm2plmt(testCase.Scratch, range, 'Component', 'H', 'Unit', 'POT');
+            p = esm2plmt(range, 'Component', 'H', 'Unit', 'POT');
             testCase.verifyEqual(p(1, 1, 3), (6378137 + 2 * 6378136) * 1e-10 / 2, ...
                 'RelTol', 1e-14);
         end
@@ -102,10 +121,10 @@ classdef esm2plmtTest < matlab.unittest.TestCase
             file = testCase.fixture(0, 1);
             range = [testCase.Start, testCase.Start + hours(6)];
             testCase.rewrite(file, 'gfc 2 2', 'gfc 2 1');
-            testCase.verifyError(@() esm2plmt(testCase.Scratch, range, ...
+            testCase.verifyError(@() esm2plmt(range, ...
                 'Component', 'H', 'Unit', 'GRAV'), 'ULMO:esm2plmt:InvalidCoefficients');
             range(2) = range(2) - minutes(1);
-            testCase.verifyError(@() esm2plmt(testCase.Scratch, range), ...
+            testCase.verifyError(@() esm2plmt(range), ...
                 'ULMO:esm2plmt:InvalidIntervals');
         end
     end
@@ -114,7 +133,7 @@ classdef esm2plmtTest < matlab.unittest.TestCase
             timestamp = testCase.Start + hours(6 * step);
             timestamp.Format = 'yyyyMMdd_HH';
             name = ['mtmshc_H_', char(timestamp)];
-            file = fullfile(testCase.Scratch, [name, '.gfc']);
+            file = fullfile(testCase.RawFolder, [name, '.gfc']);
             fid = fopen(file, 'w');
             cleanup = onCleanup(@() fclose(fid));
             fprintf(fid, ['product_type gravity_field\nmodelname %s\n', ...

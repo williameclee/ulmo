@@ -14,12 +14,14 @@ import struct
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("data", type=Path)
+    parser.add_argument("manifest", type=Path,
+                        help="GRACE-source manifest in $IFILES/ESM/ESAESM2/manifests")
     parser.add_argument("--output", type=Path, required=True,
                         help="Destination for reference coefficients and verification report")
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
-    manifest = json.loads((args.data / "manifest.json").read_text())
+    manifest = json.loads(args.manifest.read_text())
+    data_root = args.manifest.resolve().parent.parent
     start = dt.datetime.fromisoformat(manifest["start"])
     end = dt.datetime.fromisoformat(manifest["end_exclusive"])
     expected_times = []
@@ -34,7 +36,7 @@ def main():
         mean = [0.0] * (2 * nrows)
         total_bytes = 0
         for entry in entries:
-            data = (args.data / entry["file"]).read_bytes()
+            data = (data_root / entry["file"]).read_bytes()
             assert len(data) == entry["bytes"]
             assert hashlib.sha256(data).hexdigest() == entry["sha256"]
             total_bytes += len(data)

@@ -4,12 +4,15 @@ Read the interval from GRCOF2 records, not the inclusive day-of-year filename.
 Archive members are not chronologically sorted. Stop only after every expected
 six-hour sample has been found. Individual saved files have SHA-256 checksums;
 the partial archive stream itself is not a verified full-year gzip download.
+Inputs are saved under $IFILES/ESM/ESAESM2/raw/COMPONENT. Per-GRACE-source
+manifests share that root, so overlapping epochs reuse the same raw files.
 """
 
 import argparse
 import datetime as dt
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import tarfile
@@ -21,10 +24,13 @@ BASE = "https://isdc-data.gfz.de/future_missions/esaesm/ESAESM2"
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--grace-file", type=Path, required=True)
-    parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--components", nargs="+", default=["H", "I", "O"],
                         choices=["A", "H", "I", "O", "S", "AOHIS"])
     args = parser.parse_args()
+    data_root = os.environ.get("IFILES")
+    if not data_root:
+        parser.error("Set IFILES to the configured data root")
+    output = Path(data_root) / "ESM" / "ESAESM2"
     grace_bytes = args.grace_file.read_bytes()
     grace_text = grace_bytes.decode('utf-8')
     intervals = {tuple(line.split()[7:9]) for line in grace_text.splitlines()
@@ -41,19 +47,20 @@ def main():
         t += dt.timedelta(hours=6)
     if start.year < 1995 or times[-1].year > 2006:
         raise ValueError("ESAESM2 six-hour fields cover 1995 through 2006")
-    args.output.mkdir(parents=True, exist_ok=True)
+    manifest_folder = output / "manifests"
+    manifest_folder.mkdir(parents=True, exist_ok=True)
     manifest = dict(dataset="ESAESM2", start=start.isoformat(), end_exclusive=end.isoformat(),
                     grace_file=args.grace_file.name,
                     grace_sha256=hashlib.sha256(grace_bytes).hexdigest(),
                     sampling_hours=6, components={})
-    manifest_file = args.output / "manifest.json"
+    manifest_file = manifest_folder / (args.grace_file.name + ".json")
     if manifest_file.exists():
         previous = json.loads(manifest_file.read_text())
         if any(previous.get(key) != value for key, value in manifest.items() if key != "components"):
-            raise ValueError("Output manifest belongs to a different GRACE input or interval")
+            raise ValueError("Existing manifest belongs to a different GRACE input or interval")
         manifest["components"] = previous["components"]
     for component in args.components:
-        dest = args.output / "raw" / component
+        dest = output / "raw" / component
         dest.mkdir(parents=True, exist_ok=True)
         entries = []
         for year in sorted({t.year for t in times}):
@@ -78,12 +85,14 @@ def main():
                         if len(data) != member.size or b"end_of_head" not in data:
                             raise ValueError(f"Incomplete ESM file: {member.name}")
                         path = dest / name
-                        if path.exists() and path.read_bytes() != data:
-                            raise ValueError(f"Existing data differ: {path}")
-                        temporary = path.with_suffix(".gfc.part")
-                        temporary.write_bytes(data)
-                        temporary.replace(path)
-                        found[timestamp] = dict(file=str(path.relative_to(args.output)),
+                        if path.exists():
+                            if path.read_bytes() != data:
+                                raise ValueError(f"Existing data differ: {path}")
+                        else:
+                            temporary = path.with_suffix(".gfc.part")
+                            temporary.write_bytes(data)
+                            temporary.replace(path)
+                        found[timestamp] = dict(file=str(path.relative_to(output)),
                             timestamp=timestamp.isoformat(), bytes=len(data),
                             sha256=hashlib.sha256(data).hexdigest(), archive=url,
                             member=member.name)

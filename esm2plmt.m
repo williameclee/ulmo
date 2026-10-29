@@ -3,13 +3,11 @@
 % the same coefficient layout, units and date conventions as GRACE2PLMT_NEW.
 %
 % Syntax
-%   [esmPlmt, esmStdPlmt, dates] = esm2plmt(folder, intervals)
-%   [esmPlmt, esmStdPlmt, dates] = esm2plmt(folder, intervals, ...
+%   [esmPlmt, esmStdPlmt, dates] = esm2plmt(intervals)
+%   [esmPlmt, esmStdPlmt, dates] = esm2plmt(intervals, ...
 %       "Component", "H", "Unit", "GRAV", "Loutput", 60)
 %
 % Input arguments
-%   folder - Folder containing extracted mtmshc_COMPONENT_YYYYMMDD_HH.gfc
-%       files. Subdirectories are searched recursively.
 %   intervals - Start and exclusive end of each averaging interval.
 %       Use the GRCOF2 interval returned by PARSEGRACESOURCEFILE.
 %       Size: (N, 2), datetime, unzoned UTC.
@@ -38,6 +36,9 @@
 %   dates - Interval midpoints, size (N, 1), in TimeFormat.
 %
 % Notes
+%   Reads mtmshc_COMPONENT_YYYYMMDD_HH.gfc files from
+%   $IFILES/ESM/ESAESM2/raw/COMPONENT, including its subdirectories.
+%   IFILES must name the configured data root; there is no folder argument.
 %   Uses an arithmetic mean of all six-hour samples in [start, end).
 %   Missing or duplicate samples and incomplete harmonics fail.
 %   This is an interval match, not GRACE orbit weighting.
@@ -61,9 +62,8 @@
 % Created by
 %   2026/10/29
 
-function [esmPlmt, esmStdPlmt, dates] = esm2plmt(folder, intervals, options)
+function [esmPlmt, esmStdPlmt, dates] = esm2plmt(intervals, options)
     arguments (Input)
-        folder (1, 1) string {mustBeFolder}
         intervals (:, 2) datetime
         options.Component (1, 1) string {mustBeMember(options.Component, ...
             ["A", "O", "H", "I", "S", "AOHIS"])} = "O"
@@ -88,6 +88,12 @@ function [esmPlmt, esmStdPlmt, dates] = esm2plmt(folder, intervals, options)
     end
 
     component = options.Component;
+    dataRoot = getenv('IFILES');
+    assert(~isempty(dataRoot), 'ULMO:esm2plmt:MissingDataRoot', ...
+        'Set IFILES to the configured data root before reading ESM fields.');
+    folder = fullfile(dataRoot, 'ESM', 'ESAESM2', 'raw', component);
+    assert(isfolder(folder), 'ULMO:esm2plmt:MissingDataFolder', ...
+        'ESM component folder does not exist: %s', folder);
     files = dir(fullfile(folder, '**', "mtmshc_" + component + "_*.gfc"));
     fileDates = NaT(numel(files), 1);
     for k = 1:numel(files)
