@@ -3,12 +3,11 @@
 % native and truncated HI/HIO sums. Generates a two-column component map.
 %
 % Syntax
-%   products = esm2plmt_demo(graceFile, esmFolder, outputFolder)
+%   products = esm2plmt_demo(graceFile, outputFolder)
 %   products = esm2plmt_demo(__, "Loutput", 45, "MakeFigure", false)
 %
 % Input arguments
 %   graceFile - GRACE file readable by PARSEGRACESOURCEFILE.
-%   esmFolder - Folder containing the extracted six-hour H, I and O files.
 %   outputFolder - Destination for MAT files and the figure. Created as needed.
 %   Loutput (name-value) - Truncated output degree, no greater than the source.
 %       Default degree: 60.
@@ -27,6 +26,7 @@
 %   HIO is not GSM: it excludes atmosphere and solid Earth and has no DEAL
 %   subtraction. One epoch demonstrates ingestion, not trend recovery.
 %   Requires the standard ULMO paths, Earth constants and ISSM Love numbers.
+%   ESM inputs are read from $IFILES/ESM/ESAESM2/raw/COMPONENT.
 %
 % See also
 %   ESM2PLMT, PLOT_ESM_EPOCH, PARSEGRACESOURCEFILE
@@ -34,10 +34,9 @@
 % Created by
 %   2026/10/29
 
-function products = esm2plmt_demo(graceFile, esmFolder, outputFolder, options)
+function products = esm2plmt_demo(graceFile, outputFolder, options)
     arguments (Input)
         graceFile (1, 1) string {mustBeFile}
-        esmFolder (1, 1) string {mustBeFolder}
         outputFolder (1, 1) string
         options.Loutput (1, 1) double {mustBeInteger, mustBePositive} = 60
         options.MakeFigure (1, 1) logical = true
@@ -55,14 +54,14 @@ function products = esm2plmt_demo(graceFile, esmFolder, outputFolder, options)
     mass = struct;
     products = struct;
     for component = ["H", "I", "O"]
-        [gravity, uncertainty, dates] = esm2plmt(esmFolder, intervals, ...
+        [gravity, uncertainty, dates] = esm2plmt(intervals, ...
             'Component', component, 'Unit', 'GRAV');
         assert(isequal(dates, datenum(graceDate)), 'ESM and GRACE epoch dates differ.');
         assert(options.Loutput <= gravity(1, end, 1), ...
             'Demo output degree must not exceed the source degree.');
         stem = fullfile(outputFolder, prefix + component + suffix);
         products.(component).nativeGRAV = savefield(stem, gravity, uncertainty, dates, "GRAV");
-        [density, uncertainty, dates] = esm2plmt(esmFolder, intervals, ...
+        [density, uncertainty, dates] = esm2plmt(intervals, ...
             'Component', component, 'Unit', 'SD');
         mass.(component) = density;
         products.(component).nativeSD = savefield(stem, density, uncertainty, dates, "SD");

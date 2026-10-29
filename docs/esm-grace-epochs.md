@@ -13,12 +13,15 @@ and [Dobslaw et al. (2015)](https://doi.org/10.1007/s00190-014-0787-8).
 
 ## Download one interval
 
-Set `GRACE_FILE` to a local GRACE source file and `ESM_DIR` to a data directory
-outside the repository. Run from the repository root with Python 3.9 or newer:
+Set `GRACE_FILE` to a local GRACE source file and export `IFILES` with the same
+data root used by MATLAB. The fixed ESM location is
+`$IFILES/ESM/ESAESM2/raw/COMPONENT/`; no input-folder argument is needed in
+either the downloader or `esm2plmt`. Run from the repository root with Python
+3.9 or newer:
 
 ```sh
 python3 data/download_esm_epoch.py \
-  --grace-file "$GRACE_FILE" --output "$ESM_DIR" --components H I O
+  --grace-file "$GRACE_FILE" --components H I O
 ```
 
 No third-party Python dependencies are needed. The downloader reads the exact
@@ -28,18 +31,21 @@ six-hour grid. The six-hour series covers 1995–2006; the separate three-hour,
 degree-360 product is not supported.
 
 GFZ packages the samples in yearly `.tar.gz` archives. The downloader streams
-each required archive and saves only the requested samples under `raw/H`,
-`raw/I` and `raw/O`. Members need not be chronologically ordered. The stream
+each required archive and saves only the requested samples under
+`$IFILES/ESM/ESAESM2/raw/H`, `raw/I` and `raw/O`. Members need not be
+chronologically ordered. The stream
 stops only after every expected timestamp has been collected; later intervals
 may require reading most of the annual archive. It does not retain or verify
 the full yearly gzip archive.
 
-`manifest.json` records the GRACE input checksum, interval, component file
+`$IFILES/ESM/ESAESM2/manifests/GRACE_FILENAME.json` records the GRACE input checksum, interval, component file
 names, timestamps, source URLs, archive member names and local SHA-256 hashes.
 Completed components are recorded individually, and subsequent component
 downloads preserve earlier entries. Rerunning an existing component reads its
-archive again; existing files must match the downloaded content. A destination
-cannot be reused for a different GRACE source or interval. The local checksums
+archive again; existing files must match the downloaded content. Overlapping
+GRACE intervals share the same raw sample files and retain separate manifests
+for their source filenames. A manifest cannot be reused after changing its
+GRACE source contents or interval. The local checksums
 are integrity records, not publisher-supplied digests.
 
 For example, CSR RL06 January 2003 uses `[2003-01-01, 2003-02-01)`, with 124
@@ -54,11 +60,14 @@ interval from the same GRACE file used by the downloader:
 
 ```matlab
 graceFile = string(getenv("GRACE_FILE"));
-esmFolder = string(getenv("ESM_DIR"));
 [~, ~, ~, intervals] = parsegracesourcefile(graceFile);
-[esmPlmt, esmStdPlmt, dates] = esm2plmt(esmFolder, intervals, ...
+[esmPlmt, esmStdPlmt, dates] = esm2plmt(intervals, ...
     "Component", "O", "Unit", "SD", "Loutput", 60);
 ```
+
+The processor searches only the requested component's fixed raw folder,
+including subdirectories. It reports an error if `IFILES` is unset or that
+folder is missing; it does not search the current working directory.
 
 Intervals are an N-by-2 unzoned UTC datetime array, with exclusive ends. Every
 six-hour sample in each interval receives equal weight. Missing, duplicate or
@@ -89,10 +98,12 @@ coefficient convention. Missing or duplicate harmonic rows still fail.
 
 ## Save and plot components
 
-The demo accepts paths rather than fixed dates or local directory conventions:
+The demo reads inputs from the same fixed location. Its output directory is
+specified separately:
 
 ```matlab
-products = esm2plmt_demo(graceFile, esmFolder, fullfile(esmFolder, "processed"));
+outputFolder = fullfile(getenv("IFILES"), "ESM", "ESAESM2", "processed");
+products = esm2plmt_demo(graceFile, outputFolder);
 ```
 
 This saves native GRAV fields for H/I/O, native and degree-60 SD fields for
@@ -108,7 +119,7 @@ Display saturation is stated in the caption and can be changed without
 reprocessing the coefficients:
 
 ```matlab
-plot_esm_epoch(products, fullfile(esmFolder, "comparison.png"), ...
+plot_esm_epoch(products, fullfile(outputFolder, "comparison.png"), ...
     "ColorLimits", [500, 500, 100]);
 ```
 
@@ -136,7 +147,9 @@ data. Plotting does not change the coefficients or the source data.
 
 ```sh
 python3 -B -m pytest unittests/test_esm_download.py
-python3 data/verify_esm_epoch.py "$ESM_DIR" --output "$ESM_DIR/verification"
+python3 data/verify_esm_epoch.py \
+  "$IFILES/ESM/ESAESM2/manifests/${GRACE_FILE##*/}.json" \
+  --output "$IFILES/ESM/ESAESM2/verification"
 ```
 
 The downloader tests require pytest and use its temporary-directory and
@@ -147,7 +160,8 @@ with C/S interleaved in ascending degree/order, and `raw_validation.json`.
 Compare a saved native GRAV product in MATLAB as follows:
 
 ```matlab
-fid = fopen(fullfile(esmFolder, "verification", "reference_O.bin"), "r", "ieee-le");
+verificationFolder = fullfile(getenv("IFILES"), "ESM", "ESAESM2", "verification");
+fid = fopen(fullfile(verificationFolder, "reference_O.bin"), "r", "ieee-le");
 reference = fread(fid, [2, 16471], "double")';
 fclose(fid);
 saved = load(products.O.nativeGRAV);
