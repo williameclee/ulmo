@@ -8,7 +8,7 @@
 %
 % Input arguments
 %   products - Product paths returned by ESM2PLMT_DEMO. H, I and O must each
-%       provide nativeSD and truncatedSD paths to one-epoch MAT files.
+%       provide nativeSD and truncatedSD paths to one-epoch NetCDF files.
 %   outputFile - Destination PNG file in an existing folder.
 %   ColorLimits (name-value) - Positive symmetric H, I, O display limits.
 %       Unit: mm equivalent water height. Default limits: [500, 500, 100].
@@ -42,16 +42,14 @@ function plot_esm_epoch(products, outputFile, options)
     referenceDate = [];
     for row = 1:3
         for column = 1:2
-            data = load(products.(components(row)).(variants(column)));
-            assert(size(data.esmPlmt, 1) == 1 && size(data.esmPlmt, 3) == 4 && ...
-                isscalar(data.dates), ...
-                'Expected one timefirst SD epoch of the requested component.');
+            [values, ~, dates, labels] = readshnc(products.(components(row)).(variants(column)));
+            assert(isscalar(dates), 'Expected one epoch of the requested component.');
             if isempty(referenceDate)
-                referenceDate = data.dates;
+                referenceDate = dates;
             else
-                assert(isequal(data.dates, referenceDate), 'ESM epoch dates differ.');
+                assert(isequal(dates, referenceDate), 'ESM epoch dates differ.');
             end
-            coefficients = reshape(data.esmPlmt, [], 4);
+            coefficients = [labels, values(:, :, 1)];
             [fields{row, column}, lon, lat] = plm2xyz(coefficients, ...
                 0.5, [-180, 90, 180, -90], 'BeQuiet', true);
             assert(all(isfinite(fields{row, column}), 'all'));
@@ -64,7 +62,7 @@ function plot_esm_epoch(products, outputFile, options)
     annotation(figureHandle, 'textbox', [0.02, 0.956, 0.96, 0.04], ...
         'String', 'ESAESM2  |  Component mass anomalies', 'FontSize', 23, 'FontWeight', 'bold', ...
         'EdgeColor', 'none', 'HorizontalAlignment', 'center');
-    epoch = datetime(referenceDate, 'ConvertFrom', 'datenum');
+    epoch = referenceDate;
     caption = "Epoch midpoint: " + string(epoch, 'dd MMM yyyy HH:mm') + " UTC" + newline + ...
         "Mean mass anomalies, not trends  |  Equivalent water height [mm]";
     annotation(figureHandle, 'textbox', [0.02, 0.904, 0.96, 0.05], 'String', caption, ...

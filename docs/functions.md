@@ -59,8 +59,8 @@ The ultimate goal is to drop the `_new` suffixes and replace the original functi
 
 | Function name | Description | Package dependencies | Data dependencies | Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| `prepareesm` | Imports GFC files from a source folder into a native lmcosi v7.3 MAT file. | | ESAESM2 six-hour GFC files | Batches external-drive inputs; invalidates derived caches on replacement. |
-| `esm2plmt` | Loads cached raw or calendar-month ESAESM2 harmonics with inclusive time selection and output truncation. | Gravity conversion dependencies for SD/POT | Prepared ESAESM2 lmcosi MAT files | [Download, processing and plotting guide](esm-grace-epochs.md). |
+| `prepareesm` | Imports GFC files from a source folder into a compact harmonic NetCDF file. | | ESAESM2 six-hour GFC files | Batches external-drive inputs; invalidates derived caches on replacement. |
+| `esm2plmt` | Loads cached raw or calendar-month ESAESM2 harmonics with inclusive time selection and output truncation. | Gravity conversion dependencies for SD/POT | Prepared ESAESM2 NetCDF files | [Download, processing and plotting guide](esm-grace-epochs.md). |
 
 ### Sea Level Fingerprint/Geocentric Motion Computation
 
