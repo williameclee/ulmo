@@ -22,7 +22,7 @@ classdef esm2plmtTest < matlab.unittest.TestCase
             original = getenv('IFILES');
             testCase.addTeardown(@() setenv('IFILES', original));
             setenv('IFILES', testCase.Scratch);
-            testCase.RawFolder = fullfile(testCase.Scratch, 'ESM', 'ESAESM2', 'raw', 'H');
+            testCase.RawFolder = fullfile(testCase.Scratch, 'external-source', 'H');
             mkdir(testCase.RawFolder);
             mkdir(fullfile(testCase.Scratch, 'EARTHMODELS', 'CONSTANTS'));
             Earth = struct('GM_EGM96', 3.986004415e14, 'a_EGM96', 6378136.3);
@@ -34,309 +34,296 @@ classdef esm2plmtTest < matlab.unittest.TestCase
         end
     end
     methods (Test)
-        function usesConfiguredDataRoot(testCase)
-            % A duplicate outside the fixed raw folder must not be discovered.
-            file = testCase.fixture(0, 1);
-            copyfile(file, testCase.Scratch);
-            range = [testCase.Start, testCase.Start + hours(6)];
-            p = esm2plmt('H', [], range, 'Unit', 'GRAV');
-            testCase.verifyEqual(p(1, 1, 3), 1e-10);
-        end
-        function componentFirstDefaultsAndCacheHitFormatting(testCase)
-            testCase.fixture(0, 2);
-            p = esm2plmt('H', 'Unit', 'GRAV');
-            testCase.verifyEqual(p(1, 1, 3), 2e-10);
-            rmdir(testCase.RawFolder, 's');
-            [cached, ~, dates] = esm2plmt('H', [], [], 'Unit', 'GRAV', ...
-                'OutputFormat', 'traditional', 'TimeFormat', 'datetime', 'Loutput', 1);
-            testCase.verifyEqual(cached, squeeze(p(:, 1:3, :)));
-            testCase.verifyEqual(dates, testCase.Start);
-        end
-        function oceanComponentDoesNotMatchOutputFormat(testCase)
-            testCase.fullmonth(0, 2);
-            esm2plmt('H', 'midmonth', [], 'Unit', 'GRAV');
-            folder = fileparts(testCase.cachepath());
-            copyfile(testCase.cachepath('midmonth'), ...
-                fullfile(folder, 'ESAESM2_O_GRAV-Tmidmonth.mat'));
-            [p, ~, dates] = esm2plmt('O', 'midmonth', 'Unit', 'GRAV');
-            testCase.verifyEqual(p(1, 1, 3), 2e-10, 'RelTol', 2e-14);
-            testCase.verifyEqual(dates, datenum(datetime(2003, 1, 16, 12, 0, 0)));
-        end
-        function rawRefreshInvalidatesAllEpochVariants(testCase)
+        function importerUsesExternalFolderAndNativeMat(testCase)
             testCase.fixture(0, 1);
-            folder = fileparts(testCase.cachepath());
-            variants = ["ESAESM2_H_GRAV-Tmidmonth.mat", ...
-                "ESAESM2_H_GRAV-Tmidmonth-mean.mat", "ESAESM2_H_GRAV-Tfuture.mat"];
-            sentinel = 1;
-            for variant = variants
-                save(fullfile(folder, variant), 'sentinel');
-            end
-            unrelated = fullfile(folder, 'ESAESM2_O_GRAV-Tmidmonth.mat');
-            save(unrelated, 'sentinel');
-            esm2plmt('H', [], [], 'Unit', 'GRAV', 'ForceNew', true);
-            for variant = variants
-                testCase.verifyFalse(isfile(fullfile(folder, variant)));
-            end
-            testCase.verifyTrue(isfile(unrelated));
-        end
-        function monthlyPropagatesCachedFormalUncertainties(testCase)
-            testCase.fullmonth(0, 2);
-            esm2plmt('H', [], [], 'Unit', 'GRAV');
-            data = load(testCase.cachepath());
-            data.esmStdPlmt(:, :, 3) = 2;
-            data.esmStdPlmt(:, :, 4) = 3;
-            save(testCase.cachepath(), '-struct', 'data');
+            testCase.fixture(1, 2);
+            testCase.prepare();
+            data = load(testCase.inputpath());
+            testCase.verifyEqual(sort(string(fieldnames(data))), sort(["esmPlmt"; "dates"; "equatorRadius"]));
+            testCase.verifySize(data.esmPlmt, [2, 6, 4]);
+            testCase.verifyEqual(data.esmPlmt(:, 1, 3), [1; 2] * 1e-10, 'RelTol', 1e-14);
+            testCase.verifyEqual(data.equatorRadius, [6378137; 6378137]);
             rmdir(testCase.RawFolder, 's');
-            [p, s] = esm2plmt('H', 'midmonth', [], 'Unit', 'GRAV');
-            testCase.verifyEqual(s(1, :, 3), repmat(2 / sqrt(124), 1, 6), 'RelTol', 1e-14);
-            testCase.verifyEqual(s(1, :, 4), repmat(3 / sqrt(124), 1, 6), 'RelTol', 1e-14);
-            testCase.verifyEqual(s(:, :, 1:2), p(:, :, 1:2));
-            cached = load(testCase.cachepath('midmonth'));
-            testCase.verifyEqual(cached.esmStdPlmt, s);
+            [p, s, d] = esm2plmt('H', 'Unit', 'GRAV');
+            testCase.verifyEqual(p, data.esmPlmt);
+            testCase.verifyTrue(all(isnan(s(:, :, 3:4)), 'all'));
+            testCase.verifyEqual(d, datenum(data.dates));
         end
-        function demoPropagatesEpochAndComponentUncertainties(testCase)
-            % Non-grid bounds exercise the shared completeness logic as well.
-            for k = 0:3
-                testCase.fixture(k, k + 1);
-            end
-            esm2plmt('H', [], [], 'Unit', 'GRAV');
-            data = load(testCase.cachepath());
-            data.esmStdPlmt(:, :, 3) = 3;
-            data.esmStdPlmt(:, :, 4) = 4;
-            folder = fileparts(testCase.cachepath());
-            for component = ["H", "I", "O"]
-                for unit = ["GRAV", "SD_ISSM"]
-                    save(fullfile(folder, "ESAESM2_" + component + "_" + unit + ".mat"), '-struct', 'data');
-                end
-            end
-            graceFile = fullfile(testCase.Scratch, 'GSM-fixture');
-            fid = fopen(graceFile, 'w');
-            for row = 1:size(data.esmPlmt, 2)
-                fprintf(fid, 'GRCOF2 %d %d 1 0 0 0 20030101.0100 20030101.1300 nnnn\n', ...
-                    data.esmPlmt(1, row, 1:2));
-            end
-            fclose(fid);
-            products = esm2plmt_demo(graceFile, fullfile(testCase.Scratch, 'products'), ...
-                'Loutput', 1, 'MakeFigure', false);
-            h = load(products.H.nativeSD);
-            hi = load(products.HI.nativeSD);
-            hio = load(products.HIO.nativeSD);
-            testCase.verifyEqual(h.esmStdPlmt(1, 1, 3), 3 / sqrt(2), 'RelTol', 1e-14);
-            testCase.verifyEqual(hi.esmStdPlmt(1, 1, 3), 3, 'RelTol', 1e-14);
-            testCase.verifyEqual(hio.esmStdPlmt(1, 1, 3), 3 * sqrt(3 / 2), 'RelTol', 1e-14);
-            testCase.verifyEqual(hio.esmStdPlmt(:, :, 1:2), hio.esmPlmt(:, :, 1:2));
-            testCase.verifyEqual(h.dates, datenum(datetime(2003, 1, 1, 7, 0, 0)));
+        function readerNeverImportsGfcFiles(testCase)
+            testCase.fixture(0, 2);
+            testCase.verifyError(@() esm2plmt('H', 'Unit', 'GRAV'), 'ULMO:esm2plmt:MissingPreparedData');
+            testCase.verifyFalse(isfile(testCase.inputpath()));
         end
-        function graceOptionRemainsUnsupported(testCase)
-            testCase.verifyError(@() esm2plmt('O', 'GRACE'), 'ULMO:esm2plmt:InvalidTimeStep');
-        end
-        function requiresConfiguredDataRoot(testCase)
-            range = [testCase.Start, testCase.Start + hours(6)];
+        function requiresConfiguredRoot(testCase)
             setenv('IFILES', '');
-            testCase.verifyError(@() esm2plmt('O', [], range), 'ULMO:esm2plmt:MissingDataRoot');
-            setenv('IFILES', testCase.Scratch);
-            testCase.verifyError(@() esm2plmt('O', [], range), ...
-                'ULMO:esm2plmt:MissingDataFolder');
+            testCase.verifyError(@() esm2plmt('O'), 'ULMO:esm2plmt:MissingDataRoot');
+            testCase.verifyError(@() prepareesm(testCase.RawFolder, 'H'), 'ULMO:prepareesm:MissingDataRoot');
         end
-        function rawTimeRangeIsInclusive(testCase)
+        function defaultOceanAndCharStringOptions(testCase)
+            testCase.fixture(0, 2);
+            testCase.prepare();
+            copyfile(testCase.inputpath(), fullfile(fileparts(testCase.inputpath()), 'ESAESM2_O.mat'));
+            default = esm2plmt();
+            explicit = esm2plmt("O", [], "", "Unit", "SD", "LoveNumSource", "ISSM");
+            testCase.verifyEqual(default, explicit);
+            [p, ~, d] = esm2plmt('O', [], '', 'Unit', 'GRAV', ...
+                'OutputFormat', 'traditional', 'TimeFormat', 'datetime');
+            testCase.verifyEqual(p(1, 3), 2e-10);
+            testCase.verifyEqual(d, testCase.Start);
+        end
+        function inclusiveRawSelectionAndPadding(testCase)
             for k = 0:4
                 testCase.fixture(k, k + 1);
             end
+            testCase.prepare();
             range = testCase.Start + hours([6, 18]);
-            [p, s, dates] = esm2plmt('H', [], datenum(range), ...
-                'Unit', 'GRAV');
-            testCase.verifySize(p, [3, 6, 4]);
+            [p, s, dates] = esm2plmt('H', datenum(range), '', 'Unit', 'GRAV', 'Loutput', 3);
+            testCase.verifySize(p, [3, 10, 4]);
             testCase.verifyEqual(p(:, 1, 3), [2; 3; 4] * 1e-10, 'RelTol', 1e-14);
             testCase.verifyEqual(s(:, :, 1:2), p(:, :, 1:2));
-            testCase.verifyTrue(all(isnan(s(:, :, 3:4)), 'all'));
+            testCase.verifyTrue(all(isnan(p(:, 7:10, 3:4)), 'all'));
             testCase.verifyEqual(dates, datenum(testCase.Start + hours([6; 12; 18])));
-            testCase.verifyEqual(nargout('esm2plmt'), 3);
-            cached = load(testCase.cachepath());
-            testCase.verifySize(cached.esmPlmt, [5, 6, 4]);
+            data = load(testCase.inputpath());
+            testCase.verifySize(data.esmPlmt, [5, 6, 4]);
         end
-        function monthlyCachePrecedesSelectionAndTruncation(testCase)
-            % Unequal month lengths and a leap day exercise true calendar bins.
+        function monthlyCachesAllDatesAndNativeDegreesBeforeSelection(testCase)
             testCase.Start = datetime(2004, 1, 1);
             testCase.fullmonth(0, 2);
             testCase.fullmonth(1, 7);
+            testCase.prepare();
             range = [datetime(2004, 2, 15), datetime(2004, 2, 16)];
-            [p, s, dates] = esm2plmt('H', 'midmonth', range, ...
-                'Unit', 'GRAV', 'Loutput', 1, 'TimeFormat', 'datetime', ...
-                'OutputFormat', 'traditional');
+            [p, s, dates] = esm2plmt('H', range, 'midmonth', 'Unit', 'GRAV', ...
+                'Loutput', 1, 'TimeFormat', 'datetime', 'OutputFormat', 'traditional');
             testCase.verifySize(p, [3, 4]);
             testCase.verifyEqual(p(:, 3), 7e-10 * (1:3)', 'RelTol', 2e-14);
             testCase.verifyEqual(dates, datetime(2004, 2, 15, 12, 0, 0));
-            testCase.verifyTrue(all(isnan(s(:, 3:4)), 'all'));
-            cached = load(testCase.cachepath('midmonth'));
+            testCase.verifyEqual(s(:, 3:4), zeros(3, 2), 'AbsTol', 1e-23);
+            cached = load(testCase.cachepath());
             testCase.verifySize(cached.esmPlmt, [2, 6, 4]);
             testCase.verifyEqual(cached.esmPlmt(:, 1, 3), [2; 7] * 1e-10, 'RelTol', 2e-14);
-            testCase.verifyEqual(cached.dates, ...
-                [datetime(2004, 1, 16, 12, 0, 0); datetime(2004, 2, 15, 12, 0, 0)]);
-            testCase.verifyEqual(sort(string(fieldnames(cached))), ...
-                sort(["dates"; "esmPlmt"; "esmStdPlmt"]));
-            raw = load(testCase.cachepath());
-            testCase.verifySize(raw.esmPlmt, [240, 6, 4]);
-            % The monthly cache remains usable without either underlying input.
-            delete(testCase.cachepath());
+            testCase.verifyEqual(sort(string(fieldnames(cached))), sort(["dates"; "esmPlmt"; "esmStdPlmt"]));
+            delete(testCase.inputpath());
             rmdir(testCase.RawFolder, 's');
-            [allFields, ~, d] = esm2plmt('H', "midmonth", [], 'Unit', 'GRAV', ...
-                'TimeFormat', 'datetime');
-            testCase.verifyEqual(allFields, cached.esmPlmt);
+            [p, s, d] = esm2plmt('H', [], "midmonth", 'Unit', 'GRAV', 'TimeFormat', 'datetime');
+            testCase.verifyEqual(p, cached.esmPlmt);
+            testCase.verifyEqual(s, cached.esmStdPlmt);
             testCase.verifyEqual(d, cached.dates);
         end
-        function rawCacheAvoidsSourceReads(testCase)
-            testCase.fixture(0, 1);
-            testCase.fixture(2, 3); % Raw data may have gaps.
-            p = esm2plmt('H', [], [], 'Unit', 'GRAV', 'Loutput', 1);
-            rmdir(testCase.RawFolder, 's');
-            full = esm2plmt('H', [], [], 'Unit', 'GRAV');
-            testCase.verifySize(full, [2, 6, 4]);
-            testCase.verifyEqual(p, full(:, 1:3, :));
-        end
-        function forceNewRefreshesBothCaches(testCase)
+        function monthlyEstimatesSpreadAndCachesIt(testCase)
             testCase.fullmonth(0, 1);
-            first = esm2plmt('H', 'midmonth', [], 'Unit', 'GRAV');
             testCase.fixture(0, 125);
-            cached = esm2plmt('H', 'midmonth', [], 'Unit', 'GRAV');
-            testCase.verifyEqual(cached, first);
-            updated = esm2plmt('H', 'midmonth', [], 'Unit', 'GRAV', 'ForceNew', true);
-            testCase.verifyEqual(updated(1, 1, 3), 2e-10, 'RelTol', 2e-14);
-            testCase.fixture(0, 249);
-            esm2plmt('H', [], [], 'Unit', 'GRAV', 'ForceNew', true);
-            testCase.verifyFalse(isfile(testCase.cachepath('midmonth')));
-            updated = esm2plmt('H', 'midmonth', [], 'Unit', 'GRAV');
-            testCase.verifyEqual(updated(1, 1, 3), 3e-10, 'RelTol', 2e-14);
-        end
-        function saveDataFalseWritesNeitherCache(testCase)
-            testCase.fullmonth(0, 1);
-            esm2plmt('H', 'midmonth', [], 'Unit', 'GRAV', 'SaveData', false);
-            testCase.verifyFalse(isfile(testCase.cachepath()));
-            testCase.verifyFalse(isfile(testCase.cachepath('midmonth')));
-        end
-        function monthlyUsesRawCache(testCase)
-            testCase.fullmonth(0, 3);
-            esm2plmt('H', [], [], 'Unit', 'GRAV');
+            testCase.prepare();
             rmdir(testCase.RawFolder, 's');
-            p = esm2plmt('H', 'midmonth', [], 'Unit', 'GRAV');
-            testCase.verifyEqual(p(1, 1, 3), 3e-10, 'RelTol', 2e-14);
+            [p, s] = esm2plmt('H', [], 'midmonth', 'Unit', 'GRAV');
+            testCase.verifyEqual(p(1, 1, 3), 2e-10, 'RelTol', 2e-14);
+            testCase.verifyEqual(s(1, 1, 3), 1e-10, 'RelTol', 2e-14);
+            data = load(testCase.cachepath());
+            testCase.verifyEqual(s, data.esmStdPlmt);
         end
-        function incompleteMonthsDoNotBecomeBiasedMeans(testCase)
-            testCase.fixture(0, 100);
-            testCase.verifyWarning(@() esm2plmt('H', 'midmonth', [], ...
-                'Unit', 'GRAV'), 'ULMO:averageepochs:IncompleteEpoch');
-            p = esm2plmt('H', 'midmonth', [], 'Unit', 'GRAV');
-            testCase.verifyTrue(all(isnan(p(:, :, 3:4)), 'all'));
-            testCase.verifyEqual(squeeze(p(1, :, 1:2)), [0 0; 1 0; 1 1; 2 0; 2 1; 2 2]);
+        function monthlyPropagatesSuppliedFormalErrors(testCase)
+            testCase.fullmonth(0, 2);
+            testCase.prepare();
+            source = matfile(testCase.inputpath(), 'Writable', true);
+            sigma = source.esmPlmt;
+            sigma(:, :, 3:4) = 3;
+            source.esmStdPlmt = sigma;
+            [~, s] = esm2plmt('H', [], 'midmonth', 'Unit', 'GRAV');
+            testCase.verifyEqual(s(:, :, 3:4), repmat(3 / sqrt(124), 1, 6, 2), 'RelTol', 1e-14);
         end
-        function emptySelectionRetainsOutputShape(testCase)
+        function forceNewReadsPreparedDataOnly(testCase)
+            testCase.fullmonth(0, 1);
+            testCase.prepare();
+            first = esm2plmt('H', [], 'midmonth', 'Unit', 'GRAV');
+            source = matfile(testCase.inputpath(), 'Writable', true);
+            source.esmPlmt(1, 1, 3) = 125e-10;
+            rmdir(testCase.RawFolder, 's');
+            cached = esm2plmt('H', [], 'midmonth', 'Unit', 'GRAV');
+            testCase.verifyEqual(cached, first);
+            fresh = esm2plmt('H', [], 'midmonth', 'Unit', 'GRAV', 'ForceNew', true);
+            testCase.verifyEqual(fresh(1, 1, 3), 2e-10, 'RelTol', 2e-14);
+        end
+        function saveDataFalsePreservesInputAndCache(testCase)
+            testCase.fullmonth(0, 1);
+            testCase.prepare();
+            original = load(testCase.inputpath());
+            esm2plmt('H', [], 'midmonth', 'Unit', 'GRAV', 'SaveData', false);
+            testCase.verifyFalse(isfile(testCase.cachepath()));
+            esm2plmt('H', [], 'midmonth', 'Unit', 'GRAV');
+            cached = load(testCase.cachepath());
+            source = matfile(testCase.inputpath(), 'Writable', true);
+            source.esmPlmt(1, 1, 3) = 125e-10;
+            fresh = esm2plmt('H', [], 'midmonth', 'Unit', 'GRAV', 'ForceNew', true, 'SaveData', false);
+            testCase.verifyEqual(fresh(1, 1, 3), 2e-10, 'RelTol', 2e-14);
+            testCase.verifyEqual(load(testCase.cachepath()), cached);
+            % Raw force/read options never rewrite the prepared input.
+            before = load(testCase.inputpath());
+            esm2plmt('H', [], '', 'Unit', 'SD', 'ForceNew', true);
+            testCase.verifyEqual(load(testCase.inputpath()), before);
+            testCase.verifyEqual(before.dates, original.dates);
+            testCase.verifyFalse(isfile(fullfile(fileparts(testCase.inputpath()), 'ESAESM2_H_SD_ISSM.mat')));
+        end
+        function reimportInvalidatesEveryUnitAndEpochVariant(testCase)
             testCase.fixture(0, 1);
-            range = testCase.Start + days([2, 3]);
-            [p, s, d] = esm2plmt('H', [], range, 'Unit', 'GRAV', 'Loutput', 3);
+            testCase.prepare();
+            folder = fileparts(testCase.inputpath());
+            variants = ["ESAESM2_H_GRAV-Tmidmonth.mat", "ESAESM2_H_SD_ISSM-Tfuture.mat", ...
+                "ESAESM2_H_POT-Tmidmonth-mean.mat"];
+            sentinel = 1;
+            for name = variants
+                save(fullfile(folder, name), 'sentinel');
+            end
+            other = fullfile(folder, 'ESAESM2_O_GRAV-Tmidmonth.mat');
+            save(other, 'sentinel');
+            testCase.fixture(0, 2);
+            testCase.prepare('ForceNew', true);
+            for name = variants
+                testCase.verifyFalse(isfile(fullfile(folder, name)));
+            end
+            testCase.verifyTrue(isfile(other));
+            data = load(testCase.inputpath());
+            testCase.verifyEqual(data.esmPlmt(1, 1, 3), 2e-10);
+        end
+        function failedImportPreservesPreparedDataAndCaches(testCase)
+            testCase.fixture(0, 1);
+            testCase.prepare();
+            original = load(testCase.inputpath());
+            sentinel = 1;
+            save(testCase.cachepath(), 'sentinel');
+            testCase.verifyError(@() testCase.prepare(), 'ULMO:prepareesm:FileExists');
+            file = testCase.fixture(1, 2);
+            testCase.rewrite(file, 'gfc 2 2', 'gfc 2 1');
+            testCase.verifyError(@() testCase.prepare('ForceNew', true), 'ULMO:prepareesm:InvalidCoefficients');
+            testCase.verifyEqual(load(testCase.inputpath()), original);
+            testCase.verifyEqual(load(testCase.cachepath()), struct('sentinel', 1));
+            testCase.verifyEqual(numel(dir(fullfile(fileparts(testCase.inputpath()), '*.mat'))), 2);
+        end
+        function incompleteMonthAndInteriorGapHaveNaNs(testCase)
+            testCase.fullmonth(0, 2);
+            testCase.fullmonth(2, 7);
+            testCase.prepare();
+            testCase.verifyWarning(@() esm2plmt('H', [], 'midmonth', ...
+                'Unit', 'GRAV'), 'ULMO:averageepochs:IncompleteEpoch');
+            [p, s, d] = esm2plmt('H', [], 'midmonth', 'Unit', 'GRAV', 'TimeFormat', 'datetime');
+            testCase.verifySize(p, [3, 6, 4]);
+            testCase.verifyTrue(all(isnan(p(2, :, 3:4)), 'all'));
+            testCase.verifyTrue(all(isnan(s(2, :, 3:4)), 'all'));
+            testCase.verifyEqual(d(2), datetime(2003, 2, 15));
+            source = matfile(testCase.inputpath(), 'Writable', true);
+            dates = source.dates;
+            dates(1) = dates(1) - hours(6);
+            source.dates = dates;
+            testCase.verifyWarning(@() esm2plmt('H', [], 'midmonth', ...
+                'Unit', 'GRAV', 'ForceNew', true), 'ULMO:averageepochs:IncompleteEpoch');
+            data = load(testCase.cachepath());
+            testCase.verifyTrue(all(isnan(data.esmPlmt(2, :, 3:4)), 'all'));
+        end
+        function emptySelectionRetainsShape(testCase)
+            testCase.fixture(0, 1);
+            testCase.prepare();
+            [p, s, d] = esm2plmt('H', testCase.Start + days([2, 3]), '', 'Unit', 'GRAV', 'Loutput', 3);
             testCase.verifySize(p, [0, 10, 4]);
             testCase.verifySize(s, [0, 10, 4]);
             testCase.verifySize(d, [0, 1]);
         end
-        function forceWithoutSavingPreservesCaches(testCase)
-            testCase.fullmonth(0, 1);
-            original = esm2plmt('H', 'midmonth', [], 'Unit', 'GRAV');
-            testCase.fixture(0, 125);
-            fresh = esm2plmt('H', 'midmonth', [], 'Unit', 'GRAV', ...
-                'ForceNew', true, 'SaveData', false);
-            testCase.verifyEqual(fresh(1, 1, 3), 2e-10, 'RelTol', 2e-14);
-            cached = esm2plmt('H', 'midmonth', [], 'Unit', 'GRAV');
-            testCase.verifyEqual(cached, original);
-            raw = load(testCase.cachepath());
-            testCase.verifyEqual(raw.esmPlmt(1, 1, 3), 1e-10);
-        end
-        function incompleteCacheIsRebuilt(testCase)
+        function densityAndPotentialConversionPreserveLowDegrees(testCase)
             testCase.fixture(0, 2);
-            dates = testCase.Start;
-            save(testCase.cachepath(), 'dates');
-            p = esm2plmt('H', [], [], 'Unit', 'GRAV');
-            testCase.verifyEqual(p(1, 1, 3), 2e-10);
-            testCase.verifyEqual(numel(who('-file', testCase.cachepath())), 3);
-        end
-        function missingInteriorMonthHasNaNs(testCase)
-            testCase.fullmonth(0, 2);
-            testCase.fullmonth(2, 7);
-            testCase.verifyWarning(@() esm2plmt('H', 'midmonth', [], ...
-                'Unit', 'GRAV'), 'ULMO:averageepochs:IncompleteEpoch');
-            [p, ~, d] = esm2plmt('H', 'midmonth', [], 'Unit', 'GRAV', ...
-                'TimeFormat', 'datetime');
-            testCase.verifySize(p, [3, 6, 4]);
-            testCase.verifyTrue(all(isnan(p(2, :, 3:4)), 'all'));
-            testCase.verifyEqual(p([1, 3], 1, 3), [2; 7] * 1e-10, 'RelTol', 2e-14);
-            testCase.verifyEqual(d(2), datetime(2003, 2, 15));
-        end
-        function densityConversionPreservesLowDegrees(testCase)
-            % Explicit physical factors include the CF k1 = 0.021 term.
-            testCase.fixture(0, 2);
-            [p, ~] = esm2plmt('H', [], ...
-                [testCase.Start, testCase.Start + hours(6)]);
+            file = testCase.fixture(1, 3);
+            testCase.rewrite(file, '6378137', '6378136');
+            testCase.prepare();
+            p = esm2plmt('H');
             degree = [0; 1; 1; 2; 2; 2];
             love = [0; 0.021; 0.021; 0; 0; 0];
             factor = 6378137 * 5517 / 3 .* (2 * degree + 1) ./ (1 + love);
-            testCase.verifyEqual(reshape(p(1, :, 3), [], 1), 2e-10 * (1:6)' .* factor, ...
-                'RelTol', 2e-14);
+            testCase.verifyEqual(reshape(p(1, :, 3), [], 1), 2e-10 * (1:6)' .* factor, 'RelTol', 2e-14);
+            [p, ~, d] = esm2plmt('H', [], '', 'Unit', 'POT', 'Loutput', 1, ...
+                'OutputFormat', 'traditional', 'TimeFormat', 'datetime');
+            testCase.verifySize(p, [3, 4, 2]);
+            testCase.verifyEqual(squeeze(p(1, 3, :)), [2 * 6378137; 3 * 6378136] * 1e-10, 'RelTol', 1e-14);
+            testCase.verifyEqual(d, testCase.Start + hours([0; 6]));
         end
-        function formatsTruncationAndPadding(testCase)
+        function invalidPreparedInputNeverFallsBackToGfc(testCase)
             testCase.fixture(0, 1);
-            range = [testCase.Start, testCase.Start + hours(6)];
-            [p, s, d] = esm2plmt('H', [], range, ...
-                'Unit', 'POT', 'Loutput', 1, 'OutputFormat', 'traditional', ...
-                'TimeFormat', 'datetime');
-            testCase.verifySize(p, [3, 4]);
-            testCase.verifyEqual(p(:, 3), 6378137e-10 * (1:3)', 'RelTol', 1e-14);
-            testCase.verifyEqual(s(:, 1:2), p(:, 1:2));
-            testCase.verifyEqual(d, testCase.Start);
-            p = esm2plmt('H', [], range, ...
-                'Unit', 'GRAV', 'Loutput', 3);
-            testCase.verifySize(p, [1, 10, 4]);
-            testCase.verifyTrue(all(isnan(p(1, 7:10, 3:4)), 'all'));
-            testCase.verifyEqual(squeeze(p(1, 7:10, 1:2)), [3, 0; 3, 1; 3, 2; 3, 3]);
+            testCase.prepare();
+            dates = testCase.Start;
+            save(testCase.inputpath(), 'dates', '-v7.3');
+            testCase.verifyError(@() esm2plmt('H'), 'ULMO:esm2plmt:InvalidPreparedData');
         end
-        function rejectDuplicateSamples(testCase)
+        function rejectDuplicateAndOffGridSources(testCase)
             file = testCase.fixture(0, 1);
             mkdir(fullfile(testCase.RawFolder, 'duplicate'));
             copyfile(file, fullfile(testCase.RawFolder, 'duplicate'));
-            testCase.verifyError(@() esm2plmt('H', [], [], 'Unit', 'GRAV'), ...
-                'ULMO:esm2plmt:InvalidSampling');
+            testCase.verifyError(@() testCase.prepare(), 'ULMO:prepareesm:InvalidSampling');
+            rmdir(fullfile(testCase.RawFolder, 'duplicate'), 's');
+            movefile(file, strrep(file, '_00.gfc', '_01.gfc'));
+            testCase.verifyError(@() testCase.prepare(), 'ULMO:prepareesm:InvalidSampling');
         end
-        function ignoresHeaderMetadata(testCase)
-            % Header descriptions are not validated; radius still sets units.
-            testCase.fixture(0, 1);
-            file = testCase.fixture(1, 2);
-            testCase.rewrite(file, '6378137', '6378136');
+        function ignoresDescriptiveMetadataButRequiresRadius(testCase)
+            file = testCase.fixture(0, 1);
             testCase.rewrite(file, 'fully_normalized', 'unused-description');
             testCase.rewrite(file, 'max_degree 2', 'max_degree 99');
-            testCase.rewrite(file, 'mtmshc_H_20030101_06', 'different-model-name');
-            testCase.rewrite(file, 'earth_gravity_constant 3.986005D14', 'unused_key ignored');
-            range = [testCase.Start, testCase.Start + hours(12)];
-            p = esm2plmt('H', [], range, 'Unit', 'GRAV');
-            testCase.verifySize(p, [2, 6, 4]);
-            testCase.verifyEqual(p(:, 1, 3), [1; 2] * 1e-10, 'RelTol', 1e-14);
-            p = esm2plmt('H', [], range, 'Unit', 'POT');
-            testCase.verifyEqual(p(:, 1, 3), [6378137; 2 * 6378136] * 1e-10, ...
-                'RelTol', 1e-14);
+            testCase.prepare();
+            testCase.rewrite(file, 'radius 6378137', 'unused-radius 6378137');
+            testCase.verifyError(@() testCase.prepare('ForceNew', true), 'ULMO:prepareesm:InvalidRadius');
         end
-        function rejectBadHarmonicsAndInputs(testCase)
-            file = testCase.fixture(0, 1);
-            range = [testCase.Start, testCase.Start + hours(6)];
-            testCase.rewrite(file, 'gfc 2 2', 'gfc 2 1');
-            testCase.verifyError(@() esm2plmt('H', [], range, ...
-                'Unit', 'GRAV'), 'ULMO:esm2plmt:InvalidCoefficients');
-            testCase.verifyError(@() esm2plmt('H', hours(6)), 'ULMO:esm2plmt:InvalidTimeStep');
-            testCase.verifyError(@() esm2plmt('H', [], [range; range]), 'ULMO:notValidTimeRange');
+        function rejectsInvalidTimeArguments(testCase)
+            testCase.verifyError(@() esm2plmt('H', [], 'GRACE'), 'MATLAB:validators:mustBeMember');
+            testCase.verifyError(@() esm2plmt('H', [], []), 'MATLAB:validators:mustBeTextScalar');
+            testCase.verifyError(@() esm2plmt('H', [testCase.Start, NaT]), 'ULMO:notValidTimeRange');
+            testCase.verifyError(@() esm2plmt('H', repmat(testCase.Start, 2)), 'ULMO:notValidTimeRange');
+        end
+        function demoPropagatesFormalErrorsFromPreparedData(testCase)
+            for k = 0:3
+                testCase.fixture(k, k + 1);
+            end
+            testCase.prepare();
+            source = matfile(testCase.inputpath(), 'Writable', true);
+            sigma = source.esmPlmt;
+            sigma(:, :, 3) = 3;
+            sigma(:, :, 4) = 4;
+            source.esmStdPlmt = sigma;
+            folder = fileparts(testCase.inputpath());
+            for component = ["I", "O"]
+                copyfile(testCase.inputpath(), fullfile(folder, "ESAESM2_" + component + ".mat"));
+            end
+            graceFile = fullfile(testCase.Scratch, 'GSM-fixture');
+            fid = fopen(graceFile, 'w');
+            for row = 1:6
+                fprintf(fid, 'GRCOF2 %d %d 1 0 0 0 20030101.0100 20030101.1300 nnnn\n', ...
+                    sigma(1, row, 1:2));
+            end
+            fclose(fid);
+            products = esm2plmt_demo(graceFile, fullfile(testCase.Scratch, 'products'), ...
+                'Loutput', 1, 'MakeFigure', false);
+            h = load(products.H.nativeGRAV);
+            hi = load(products.HI.nativeSD);
+            hio = load(products.HIO.nativeSD);
+            testCase.verifyEqual(h.esmStdPlmt(1, 1, 3), 3 / sqrt(2), 'RelTol', 1e-14);
+            factor = 6378137 * 5517 / 3;
+            testCase.verifyEqual(hi.esmStdPlmt(1, 1, 3), 3 * factor, 'RelTol', 1e-14);
+            testCase.verifyEqual(hio.esmStdPlmt(1, 1, 3), 3 * sqrt(3 / 2) * factor, 'RelTol', 1e-14);
+            testCase.verifyEqual(h.dates, datenum(datetime(2003, 1, 1, 7, 0, 0)));
+            % Perfectly correlated component variability must add before the
+            % empirical standard error, rather than combine in quadrature.
+            for component = ["H", "I", "O"]
+                path = fullfile(folder, "ESAESM2_" + component + ".mat");
+                data = rmfield(load(path), 'esmStdPlmt');
+                save(path, '-struct', 'data', '-v7.3');
+            end
+            products = esm2plmt_demo(graceFile, fullfile(testCase.Scratch, 'empirical'), ...
+                'Loutput', 1, 'MakeFigure', false);
+            hio = load(products.HIO.nativeSD);
+            testCase.verifyEqual(hio.esmStdPlmt(1, 1, 3), 1.5e-10 * factor, 'RelTol', 2e-14);
         end
     end
     methods (Access = private)
-        function path = cachepath(testCase, timestep)
-            if nargin < 2 || isempty(timestep)
-                name = 'ESAESM2_H_GRAV.mat';
-            else
-                name = 'ESAESM2_H_GRAV-Tmidmonth.mat';
-            end
-            path = fullfile(testCase.Scratch, 'ESM', 'ESAESM2', name);
+        function path = inputpath(testCase)
+            path = fullfile(testCase.Scratch, 'ESM', 'ESAESM2', 'ESAESM2_H.mat');
+        end
+        function path = cachepath(testCase)
+            path = fullfile(testCase.Scratch, 'ESM', 'ESAESM2', 'ESAESM2_H_GRAV-Tmidmonth.mat');
+        end
+        function prepare(testCase, varargin)
+            prepareesm(testCase.RawFolder, 'H', 'BeQuiet', true, varargin{:});
         end
         function fullmonth(testCase, offset, amplitude)
             first = testCase.Start + calmonths(offset);

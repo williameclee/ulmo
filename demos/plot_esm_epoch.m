@@ -24,11 +24,14 @@
 %
 % Created by
 %   2026/10/29
+%
+% Last modified
+%   2026/10/30
 
 function plot_esm_epoch(products, outputFile, options)
     arguments (Input)
         products (1, 1) struct
-        outputFile (1, 1) string
+        outputFile {mustBeTextScalar}
         options.ColorLimits (1, 3) double {mustBePositive, mustBeFinite} = [500, 500, 100]
     end
     components = ["H", "I", "O"];

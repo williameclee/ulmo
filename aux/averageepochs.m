@@ -1,4 +1,4 @@
-%% AVERAGEEPOCHS - Averages data and propagates uncertainties over epoch windows.
+%% AVERAGEEPOCHS - Averages data and estimates mean uncertainties over epoch windows.
 % Overlapping windows share samples. Time is the third array dimension,
 % following the gridded-data convention used by SSH2LONLATT and STERIC2LONLATT.
 %
@@ -28,18 +28,20 @@
 %   averages - Arithmetic means within each [start, end) window.
 %       Size: (A, B, K), same floating-point class as data.
 %   dates - Exact epoch midpoints, size (K, 1), datetime.
-%   averageStd - Formal one-sigma uncertainty of each mean, in data units.
-%       Assuming independent sample errors, sigma(mean) = sqrt(sum(sigma_i^2))/n,
-%       using exactly the n samples included in the mean. Missing input sigma,
-%       absent samples or rejected epochs give NaN. A single sample retains
-%       its supplied sigma. This is neither sample variability nor an empirical
-%       standard error estimated from variability. Correlated input errors
-%       require their covariance and are not represented by SampleStd alone.
+%   averageStd - One-sigma uncertainty estimate of each mean, in data units.
+%       With known formal errors for every included sample, returns
+%       sqrt(sum(sigma_i^2))/n. Otherwise estimates std(samples,0)/sqrt(n)
+%       from the same n samples (sample variance normalization n-1).
+%       The empirical estimate requires at least two samples; otherwise NaN.
+%       Rejected/empty means have NaN uncertainty. A single sample retains its
+%       supplied formal sigma. Both estimates assume independent samples;
+%       neither accounts for temporal correlation or systematic model error.
 %
 % Notes
 %   Without checking, NaN data are omitted separately for each array element;
 %   sigma values are selected with the same mask. Unknown sigma is never
-%   omitted for an otherwise valid data sample. With checking, an incomplete
+%   treated as zero for a valid sample: an unknown sigma uses the empirical
+%   estimate for that whole mean. With checking, an incomplete
 %   timestamp grid invalidates the entire epoch; missing data invalidate only
 %   the affected elements. Empty or incomplete results emit IncompleteEpoch.
 %   No interpolation or calendar assumptions are made. The first two outputs
@@ -60,6 +62,11 @@ function [averages, dates, averageStd] = averageepochs(nativeDates, data, epochs
         options.CheckCompleteness (1, 1) logical = false
         options.SamplingOrigin = []
         options.SampleStd {mustBeFloat, mustBeReal} = []
+    end
+    arguments (Output)
+        averages (:, :, :) {mustBeFloat}
+        dates (:, 1) datetime
+        averageStd (:, :, :) {mustBeFloat}
     end
     nativeDates = parsedates(nativeDates);
     epochs = parsedates(epochs);
@@ -127,13 +134,17 @@ function [averages, dates, averageStd] = averageepochs(nativeDates, data, epochs
         means(rejected) = NaN;
         averages(:, :, k) = means;
         incomplete(k) = any(rejected, 'all');
+        uncertainty = std(samples, 0, 3, 'omitmissing') ./ sqrt(count);
+        uncertainty(count < 2) = NaN;
         if ~isempty(sampleStd)
             sigmas = sampleStd(:, :, ids);
             sigmas(~valid) = 0;
-            uncertainty = sqrt(sum(sigmas .^ 2, 3)) ./ count;
-            uncertainty(rejected) = NaN;
-            averageStd(:, :, k) = uncertainty;
+            formal = sqrt(sum(sigmas .^ 2, 3)) ./ count;
+            known = all(~isnan(sigmas), 3);
+            uncertainty(known) = formal(known);
         end
+        uncertainty(rejected) = NaN;
+        averageStd(:, :, k) = uncertainty;
     end
     if any(incomplete)
         warning('ULMO:averageepochs:IncompleteEpoch', ...

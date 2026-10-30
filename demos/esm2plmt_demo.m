@@ -27,10 +27,13 @@
 %   subtraction. One epoch demonstrates ingestion, not trend recovery.
 %   Requires the standard ULMO paths, Earth constants and ISSM Love numbers.
 %   Exact GRACE-window means are formed from cached raw samples. These can
-%   differ from the calendar-month means returned by ESM2PLMT(component, "midmonth").
+%   differ from the calendar-month means returned by ESM2PLMT(component, [], "midmonth").
 %   Formal errors are propagated assuming independent samples/components;
-%   unavailable input errors remain NaN. No covariance model is supplied.
-%   ESM inputs are read from $IFILES/ESM/ESAESM2/raw/COMPONENT.
+%   missing formal errors use the empirical standard error of each mean.
+%   HI/HIO empirical errors use the summed samples, retaining their observed
+%   cross-component covariance. No temporal correlation correction is applied.
+%   Prepared inputs are $IFILES/ESM/ESAESM2/ESAESM2_COMPONENT.mat.
+%   Use PREPAREESM separately to import raw files from any source folder.
 %
 % See also
 %   ESM2PLMT, PLOT_ESM_EPOCH, PARSEGRACESOURCEFILE
@@ -43,8 +46,8 @@
 
 function products = esm2plmt_demo(graceFile, outputFolder, options)
     arguments (Input)
-        graceFile (1, 1) string {mustBeFile}
-        outputFolder (1, 1) string
+        graceFile {mustBeTextScalar, mustBeFile}
+        outputFolder {mustBeTextScalar}
         options.Loutput (1, 1) double {mustBeInteger, mustBePositive} = 60
         options.MakeFigure (1, 1) logical = true
     end
@@ -55,38 +58,27 @@ function products = esm2plmt_demo(graceFile, outputFolder, options)
     stamp = string(intervals, 'yyyyMMdd_HH');
     prefix = "ESAESM2_";
     suffix = "_" + stamp(1) + "_" + stamp(2);
-    mass = struct;
-    massStd = struct;
     products = struct;
     for component = ["H", "I", "O"]
         [gravity, uncertainty, dates] = epochmean(intervals, graceDate, ...
-            'Component', component, 'Unit', 'GRAV');
+            component, 'GRAV');
         assert(isequal(dates, datenum(graceDate)), 'ESM and GRACE epoch dates differ.');
         assert(options.Loutput <= gravity(1, end, 1), ...
             'Demo output degree must not exceed the source degree.');
         stem = fullfile(outputFolder, prefix + component + suffix);
         products.(component).nativeGRAV = savefield(stem, gravity, uncertainty, dates, "GRAV");
         [density, uncertainty, dates] = epochmean(intervals, graceDate, ...
-            'Component', component, 'Unit', 'SD');
-        mass.(component) = density;
-        massStd.(component) = uncertainty;
+            component, 'SD');
         products.(component).nativeSD = savefield(stem, density, uncertainty, dates, "SD");
         products.(component).truncatedSD = savetruncated(stem, density, uncertainty, ...
             dates, options.Loutput);
     end
     for component = ["HI", "HIO"]
-        density = mass.H;
-        density(:, :, 3:4) = mass.H(:, :, 3:4) + mass.I(:, :, 3:4);
+        components = ["H", "I"];
         if component == "HIO"
-            density(:, :, 3:4) = density(:, :, 3:4) + mass.O(:, :, 3:4);
+            components = ["H", "I", "O"];
         end
-        uncertainty = density;
-        % Propagate independent component errors; any unknown sigma stays NaN.
-        variance = massStd.H(:, :, 3:4) .^ 2 + massStd.I(:, :, 3:4) .^ 2;
-        if component == "HIO"
-            variance = variance + massStd.O(:, :, 3:4) .^ 2;
-        end
-        uncertainty(:, :, 3:4) = sqrt(variance);
+        [density, uncertainty, dates] = epochmean(intervals, graceDate, components, 'SD');
         stem = fullfile(outputFolder, prefix + component + suffix);
         products.(component).nativeSD = savefield(stem, density, uncertainty, dates, "SD");
         products.(component).truncatedSD = savetruncated(stem, density, uncertainty, ...
@@ -108,15 +100,28 @@ function file = savetruncated(stem, field, uncertainty, dates, degree)
     file = savefield(stem, field(:, 1:nRows, :), uncertainty(:, 1:nRows, :), dates, "SD");
 end
 
-function [plmt, uncertainty, dates] = epochmean(interval, midpoint, options)
+function [plmt, uncertainty, dates] = epochmean(interval, midpoint, components, unit)
     arguments (Input)
         interval (1, 2) datetime
         midpoint (1, 1) datetime
-        options.Component (1, 1) string
-        options.Unit (1, 1) string
+        components {mustBeText}
+        unit {mustBeTextScalar}
     end
-    [raw, rawStd, rawDates] = esm2plmt(options.Component, [], interval, ...
-        'Unit', options.Unit, 'TimeFormat', 'datetime');
+    for component = string(components)
+        [field, fieldStd, fieldDates] = esm2plmt(component, interval, '', ...
+            'Unit', unit, 'TimeFormat', 'datetime');
+        if component == string(components(1))
+            raw = field;
+            rawStd = fieldStd;
+            rawDates = fieldDates;
+        else
+            assert(isequal(rawDates, fieldDates), 'ESM component sample times differ.');
+            raw(:, :, 3:4) = raw(:, :, 3:4) + field(:, :, 3:4);
+            rawStd(:, :, 3:4) = hypot(rawStd(:, :, 3:4), fieldStd(:, :, 3:4));
+        end
+    end
+    % Sum samples before estimating empirical error, retaining their observed
+    % cross-component covariance. Supplied formal errors assume independence.
     [coefficients, dates, coefficientStd] = averageepochs(rawDates, ...
         permute(raw(:, :, 3:4), [2, 3, 1]), interval, hours(6), ...
         'CheckCompleteness', true, 'SamplingOrigin', datetime(2000, 1, 1), ...
