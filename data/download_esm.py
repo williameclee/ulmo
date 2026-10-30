@@ -1,11 +1,11 @@
-"""Stream ESAESM2 yearly archives, retaining only one GRACE interval.
+"""Download the full ESAESM2 six-hour, degree-180 record (1995-2006).
 
-Read the interval from GRCOF2 records, not the inclusive day-of-year filename.
-Archive members are not chronologically sorted. Stop only after every expected
-six-hour sample has been found. Individual saved files have SHA-256 checksums;
-the partial archive stream itself is not a verified full-year gzip download.
-Inputs are saved under $IFILES/ESM/ESAESM2/raw/COMPONENT. Per-GRACE-source
-manifests share that root, so overlapping epochs reuse the same raw files.
+Stream annual component archives into $IFILES/ESM/ESAESM2/raw/COMPONENT.
+Completed component-years are checkpointed and verified locally on restart.
+Use --years/--components for subsets, or --grace-file for the single-epoch
+proof-of-concept demo. Archives need not have chronologically sorted members.
+Saved files have SHA-256 integrity records; archive streams are not retained
+or verified as complete gzip files.
 """
 
 import argparse
@@ -20,15 +20,24 @@ import urllib.request
 
 BASE = "https://isdc-data.gfz.de/future_missions/esaesm/ESAESM2"
 COMPONENTS = ("A", "H", "I", "O", "S", "AOHIS")
+YEARS = tuple(range(1995, 2007))
 
 
 def parse_arguments(argv=None):
     """Parse CLI options and resolve the configured download root."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--grace-file", type=Path, required=True)
-    parser.add_argument("--components", nargs="+", default=["H", "I", "O"],
-                        choices=COMPONENTS)
+    selection = parser.add_mutually_exclusive_group()
+    selection.add_argument("--grace-file", type=Path,
+                           help="Optional single-epoch demo: read the GRCOF2 interval")
+    selection.add_argument("--years", type=int, nargs="+", choices=YEARS,
+                           help="Whole years to download; default: all 1995-2006")
+    parser.add_argument("--components", nargs="+", choices=COMPONENTS,
+                        help="Default: all components (H I O for the GRACE demo)")
     args = parser.parse_args(argv)
+    if args.components is None:
+        args.components = ["H", "I", "O"] if args.grace_file else list(COMPONENTS)
+    if args.years is None:
+        args.years = list(YEARS)
     data_root = os.environ.get("IFILES")
     if not data_root:
         parser.error("Set IFILES to the configured data root")
@@ -62,7 +71,7 @@ def load_manifest(path, manifest):
     if path.exists():
         previous = json.loads(path.read_text())
         if any(previous.get(key) != value for key, value in manifest.items() if key != "components"):
-            raise ValueError("Existing manifest belongs to a different GRACE input or interval")
+            raise ValueError("Existing manifest belongs to a different GRACE input or dataset interval")
         manifest["components"] = previous["components"]
     return manifest
 
@@ -106,7 +115,7 @@ def download_archive(output, component, year, expected_times):
                     temporary = path.with_suffix(".gfc.part")
                     temporary.write_bytes(data)
                     temporary.replace(path)
-                found[timestamp] = dict(file=str(path.relative_to(output)),
+                found[timestamp] = dict(file=path.relative_to(output).as_posix(),
                     timestamp=timestamp.isoformat(), bytes=len(data),
                     sha256=hashlib.sha256(data).hexdigest(), archive=url,
                     member=member.name)
@@ -142,9 +151,69 @@ def download_epoch(grace_file, components, data_root):
     return manifest_file
 
 
+def verified_component(output, component, entries, times):
+    """Check a completed checkpoint before skipping its archive on restart.
+
+    Missing files trigger another archive read. Modified files or inconsistent
+    manifests raise an error rather than silently replacing local data.
+    """
+    if [entry["timestamp"] for entry in entries] != [t.isoformat() for t in times]:
+        raise ValueError(f"Incomplete or inconsistent checkpoint for {component}")
+    complete = True
+    for entry, timestamp in zip(entries, times):
+        relative = f"raw/{component}/mtmshc_{component}_{timestamp:%Y%m%d_%H}.gfc"
+        if Path(entry["file"]) != Path(relative):
+            raise ValueError(f"Unexpected checkpoint path: {entry['file']}")
+        path = output / relative
+        if not path.is_file():
+            complete = False
+            continue
+        data = path.read_bytes()
+        if len(data) != entry["bytes"] or hashlib.sha256(data).hexdigest() != entry["sha256"]:
+            raise ValueError(f"Existing data differ from checkpoint: {path}")
+    return complete
+
+
+def download_dataset(components, data_root, years=YEARS):
+    """Download complete years without requiring a GRACE observation.
+
+    Defaults to the full temporal record. Save one manifest per year, after
+    each component completes, so failures do not discard earlier progress.
+    Return the annual manifest paths. Reuse existing epoch-demo raw files.
+    """
+    if not components or any(c not in COMPONENTS for c in components):
+        raise ValueError(f"Choose one or more components from {COMPONENTS}")
+    if not years or any(isinstance(y, bool) or not isinstance(y, int) or y not in YEARS for y in years):
+        raise ValueError("ESAESM2 six-hour fields cover integer years 1995 through 2006")
+    output = Path(data_root) / "ESM" / "ESAESM2"
+    manifest_files = []
+    for year in sorted(set(years)):
+        start, end = dt.datetime(year, 1, 1), dt.datetime(year + 1, 1, 1)
+        step = dt.timedelta(hours=6)
+        times = [start + k * step for k in range((end - start) // step)]
+        manifest = dict(dataset="ESAESM2", start=start.isoformat(),
+                        end_exclusive=end.isoformat(), sampling_hours=6, components={})
+        path = output / "manifests" / f"ESAESM2_{year}.json"
+        manifest = load_manifest(path, manifest)
+        for component in dict.fromkeys(components):
+            previous = manifest["components"].get(component)
+            if previous is not None and verified_component(output, component, previous, times):
+                print(f"Verified {component} {year}: {len(previous)} existing files", flush=True)
+                continue
+            entries = download_archive(output, component, year, set(times))
+            manifest["components"][component] = entries
+            save_manifest(path, manifest)
+            print(f"Completed {component} {year}: {len(entries)} files", flush=True)
+        manifest_files.append(path)
+    return manifest_files
+
+
 def main(argv=None):
     args = parse_arguments(argv)
-    download_epoch(args.grace_file, args.components, args.data_root)
+    if args.grace_file:
+        download_epoch(args.grace_file, args.components, args.data_root)
+    else:
+        download_dataset(args.components, args.data_root, args.years)
 
 
 if __name__ == "__main__":
