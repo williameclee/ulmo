@@ -1,15 +1,16 @@
-%% CALENDARMONTHEPOCHS - Returns calendar-month windows spanning supplied dates.
+%% CALENDARMONTHEPOCHS - Returns calendar-month windows spanning an inclusive date range.
 %
 % Syntax
-%   epochs = calendarmonthepochs(dates)
+%   epochs = calendarmonthepochs(timerange)
 %
 % Input arguments
-%   dates - Nonempty vector of unzoned timestamps or MATLAB datenums.
-%       Dates need not be sorted or regularly sampled.
+%   timerange - Inclusive [first, last] unzoned timestamps or MATLAB datenums.
+%       Size: two-element vector, with first <= last. Equal endpoints select
+%       one month; an endpoint on a month boundary includes that month.
 %
 % Output arguments
 %   epochs - First day and exclusive end of each calendar month from the
-%       earliest through the latest supplied date, including intervening months.
+%       first through the last supplied date, including intervening months.
 %       Size: (N, 2), datetime.
 %
 % See also
@@ -18,23 +19,26 @@
 % Created by
 %   2026/10/30
 
-function epochs = calendarmonthepochs(dates)
+function epochs = calendarmonthepochs(timerange)
     arguments (Input)
-        dates {mustBeA(dates, {'datetime', 'numeric'}), mustBeVector}
+        timerange {mustBeA(timerange, {'datetime', 'numeric'}), mustBeVector}
     end
     arguments (Output)
         epochs (:, 2) datetime
     end
-    if isnumeric(dates)
-        assert(all(isfinite(dates)), 'ULMO:calendarmonthepochs:InvalidDates', ...
+    assert(numel(timerange) == 2, 'ULMO:calendarmonthepochs:InvalidRange', ...
+        'Provide the inclusive first and last dates as a two-element vector.');
+    if isnumeric(timerange)
+        assert(all(isfinite(timerange)), 'ULMO:calendarmonthepochs:InvalidDates', ...
             'Dates must be finite.');
-        dates = datetime(dates, 'ConvertFrom', 'datenum');
+        timerange = datetime(timerange, 'ConvertFrom', 'datenum');
     end
-    assert(~isempty(dates) && ~any(isnat(dates) | isinf(dates)) && ...
-        isempty(dates.TimeZone), 'ULMO:calendarmonthepochs:InvalidDates', ...
-        'Provide nonempty, finite unzoned timestamps.');
-    first = dateshift(min(dates), 'start', 'month');
-    last = dateshift(max(dates), 'start', 'month');
+    assert(~any(isnat(timerange) | isinf(timerange)) && isempty(timerange.TimeZone), ...
+        'ULMO:calendarmonthepochs:InvalidDates', 'Provide finite unzoned timestamps.');
+    assert(timerange(1) <= timerange(2), 'ULMO:calendarmonthepochs:InvalidRange', ...
+        'The first date must not exceed the last date.');
+    first = dateshift(timerange(1), 'start', 'month');
+    last = dateshift(timerange(2), 'start', 'month');
     starts = (first:calmonths(1):last)';
     epochs = [starts, starts + calmonths(1)];
 end

@@ -13,7 +13,7 @@ classdef epochStatisticsTest < matlab.unittest.TestCase
     end
     methods (Test)
         function calendarMonthsSpanLeapYearAndGaps(testCase)
-            dates = [datetime(2004, 3, 1), datetime(2004, 1, 31)];
+            dates = [datetime(2004, 1, 31), datetime(2004, 3, 1)];
             epochs = calendarmonthepochs(dates);
             starts = datetime(2004, (1:3)', 1);
             testCase.verifyEqual(epochs, [starts, starts + calmonths(1)]);
@@ -21,8 +21,24 @@ classdef epochStatisticsTest < matlab.unittest.TestCase
             testCase.verifyEqual(epochs(2, 2) - epochs(2, 1), days(29));
         end
         function calendarMonthsRejectInvalidDates(testCase)
-            testCase.verifyError(@() calendarmonthepochs(NaT), 'ULMO:calendarmonthepochs:InvalidDates');
-            testCase.verifyError(@() calendarmonthepochs(Inf), 'ULMO:calendarmonthepochs:InvalidDates');
+            testCase.verifyError(@() calendarmonthepochs([NaT, NaT]), 'ULMO:calendarmonthepochs:InvalidDates');
+            testCase.verifyError(@() calendarmonthepochs([0, Inf]), 'ULMO:calendarmonthepochs:InvalidDates');
+        end
+        function calendarRangeIncludesEndpointsAndAcceptsSingleDate(testCase)
+            date = datetime(2004, 2, 29, 12, 0, 0);
+            expected = [datetime(2004, 2, 1), datetime(2004, 3, 1)];
+            testCase.verifyEqual(calendarmonthepochs([date; date]), expected);
+            range = [datetime(2003, 12, 31, 18, 0, 0), datetime(2004, 1, 1)];
+            testCase.verifyEqual(calendarmonthepochs(range), ...
+                [datetime(2003, 12, 1), datetime(2004, 1, 1); ...
+                 datetime(2004, 1, 1), datetime(2004, 2, 1)]);
+        end
+        function calendarRangeRejectsSeriesAndReversedBounds(testCase)
+            date = datetime(2004, 1, 1);
+            for values = {[date + days(1), date], date + days(0:2), date}
+                testCase.verifyError(@() calendarmonthepochs(values{1}), ...
+                    'ULMO:calendarmonthepochs:InvalidRange');
+            end
         end
         function irregularOverlappingWindowsUseSuppliedBounds(testCase)
             dates = datetime(2003, 1, 31, 18, 0, 0) + hours((0:4)' * 6);

@@ -16,11 +16,11 @@ downloader = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(downloader)
 
 
-def make_archive(component, hours):
+def make_archive(component, hours, date="20030101"):
     output = io.BytesIO()
     with tarfile.open(fileobj=output, mode="w:gz") as archive:
         for hour in hours:
-            name = f"mtmshc_{component}_20030101_{hour:02d}.gfc"
+            name = f"mtmshc_{component}_{date}_{hour:02d}.gfc"
             content = f"modelname {name[:-4]}\nend_of_head\ngfc 0 0 {hour} 0\n".encode()
             member = tarfile.TarInfo(f"./01/{name}")
             member.size = len(content)
@@ -110,3 +110,65 @@ def test_missing_data_root_fails(run_download, monkeypatch, capsys):
         run_download("H", [0, 6])
     assert error.value.code == 2
     assert "Set IFILES" in capsys.readouterr().err
+
+
+def test_parsing_does_not_read_or_download(tmp_path, monkeypatch):
+    monkeypatch.setenv("IFILES", str(tmp_path))
+    missing_source = tmp_path / "not-downloaded-yet"
+    args = downloader.parse_arguments(["--grace-file", str(missing_source)])
+    assert args.grace_file == missing_source
+    assert args.components == ["H", "I", "O"]
+    assert args.data_root == tmp_path
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_programmatic_download_uses_explicit_root(tmp_path, grace_file, monkeypatch):
+    monkeypatch.delenv("IFILES", raising=False)
+    monkeypatch.setattr(downloader.urllib.request, "urlopen",
+                        lambda *args, **kwargs: io.BytesIO(make_archive("H", [6, 0])))
+    manifest = downloader.download_epoch(grace_file, ["H"], tmp_path / "explicit")
+    assert manifest == tmp_path / "explicit/ESM/ESAESM2/manifests/GSM-fixture.json"
+    assert len(json.loads(manifest.read_text())["components"]["H"]) == 2
+
+
+def test_completed_component_survives_later_download_failure(tmp_path, grace_file, monkeypatch):
+    def open_archive(url, **kwargs):
+        if url.endswith("_H.tar.gz"):
+            return io.BytesIO(make_archive("H", [0, 6]))
+        raise OSError("connection interrupted")
+    monkeypatch.setattr(downloader.urllib.request, "urlopen", open_archive)
+    with pytest.raises(OSError, match="connection interrupted"):
+        downloader.download_epoch(grace_file, ["H", "O"], tmp_path)
+    path = tmp_path / "ESM/ESAESM2/manifests/GSM-fixture.json"
+    assert set(json.loads(path.read_text())["components"]) == {"H"}
+
+
+def test_epoch_crossing_year_boundary_downloads_both_archives(tmp_path, grace_file, monkeypatch):
+    grace_file.write_text("GRCOF2 0 0 1 0 0 0 20021231.1800 20030101.0600 nnnn\n")
+    urls = []
+    def open_archive(url, **kwargs):
+        urls.append(url)
+        if "mtm_2002_" in url:
+            return io.BytesIO(make_archive("H", [18], date="20021231"))
+        return io.BytesIO(make_archive("H", [0]))
+    monkeypatch.setattr(downloader.urllib.request, "urlopen", open_archive)
+    path = downloader.download_epoch(grace_file, ["H"], tmp_path)
+    entries = json.loads(path.read_text())["components"]["H"]
+    assert [entry["timestamp"] for entry in entries] == [
+        "2002-12-31T18:00:00", "2003-01-01T00:00:00"]
+    assert urls == [f"{downloader.BASE}/mtmshc/mtm_2002_H.tar.gz",
+                    f"{downloader.BASE}/mtmshc/mtm_2003_H.tar.gz"]
+
+
+@pytest.mark.parametrize("start,end", [("20030101.0100", "20030101.1200"),
+                                      ("20030101.1200", "20030101.0000"),
+                                      ("19941231.1800", "19950101.0600"),
+                                      ("20061231.1800", "20070101.0600")])
+def test_invalid_epoch_fails_before_download(tmp_path, grace_file, monkeypatch, start, end):
+    grace_file.write_text(f"GRCOF2 0 0 1 0 0 0 {start} {end} nnnn\n")
+    def unexpected_network(*args, **kwargs):
+        pytest.fail("Invalid input must not open a network connection")
+    monkeypatch.setattr(downloader.urllib.request, "urlopen", unexpected_network)
+    with pytest.raises(ValueError):
+        downloader.download_epoch(grace_file, ["H"], tmp_path)
+    assert not (tmp_path / "ESM").exists()

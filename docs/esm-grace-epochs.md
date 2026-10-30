@@ -25,7 +25,9 @@ python3 data/download_esm_epoch.py \
   --grace-file "$GRACE_FILE" --components H I O
 ```
 
-No third-party Python dependencies are needed. The downloader reads the exact
+No third-party Python dependencies are needed. CLI argument parsing is separate
+from `download_epoch(grace_file, components, data_root)`, which can also be
+called directly with explicit inputs. The downloader reads the exact
 start and exclusive end from the GRCOF2 records, rather than interpreting the
 inclusive day-of-year range in the filename. Boundaries must align with the
 six-hour grid. The six-hour series covers 1995–2006; the separate three-hour,
@@ -147,7 +149,8 @@ empirical estimate; obsolete raw copies may be removed separately.
 
 ### Epoch generation and future GRACE support
 
-`calendarmonthepochs(nativeDates)` supplies N-by-2 `[start, end)` windows.
+`calendarmonthepochs([firstDate, lastDate])` supplies N-by-2 `[start, end)`
+windows spanning the inclusive date range. Equal endpoints select one month.
 `averageepochs(nativeDates, data, epochs, expectedStep, ...)` accepts those windows explicitly,
 returns their exact midpoints, and has no calendar-month logic. Windows can
 overlap and their boundaries need not align with the native sampling grid.
@@ -161,7 +164,7 @@ averaging branch. Its third output is the uncertainty estimate of each mean.
 values. Set it to true to reject incomplete timestamp grids or missing values.
 `SamplingOrigin` specifies the grid phase (default: first native timestamp).
 ESM callers supply `hours(6)`, an explicit UTC grid origin and
-`CheckCompleteness=true`. The calendar helper takes only dates and makes no
+`CheckCompleteness=true`. The calendar helper takes only the first/last dates and makes no
 sampling-rate or product assumptions. The demo uses these same averaging and
 completeness rules for its explicit GRACE source window.
 
@@ -275,14 +278,14 @@ data. Plotting does not change the coefficients or the source data.
 ## Validation
 
 ```sh
-python3 -B -m pytest unittests/test_esm_download.py
+python3 -B -m pytest unittests/test_esm_download.py unittests/test_esm_verify.py
 python3 data/verify_esm_epoch.py \
   "$IFILES/ESM/ESAESM2/manifests/${GRACE_FILE##*/}.json" \
   --output "$IFILES/ESM/ESAESM2/verification"
 ```
 
-The downloader tests require pytest and use its temporary-directory and
-monkeypatch fixtures. The verifier checks file hashes, complete six-hour sampling and all degree-180
+The downloader and verifier tests require pytest and run offline using
+temporary directories and mocked archive responses. The verifier checks file hashes, complete six-hour sampling and all degree-180
 harmonics, and independently averages each component using Python's standard
 library. It writes `reference_COMPONENT.bin` as little-endian float64 values,
 with C/S interleaved in ascending degree/order, and `raw_validation.json`.
