@@ -95,42 +95,51 @@ function [esmPlmt, esmStdPlmt, dates] = esm2plmt(component, varargin)
     if nargin == 0
         component = 'O';
     end
+
     [esmPlmt, esmStdPlmt, dates] = loadesm(component, varargin{:});
 end
 
 function [esmPlmt, esmStdPlmt, dates] = loadesm(component, timelim, timestep, options)
+
     arguments (Input)
         component {mustBeTextScalar, mustBeMember(component, ...
-            ["A", "O", "H", "I", "S", "AOHIS"])}
+                       ["A", "O", "H", "I", "S", "AOHIS"])}
         timelim {mustBeTimeRange} = []
         timestep {mustBeTextScalar, mustBeMember(timestep, ["", "midmonth"])} = ''
         options.Unit {mustBeTextScalar, mustBeMember(options.Unit, ["GRAV", "POT", "SD"])} = 'SD'
         options.Loutput double = []
         options.LoveNumSource {mustBeTextScalar} = 'ISSM'
         options.OutputFormat {mustBeTextScalar, mustBeMember(options.OutputFormat, ...
-            ["timefirst", "traditional"])} = 'timefirst'
+                                  ["timefirst", "traditional"])} = 'timefirst'
         options.TimeFormat {mustBeTextScalar, mustBeMember(options.TimeFormat, ...
-            ["datenum", "datetime"])} = 'datenum'
+                                ["datenum", "datetime"])} = 'datenum'
         options.ForceNew (1, 1) logical = false
         options.SaveData (1, 1) logical = true
         options.BeQuiet (1, 1) {mustBeNumericOrLogical} = 0.5
     end
+
     if ~isempty(timelim)
+
         if isnumeric(timelim)
             timelim = datetime(timelim, 'ConvertFrom', 'datenum');
         end
+
         assert(~any(isnat(timelim) | isinf(timelim)) && isempty(timelim.TimeZone), ...
             'ULMO:esm2plmt:InvalidTimeRange', 'Use finite, unzoned UTC time limits.');
     end
+
     if ~isempty(options.Loutput)
         validateattributes(options.Loutput, {'double'}, {'scalar', 'integer', 'nonnegative', 'finite'});
     end
+
     dataRoot = getenv('IFILES');
     assert(~isempty(dataRoot), 'ULMO:esm2plmt:MissingDataRoot', 'Set IFILES before reading ESM fields.');
     folder = fullfile(dataRoot, 'ESM', 'ESAESM2');
     inputPath = fullfile(folder, "ESAESM2_" + string(component) + ".nc");
+
     if strlength(timestep) > 0
         outputPath = cachepath(folder, component, options.Unit, options.LoveNumSource, timestep);
+
         if ~options.ForceNew && isfile(outputPath)
             [coefficients, uncertainty, dates, labels] = readshnc(outputPath, timelim, options.Loutput, ...
                 'OutputFormat', 'compact');
@@ -139,9 +148,12 @@ function [esmPlmt, esmStdPlmt, dates] = loadesm(component, timelim, timestep, op
                 dates, options.Loutput, options.OutputFormat, options.TimeFormat);
             return
         end
+
     end
+
     assert(isfile(inputPath), 'ULMO:esm2plmt:MissingPreparedData', ...
         'Prepared ESM file is missing: %s. Import the source folder with prepareesm first.', inputPath);
+
     if strlength(timestep) == 0
         [coefficients, uncertainty, dates, labels] = readnative(inputPath, timelim, ...
             options.Loutput, options.Unit, options.LoveNumSource, false);
@@ -150,10 +162,12 @@ function [esmPlmt, esmStdPlmt, dates] = loadesm(component, timelim, timestep, op
         epochs = averagingepochs(timestep, nativeDates);
         [coefficients, uncertainty, dates, labels] = averagefile(inputPath, epochs, ...
             options.Unit, options.LoveNumSource);
+
         if options.SaveData
             writeshnc(outputPath, coefficients, uncertainty, dates, options.Unit, 'Labels', labels);
             reportcache('Saved', outputPath, options.BeQuiet);
         end
+
         % Build the complete epoch product before selecting the returned range.
         if ~isempty(timelim)
             keep = dates >= timelim(1) & dates <= timelim(2);
@@ -161,26 +175,32 @@ function [esmPlmt, esmStdPlmt, dates] = loadesm(component, timelim, timestep, op
             uncertainty = uncertainty(:, :, keep);
             dates = dates(keep);
         end
+
     end
+
     [esmPlmt, esmStdPlmt, dates] = formatoutput(coefficients, uncertainty, labels, dates, ...
         options.Loutput, options.OutputFormat, options.TimeFormat);
 end
 
-function [coefficients, uncertainty, dates, labels] = averagefile(path, epochs, unit, loveSource)
+function [coeffs, uncs, dates, labels] = averagefile(path, epochs, unit, loveSource)
     labels = [double(ncread(path, 'degree')), double(ncread(path, 'order'))];
     dates = epochs(:, 1) + (epochs(:, 2) - epochs(:, 1)) / 2;
-    coefficients = nan(size(labels, 1), 2, size(epochs, 1));
-    uncertainty = coefficients;
+    coeffs = nan(size(labels, 1), 2, size(epochs, 1));
+    uncs = coeffs;
+
     for k = 1:size(epochs, 1)
         [raw, rawStd, rawDates] = readnative(path, epochs(k, :), [], unit, loveSource, true);
+
         if isempty(rawDates)
             warning('ULMO:averageepochs:IncompleteEpoch', 'No samples in epoch starting %s.', string(epochs(k, 1)));
             continue
         end
-        [coefficients(:, :, k), ~, uncertainty(:, :, k)] = averageepochs(rawDates, ...
+
+        [coeffs(:, :, k), ~, uncs(:, :, k)] = averageepochs(rawDates, ...
             raw, epochs(k, :), hours(6), 'CheckCompleteness', true, ...
             'SamplingOrigin', datetime(2000, 1, 1), 'SampleStd', rawStd);
     end
+
 end
 
 function [coefficients, uncertainty, dates, labels] = readnative(path, timelim, degree, unit, loveSource, exclusive)
@@ -188,6 +208,7 @@ function [coefficients, uncertainty, dates, labels] = readnative(path, timelim, 
         'OutputFormat', 'compact', 'EndExclusive', exclusive);
     assert(all(mod(hours(dates - datetime(2000, 1, 1)), 6) == 0), ...
         'ULMO:esm2plmt:InvalidPreparedData', 'Prepared samples must lie on the six-hour grid.');
+
     if ~strcmp(unit, 'GRAV') && ~isempty(dates)
         radius = ncreadatt(path, '/', 'equatorRadius');
         validateattributes(radius, {'double'}, {'scalar', 'positive', 'finite'});
@@ -196,29 +217,36 @@ function [coefficients, uncertainty, dates, labels] = readnative(path, timelim, 
         coefficients = coefficients .* factors(:, 3:4);
         uncertainty = uncertainty .* abs(factors(:, 3:4));
     end
+
 end
 
 function epochs = averagingepochs(timestep, nativeDates)
+
     switch string(timestep)
         case "midmonth"
             epochs = calendarmonthepochs(nativeDates([1, end]));
         otherwise
             error('ULMO:esm2plmt:InvalidTimeStep', 'Unsupported averaging step: %s.', timestep);
     end
+
 end
 
 function path = cachepath(folder, component, unit, loveSource, timestep)
     product = "ESAESM2_" + string(component) + "_" + string(unit);
+
     if strcmp(unit, 'SD')
         product = product + "_" + replace(string(loveSource), " ", "");
     end
+
     path = fullfile(folder, product + "-T" + string(timestep) + ".nc");
 end
 
 function reportcache(action, path, beQuiet)
+
     if beQuiet < 1
         fprintf('[ULMO>esm2plmt] %s %s.\n', action, path);
     end
+
 end
 
 function plmt = emptyplmt(nDates, labels)
@@ -230,28 +258,36 @@ function [plmt, uncertainty, dates] = ...
         formatoutput(coefficients, coefficientStd, labels, dates, degree, outputFormat, timeFormat)
     % Apply degree selection while compact, then expand labels for lmcosi.
     nRows = size(labels, 1);
+
     if ~isempty(degree)
         labels = harmoniclabels(degree);
         nRows = min(nRows, size(labels, 1));
     end
+
     plmt = emptyplmt(numel(dates), labels);
     uncertainty = plmt;
     plmt(:, 1:nRows, 3:4) = permute(coefficients(1:nRows, :, :), [3, 1, 2]);
     uncertainty(:, 1:nRows, 3:4) = permute(coefficientStd(1:nRows, :, :), [3, 1, 2]);
+
     if strcmp(timeFormat, 'datenum')
         dates = datenum(dates); %#ok<DATNM>
     end
+
     dates = dates(:);
+
     if strcmp(outputFormat, 'traditional')
         plmt = permute(plmt, [2, 3, 1]);
         uncertainty = permute(uncertainty, [2, 3, 1]);
     end
+
 end
 
 function labels = harmoniclabels(degree)
     labels = zeros((degree + 1) * (degree + 2) / 2, 2);
+
     for l = 0:degree
         rows = l * (l + 1) / 2 + (1:l + 1);
         labels(rows, :) = [repmat(l, l + 1, 1), (0:l)'];
     end
+
 end
