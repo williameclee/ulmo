@@ -1,4 +1,4 @@
-%% PREPAREESM - Imports ESAESM2 GFC files into a native lmcosi MAT file.
+%% PREPAREESM - Imports ESAESM2 GFC files into a compact harmonic NetCDF file.
 % Reads a source folder, including subdirectories, separately from ESM2PLMT.
 % The source may reside on an external drive and is never modified.
 %
@@ -9,27 +9,27 @@
 % Input arguments
 %   folder - Folder containing mtmshc_COMPONENT_YYYYMMDD_HH.gfc files.
 %   component - 'A', 'O', 'H', 'I', 'S' or 'AOHIS'.
-%   ForceNew (name-value) - Whether to replace an existing prepared MAT file.
+%   ForceNew (name-value) - Whether to replace an existing prepared NetCDF file.
 %       Default option: false (an existing destination raises an error).
 %   BeQuiet (name-value) - Whether to suppress the completion message.
 %       Default option: false.
 %
 % Output arguments
-%   path - Prepared MAT file at $IFILES/ESM/ESAESM2/ESAESM2_COMPONENT.mat.
+%   path - Prepared NetCDF file at $IFILES/ESM/ESAESM2/ESAESM2_COMPONENT.nc.
 %
 % Output file content
-%   esmPlmt - Fully normalized native-degree Stokes coefficients in lmcosi
-%       layout, columns degree, order, C and S. Size: (N, M, 4), timefirst.
-%   dates - Sorted six-hour UTC timestamps. Size: (N, 1), unzoned datetime.
-%   equatorRadius - Source radius for subsequent unit conversion.
-%       Size: (N, 1). Unit: m.
+%   degree, order - uint16 vectors on the shared lm dimension. Size: (M, 1).
+%   coefficients - Fully normalized Stokes values, double. Size: (M, 2, N).
+%       Dimensions: lm, cs (cosine then sine), time.
+%   time - Double seconds since 2000-01-01 00:00:00 UTC. Size: (N, 1).
+%   equatorRadius (global attribute) - Constant reference radius, metres.
 %
 % Notes
-%   Requires IFILES. Imports at most 32 samples per batch to a temporary v7.3
+%   Requires IFILES. Imports at most 32 samples per batch to a temporary NetCDF-4
 %   file, then replaces the destination after successful validation/import.
 %   Duplicate/off-grid timestamps and missing harmonic rows are rejected.
 %   Formal errors are absent from ESAESM2; no redundant NaN array is stored.
-%   Refreshing a component removes its derived -T*.mat caches in all units.
+%   Refreshing a component removes its derived -T*.nc caches in all units.
 %   Reimport the entire desired source collection when adding data; this
 %   replaces the prepared record rather than appending to it.
 %
@@ -53,7 +53,7 @@ function path = prepareesm(folder, component, options)
     root = getenv('IFILES');
     assert(~isempty(root), 'ULMO:prepareesm:MissingDataRoot', 'Set IFILES before importing ESM.');
     destination = fullfile(root, 'ESM', 'ESAESM2');
-    path = fullfile(destination, "ESAESM2_" + string(component) + ".mat");
+    path = fullfile(destination, "ESAESM2_" + string(component) + ".nc");
     assert(options.ForceNew || ~isfile(path), 'ULMO:prepareesm:FileExists', ...
         'Prepared data already exist. Use ForceNew=true to replace %s.', path);
     files = dir(fullfile(folder, '**', "mtmshc_" + string(component) + "_*.gfc"));
@@ -70,34 +70,30 @@ function path = prepareesm(folder, component, options)
     files = files(order);
     assert(numel(unique(dates)) == numel(dates) && all(mod(hour(dates), 6) == 0), ...
         'ULMO:prepareesm:InvalidSampling', 'Duplicate or off-grid %s samples.', component);
-    [first, ~] = readesmfile(fullfile(files(1).folder, files(1).name));
+    [first, equatorRadius] = readesmfile(fullfile(files(1).folder, files(1).name));
     labels = first(:, 1:2);
     if ~isfolder(destination)
         mkdir(destination);
     end
-    temporary = string(tempname(destination)) + ".mat";
+    temporary = string(tempname(destination)) + ".nc";
     cleanup = onCleanup(@() removetemporary(temporary));
-    save(temporary, 'dates', '-v7.3');
-    output = matfile(temporary, 'Writable', true);
-    output.esmPlmt(numel(files), size(labels, 1), 4) = 0;
-    output.equatorRadius(numel(files), 1) = 0;
+    createshnc(temporary, labels, dates, 'GRAV', 'EquatorRadius', equatorRadius);
     for firstIndex = 1:32:numel(files)
         ids = firstIndex:min(firstIndex + 31, numel(files));
-        batch = nan(numel(ids), size(labels, 1), 4);
-        radii = zeros(numel(ids), 1);
+        batch = nan(size(labels, 1), 2, numel(ids));
         for j = 1:numel(ids)
             k = ids(j);
-            [plm, radii(j)] = readesmfile(fullfile(files(k).folder, files(k).name));
+            [plm, radius] = readesmfile(fullfile(files(k).folder, files(k).name));
             assert(isequal(plm(:, 1:2), labels), 'ULMO:prepareesm:InvalidCoefficients', ...
                 'Harmonic rows differ in %s.', files(k).name);
-            batch(j, :, :) = reshape(plm, 1, size(plm, 1), 4);
+            assert(radius == equatorRadius, 'ULMO:prepareesm:InconsistentRadius', ...
+                'Reference radius differs in %s.', files(k).name);
+            batch(:, :, j) = plm(:, 3:4);
         end
-        output.esmPlmt(ids, :, :) = batch;
-        output.equatorRadius(ids, 1) = radii;
+        ncwrite(temporary, 'coefficients', batch, [1, 1, ids(1)]);
     end
-    clear output
     movefile(temporary, path, 'f');
-    caches = dir(fullfile(destination, "ESAESM2_" + string(component) + "_*-T*.mat"));
+    caches = dir(fullfile(destination, "ESAESM2_" + string(component) + "_*-T*.nc"));
     for k = 1:numel(caches)
         delete(fullfile(caches(k).folder, caches(k).name));
     end

@@ -2,7 +2,7 @@
 
 `esm2plmt` returns six-hour ESAESM2 fields or calendar-month means, with time
 selection and the coefficient layout and units used by `grace2plmt_new`. Both
-the native inputs and monthly products use MAT files on disk. It supports land-only, ocean-only
+the native inputs and monthly products use NetCDF files on disk. It supports land-only, ocean-only
 and combined synthetic recovery experiments.
 
 The [ESAESM2 archive](https://isdc-data.gfz.de/future_missions/esaesm/ESAESM2/)
@@ -17,7 +17,7 @@ and [Dobslaw et al. (2015)](https://doi.org/10.1007/s00190-014-0787-8).
 Set `GRACE_FILE` to a local GRACE source file and export `IFILES` with the same
 staging data root for the download, which may be on an external drive.
 The downloader stores GFC files under `$IFILES/ESM/ESAESM2/raw/COMPONENT/`.
-This download root can differ from the MATLAB `IFILES` used for prepared MAT files. Run from the repository root with Python
+This download root can differ from the MATLAB `IFILES` used for prepared NetCDF files. Run from the repository root with Python
 3.9 or newer:
 
 ```sh
@@ -69,26 +69,41 @@ prepareesm(sourceFolder, "O");
 
 `prepareesm` searches the supplied folder recursively for the requested
 component, sorts timestamps, validates sampling and harmonic rows, and writes
-`$IFILES/ESM/ESAESM2/ESAESM2_O.mat`. It reads at most 32 files per batch and
-writes a temporary v7.3 MAT file, replacing the destination only on success.
+`$IFILES/ESM/ESAESM2/ESAESM2_O.nc`. It reads at most 32 files per batch and
+writes a temporary NetCDF-4 file, replacing the destination only on success.
 An existing destination requires `ForceNew=true`. Reimport the entire desired
 collection when adding data; imports replace rather than append. The original
 GFC files are never modified and can be kept offline after preparation.
 
 ### Prepared input and reader interface
 
-The prepared file contains:
+The file has three dimensions: `lm` (the triangular list of degree/order
+pairs), `cs` (cosine then sine), and `time`. MATLAB arrays use this order:
 
-| Variable | Representation |
+| Variable | Type and representation |
 | --- | --- |
-| `esmPlmt` | N-by-M-by-4 native-degree Stokes lmcosi, columns degree/order/C/S |
-| `dates` | N-by-1 sorted, unique, unzoned six-hour datetime timestamps |
-| `equatorRadius` | N-by-1 source radii in metres, used for unit conversion |
+| `degree`, `order` | `uint16` vectors on `lm`, stored once |
+| `cs` | `uint8` coordinate: 0 cosine, 1 sine |
+| `coefficients` | M-by-2-by-N double Stokes values |
+| `time` | N double seconds since 2000-01-01 00:00:00 UTC; proleptic Gregorian calendar |
+| `uncertainty` (optional) | M-by-2-by-N double formal Stokes uncertainties |
 
-No all-NaN uncertainty array is stored for ESAESM2. The reader also accepts an
-optional `esmStdPlmt` with formal Stokes uncertainties in the same layout.
-Use MAT v7.3 for partial array reads. `esm2plmt` expects this fixed prepared
-file and never searches for or reads GFC files, even with `ForceNew=true`.
+`equatorRadius` is a scalar global attribute in metres. The importer verifies
+that every source file uses the same reference radius. `coefficientUnit` is
+`GRAV` for native inputs and identifies the converted units in derived files.
+ESAESM2 has no formal errors, so prepared files omit `uncertainty`; the reader
+returns NaNs for the selected samples. Coefficients retain double precision.
+
+NetCDF-4 uses lossless deflate compression (level 4) and shuffle, with MATLAB
+chunk sizes `[min(M,1024), 2, min(N,8)]`. Only coordinate labels use uint16;
+labels are converted to doubles when reconstructing public lmcosi outputs.
+The `lm` axis lists `(0,0), (1,0), (1,1), ...` through the native degree.
+Explicit dimension declarations preserve a three-dimensional variable even
+for one epoch. MATLAB's NetCDF interface presents dimensions in MATLAB array
+order; C/Python tools may display the reversed dimension order.
+
+`esm2plmt` expects the fixed prepared NetCDF file and never searches for or
+reads GFC files, even with `ForceNew=true`.
 
 The interface is `esm2plmt(component, timelim, timestep, ...)`. Component
 defaults to `'O'`, limits to `[]`, and time step to `''`. Text inputs accept
@@ -103,7 +118,10 @@ timelim = [datetime(2003, 1, 1), datetime(2003, 1, 31, 23, 59, 59)];
 
 `timelim` is an increasing two-element datetime or datenum vector, selecting
 output timestamps inclusively; empty returns all dates. Raw mode allows gaps
-and reads only the selected dates and degrees. `'midmonth'` averages all
+and reads the time coordinate first, identifies the inclusive selection,
+then reads only the corresponding coefficient/uncertainty slab and requested
+harmonic rows. Empty selections do not read either coefficient variable.
+`'midmonth'` averages all
 samples in `[month start, next month start)` and returns the exact midpoint.
 A missing sample invalidates that month with NaN coefficients/uncertainties
 and an `IncompleteEpoch` warning, including partially downloaded boundary
@@ -113,7 +131,8 @@ this option. Calendar months need not match GRACE reporting windows.
 ### Averaged caches
 
 Like `ssh2lonlatt`, the reader returns an existing averaged cache immediately.
-On a miss, it reads the prepared MAT file one epoch at a time, converts units,
+Cache hits also read time first and load only the selected dates/degrees.
+On a miss, it reads the prepared NetCDF file one epoch at a time, converts units,
 averages every epoch at native degree, saves, and then selects/formats output.
 **Averaged caches always cover all epochs at native degree**, regardless of
 `timelim` or `Loutput`. Unit conversions of raw requests are in memory; the
@@ -123,29 +142,29 @@ Files live in `$IFILES/ESM/ESAESM2/`. Examples:
 
 | Product | Filename |
 | --- | --- |
-| Prepared native Stokes input | `ESAESM2_O.mat` |
-| Monthly Stokes | `ESAESM2_O_GRAV-Tmidmonth.mat` |
-| Monthly surface density | `ESAESM2_O_SD_ISSM-Tmidmonth.mat` |
-| Monthly potential | `ESAESM2_O_POT-Tmidmonth.mat` |
+| Prepared native Stokes input | `ESAESM2_O.nc` |
+| Monthly Stokes | `ESAESM2_O_GRAV-Tmidmonth.nc` |
+| Monthly surface density | `ESAESM2_O_SD_ISSM-Tmidmonth.nc` |
+| Monthly potential | `ESAESM2_O_POT-Tmidmonth.nc` |
 
-Averaged caches contain `esmPlmt`, `esmStdPlmt` and datetime `dates`, in
-native-degree, time-first form. Names use `-TSTEP` without a method suffix;
+Averaged caches use the same compact `degree`, `order`, `cs`, `time`,
+`coefficients` and `uncertainty` schema, at native degree. They do not repeat
+labels for each time or for the uncertainty array. Names use `-TSTEP` without
+a method suffix;
 SD includes the Love-number source. A cache hit works even when the prepared
 input is temporarily unavailable.
 
 `prepareesm(..., "ForceNew", true)` replaces the prepared input and invalidates
-all its component's `-T*.mat` caches, across units and Love-number sources.
+all its component's `-T*.nc` caches, across units and Love-number sources.
 `esm2plmt(..., "ForceNew", true)` only recomputes averages from the prepared
-MAT file. If replacing a MAT file manually, force a rebuild of affected
+NetCDF file. If replacing a NetCDF file manually, force a rebuild of affected
 averaged caches. `SaveData=false` prevents cache writes, while allowing reads;
 combine with `ForceNew=true` to recompute without changing disk products.
 Neither option changes the prepared input. `BeQuiet=true` suppresses messages.
 
-Earlier draft versions wrote unit-specific raw caches such as
-`ESAESM2_O_GRAV.mat`. These are no longer used: run `prepareesm` once to create
-the canonical input and invalidate the old averaged products. The import
-also ensures old NaN-only uncertainty caches are rebuilt with the new
-empirical estimate; obsolete raw copies may be removed separately.
+Existing MAT files are not read or deleted. Run `prepareesm` to generate
+NetCDF inputs; averaged `.nc` caches are built on demand. The importer only
+invalidates derived NetCDF caches for the component it replaces.
 
 ### Epoch generation and future GRACE support
 
@@ -226,7 +245,7 @@ assumption of independent component errors.
 
 The demo reads inputs from the same fixed location. Its output directory is
 specified separately. It selects the exact GRACE reporting window from the
-prepared MAT files and averages those samples in the demo, so it also supports windows
+prepared NetCDF files and averages those samples in the demo, so it also supports windows
 that differ from calendar months:
 
 ```matlab
@@ -237,7 +256,8 @@ products = esm2plmt_demo(graceFile, outputFolder);
 
 This saves native GRAV fields for H/I/O, native and degree-60 SD fields for
 H/I/O/HI/HIO, and a two-column PNG comparing native with truncated H/I/O fields.
-All demo MAT files contain the three outputs above, without a metadata variable.
+Demo NetCDF files use the same compact schema as averaged caches; the figure
+reader reconstructs the required lmcosi field from coefficients and labels.
 For CSR January 2003, the GRACE interval is the complete calendar month, so
 the demo and `esm2plmt(component, [], "midmonth", ...)` produce the same coefficients.
 `HI` and `HIO` add coefficient columns while preserving one set of harmonic
@@ -296,19 +316,22 @@ verificationFolder = fullfile(getenv("IFILES"), "ESM", "ESAESM2", "verification"
 fid = fopen(fullfile(verificationFolder, "reference_O.bin"), "r", "ieee-le");
 reference = fread(fid, [2, 16471], "double")';
 fclose(fid);
-saved = load(products.O.nativeGRAV);
-max(abs(squeeze(saved.esmPlmt(1,:,3:4)) - reference), [], "all")
+coefficients = readshnc(products.O.nativeGRAV);
+max(abs(coefficients(:, :, 1) - reference), [], "all")
 ```
 
 Run the MATLAB regression tests with:
 
 ```matlab
-assertSuccess(runtests(["unittests/esm2plmtTest.m", "unittests/epochStatisticsTest.m"]));
+assertSuccess(runtests(["unittests/esm2plmtTest.m", "unittests/epochStatisticsTest.m", ...
+    "unittests/shncTest.m"]));
 ```
 
 They exercise inclusive time selection, calendar boundaries and leap years,
-prepared MAT and monthly cache reuse, full cache coverage before truncation, forced
+prepared NetCDF and monthly cache reuse, full cache coverage before truncation, forced
 refresh and invalidation, disabled saving, missing months, unit conversion,
 low degrees, layouts, padding, malformed inputs, explicit irregular/overlapping
 epochs, arbitrary cadences and formal/empirical uncertainty estimates through saved
-monthly and demo products.
+monthly and demo products. NetCDF tests check stored integer labels, singleton
+dimensions, exact round trips, and the actual time/degree slab arguments used
+by native and cached reads.

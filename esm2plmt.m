@@ -1,5 +1,5 @@
 %% ESM2PLMT - Loads cached six-hour or monthly ESAESM2 fields.
-% Loads a prepared native lmcosi MAT file; use PREPAREESM to import GFC files. Returns
+% Loads a prepared compact harmonic NetCDF file; use PREPAREESM to import GFC files. Returns
 % the same coefficient layout, units and date conventions as GRACE2PLMT_NEW.
 %
 % Syntax
@@ -29,21 +29,22 @@
 %       Default format: 'timefirst'.
 %   TimeFormat (name-value) - 'datenum' or 'datetime'.
 %       Default format: 'datenum'.
-%   ForceNew (name-value) - Whether to rebuild averaged caches from the prepared MAT file.
+%   ForceNew (name-value) - Whether to rebuild averaged caches from the prepared NetCDF file.
 %       Never reads GFC files. Default option: false.
-%   SaveData (name-value) - Whether to save averaged MAT caches.
+%   SaveData (name-value) - Whether to save averaged NetCDF caches.
 %       Default option: true.
 %   BeQuiet (name-value) - Whether to suppress cache progress messages.
 %       Default option: 0.5 (report cache reads and writes).
 %
 % Input file content
-%   $IFILES/ESM/ESAESM2/ESAESM2_COMPONENT.mat, written by PREPAREESM:
-%   esmPlmt - Native-degree dimensionless Stokes lmcosi array.
-%       Size: (N, M, 4), timefirst, columns degree, order, C and S.
-%   dates - Sorted unique six-hour UTC timestamps. Size: (N, 1), datetime.
-%   equatorRadius - Radius used for unit conversion. Size: (N, 1). Unit: m.
-%   esmStdPlmt (optional) - Formal one-sigma Stokes errors with the same layout
-%       as esmPlmt. Absent for ESAESM2; missing errors are represented by NaN.
+%   $IFILES/ESM/ESAESM2/ESAESM2_COMPONENT.nc, written by PREPAREESM:
+%   degree, order - uint16 vectors, stored once on the lm dimension.
+%   coefficients - Native-degree dimensionless Stokes values. Size: (M, 2, N).
+%       Dimensions: lm, cs (cosine then sine), time. Precision: double.
+%   time - Double seconds since 2000-01-01 00:00:00 UTC. Size: (N, 1).
+%   equatorRadius (global attribute) - Constant reference radius, metres.
+%   uncertainty (optional) - Formal one-sigma Stokes errors, same shape as
+%       coefficients. Absent for ESAESM2; missing errors are returned as NaN.
 %
 % Output arguments
 %   esmPlmt - Degree, order, cosine, sine coefficient columns.
@@ -58,13 +59,13 @@
 %
 % Notes
 %   IFILES names the fixed data root; ESM2PLMT never reads a GFC folder.
-%   Raw requests read only the selected dates/degrees from the prepared v7.3
-%   MAT file. Conversion is in memory; no unit-specific raw copies are saved.
+%   Native and cached requests read time first, then only selected date/degree
+%   slices from NetCDF. Conversion is in memory; no unit-specific raw copies are saved.
 %   Averaged cache hits return immediately. Otherwise every supplied epoch is
 %   averaged at native degree, one window at a time, then saved before output
 %   selection/truncation. PREPAREESM invalidates these caches on reimport.
-%   Cache names follow SSH2LONLATT: ESAESM2_COMPONENT_UNIT[_LOVESOURCE]-TSTEP.mat
-%   in $IFILES/ESM/ESAESM2, with variables esmPlmt, esmStdPlmt and dates.
+%   Cache names follow SSH2LONLATT: ESAESM2_COMPONENT_UNIT[_LOVESOURCE]-TSTEP.nc
+%   in $IFILES/ESM/ESAESM2, using the same compact coefficient layout.
 %   Love-number source is included for SD only. ForceNew bypasses this cache;
 %   SaveData=false suppresses writes without modifying the prepared input.
 %   CALENDARMONTHEPOCHS supplies [start, end) windows to AVERAGEEPOCHS.
@@ -127,100 +128,71 @@ function [esmPlmt, esmStdPlmt, dates] = loadesm(component, timelim, timestep, op
     dataRoot = getenv('IFILES');
     assert(~isempty(dataRoot), 'ULMO:esm2plmt:MissingDataRoot', 'Set IFILES before reading ESM fields.');
     folder = fullfile(dataRoot, 'ESM', 'ESAESM2');
-    inputPath = fullfile(folder, "ESAESM2_" + string(component) + ".mat");
-    vars = {'esmPlmt', 'esmStdPlmt', 'dates'};
+    inputPath = fullfile(folder, "ESAESM2_" + string(component) + ".nc");
     if strlength(timestep) > 0
         outputPath = cachepath(folder, component, options.Unit, options.LoveNumSource, timestep);
-        if ~options.ForceNew && isfile(outputPath) && all(ismember(vars, who('-file', outputPath)))
-            data = load(outputPath, vars{:});
+        if ~options.ForceNew && isfile(outputPath)
+            [coefficients, uncertainty, dates, labels] = readshnc(outputPath, timelim, options.Loutput);
             reportcache('Loaded', outputPath, options.BeQuiet);
-            [esmPlmt, esmStdPlmt, dates] = formatoutput(data.esmPlmt, data.esmStdPlmt, ...
-                data.dates, timelim, options.Loutput, options.OutputFormat, options.TimeFormat);
+            [esmPlmt, esmStdPlmt, dates] = formatoutput(coefficients, uncertainty, labels, ...
+                dates, options.Loutput, options.OutputFormat, options.TimeFormat);
             return
         end
     end
     assert(isfile(inputPath), 'ULMO:esm2plmt:MissingPreparedData', ...
         'Prepared ESM file is missing: %s. Import the source folder with prepareesm first.', inputPath);
-    source = matfile(inputPath);
-    variables = who(source);
-    assert(all(ismember({'esmPlmt', 'dates', 'equatorRadius'}, variables)), ...
-        'ULMO:esm2plmt:InvalidPreparedData', 'Prepared ESM file lacks required variables.');
-    nativeDates = source.dates;
-    shape = size(source, 'esmPlmt');
-    assert(isdatetime(nativeDates) && iscolumn(nativeDates) && ~isempty(nativeDates) && ...
-        isempty(nativeDates.TimeZone) && all(isfinite(nativeDates)) && ...
-        all(diff(nativeDates) > seconds(0)) && ...
-        all(mod(hours(nativeDates - datetime(2000, 1, 1)), 6) == 0) && ...
-        numel(shape) == 3 && shape(1) == numel(nativeDates) && shape(3) == 4 && ...
-        isequal(size(source, 'equatorRadius'), [numel(nativeDates), 1]), ...
-        'ULMO:esm2plmt:InvalidPreparedData', 'Invalid prepared dimensions or six-hour timestamps.');
-    labels = reshape(source.esmPlmt(1, :, 1:2), [], 2);
-    assert(isequal(labels, harmoniclabels(labels(end, 1))), ...
-        'ULMO:esm2plmt:InvalidPreparedData', 'Prepared harmonics must use complete ascending degree/order rows.');
-    hasStd = ismember('esmStdPlmt', variables);
-    assert(~hasStd || isequal(size(source, 'esmStdPlmt'), shape), ...
-        'ULMO:esm2plmt:InvalidPreparedData', 'Prepared uncertainties must match coefficient dimensions.');
     if strlength(timestep) == 0
-        ids = true(size(nativeDates));
-        if ~isempty(timelim)
-            ids = nativeDates >= timelim(1) & nativeDates <= timelim(2);
-        end
-        nRows = size(labels, 1);
-        if ~isempty(options.Loutput)
-            nRows = min(nRows, (options.Loutput + 1) * (options.Loutput + 2) / 2);
-        end
-        [data.esmPlmt, data.esmStdPlmt] = readnative(source, find(ids), labels(1:nRows, :), ...
-            hasStd, options.Unit, options.LoveNumSource);
-        data.dates = nativeDates(ids);
+        [coefficients, uncertainty, dates, labels] = readnative(inputPath, timelim, ...
+            options.Loutput, options.Unit, options.LoveNumSource, false);
     else
+        nativeDates = readshnctime(inputPath);
         epochs = averagingepochs(timestep, nativeDates);
-        data.dates = epochs(:, 1) + (epochs(:, 2) - epochs(:, 1)) / 2;
-        data.esmPlmt = emptyplmt(size(epochs, 1), labels);
-        data.esmStdPlmt = data.esmPlmt;
-        for k = 1:size(epochs, 1)
-            ids = find(nativeDates >= epochs(k, 1) & nativeDates < epochs(k, 2));
-            if isempty(ids)
-                warning('ULMO:averageepochs:IncompleteEpoch', 'No samples in epoch starting %s.', string(epochs(k, 1)));
-                continue
-            end
-            [raw, rawStd] = readnative(source, ids, labels, hasStd, options.Unit, options.LoveNumSource);
-            [coefficients, ~, coefficientStd] = averageepochs(nativeDates(ids), ...
-                permute(raw(:, :, 3:4), [2, 3, 1]), epochs(k, :), hours(6), ...
-                'CheckCompleteness', true, 'SamplingOrigin', datetime(2000, 1, 1), ...
-                'SampleStd', permute(rawStd(:, :, 3:4), [2, 3, 1]));
-            data.esmPlmt(k, :, 3:4) = permute(coefficients, [3, 1, 2]);
-            data.esmStdPlmt(k, :, 3:4) = permute(coefficientStd, [3, 1, 2]);
-        end
+        [coefficients, uncertainty, dates, labels] = averagefile(inputPath, epochs, ...
+            options.Unit, options.LoveNumSource);
         if options.SaveData
-            save(outputPath, '-struct', 'data', vars{:}, '-v7.3');
+            writeshnc(outputPath, coefficients, uncertainty, labels, dates, options.Unit);
             reportcache('Saved', outputPath, options.BeQuiet);
         end
+        % Build the complete epoch product before selecting the returned range.
+        if ~isempty(timelim)
+            keep = dates >= timelim(1) & dates <= timelim(2);
+            coefficients = coefficients(:, :, keep);
+            uncertainty = uncertainty(:, :, keep);
+            dates = dates(keep);
+        end
     end
-    [esmPlmt, esmStdPlmt, dates] = formatoutput(data.esmPlmt, data.esmStdPlmt, ...
-        data.dates, timelim, options.Loutput, options.OutputFormat, options.TimeFormat);
+    [esmPlmt, esmStdPlmt, dates] = formatoutput(coefficients, uncertainty, labels, dates, ...
+        options.Loutput, options.OutputFormat, options.TimeFormat);
 end
 
-function [plmt, uncertainty] = readnative(source, ids, labels, hasStd, unit, loveSource)
-    plmt = emptyplmt(numel(ids), labels);
-    uncertainty = plmt;
-    if isempty(ids)
-        return
+function [coefficients, uncertainty, dates, labels] = averagefile(path, epochs, unit, loveSource)
+    labels = [double(ncread(path, 'degree')), double(ncread(path, 'order'))];
+    dates = epochs(:, 1) + (epochs(:, 2) - epochs(:, 1)) / 2;
+    coefficients = nan(size(labels, 1), 2, size(epochs, 1));
+    uncertainty = coefficients;
+    for k = 1:size(epochs, 1)
+        [raw, rawStd, rawDates] = readnative(path, epochs(k, :), [], unit, loveSource, true);
+        if isempty(rawDates)
+            warning('ULMO:averageepochs:IncompleteEpoch', 'No samples in epoch starting %s.', string(epochs(k, 1)));
+            continue
+        end
+        [coefficients(:, :, k), ~, uncertainty(:, :, k)] = averageepochs(rawDates, ...
+            raw, epochs(k, :), hours(6), 'CheckCompleteness', true, ...
+            'SamplingOrigin', datetime(2000, 1, 1), 'SampleStd', rawStd);
     end
-    plmt = source.esmPlmt(ids, 1:size(labels, 1), 1:4);
-    if hasStd
-        uncertainty(:, :, 3:4) = source.esmStdPlmt(ids, 1:size(labels, 1), 3:4);
-    end
-    if ~strcmp(unit, 'GRAV')
-        % Conversion is linear in radius. Evaluate degree factors once and
-        % apply each sample's source radius to coefficients and errors alike.
+end
+
+function [coefficients, uncertainty, dates, labels] = readnative(path, timelim, degree, unit, loveSource, exclusive)
+    [coefficients, uncertainty, dates, labels] = readshnc(path, timelim, degree, 'EndExclusive', exclusive);
+    assert(all(mod(hours(dates - datetime(2000, 1, 1)), 6) == 0), ...
+        'ULMO:esm2plmt:InvalidPreparedData', 'Prepared samples must lie on the six-hour grid.');
+    if ~strcmp(unit, 'GRAV') && ~isempty(dates)
+        radius = ncreadatt(path, '/', 'equatorRadius');
+        validateattributes(radius, {'double'}, {'scalar', 'positive', 'finite'});
         factors = convertgravity([labels, ones(size(labels))], 'GRAV', unit, ...
-            'EquatorRadius', 1, 'LoveNumSource', loveSource);
-        radii = source.equatorRadius(ids, 1);
-        assert(all(isfinite(radii) & radii > 0), 'ULMO:esm2plmt:InvalidPreparedData', ...
-            'Source radii must be positive and finite for conversion.');
-        scale = radii .* reshape(factors(:, 3:4), 1, size(labels, 1), 2);
-        plmt(:, :, 3:4) = plmt(:, :, 3:4) .* scale;
-        uncertainty(:, :, 3:4) = uncertainty(:, :, 3:4) .* abs(scale);
+            'EquatorRadius', radius, 'LoveNumSource', loveSource);
+        coefficients = coefficients .* factors(:, 3:4);
+        uncertainty = uncertainty .* abs(factors(:, 3:4));
     end
 end
 
@@ -238,7 +210,7 @@ function path = cachepath(folder, component, unit, loveSource, timestep)
     if strcmp(unit, 'SD')
         product = product + "_" + replace(string(loveSource), " ", "");
     end
-    path = fullfile(folder, product + "-T" + string(timestep) + ".mat");
+    path = fullfile(folder, product + "-T" + string(timestep) + ".nc");
 end
 
 function reportcache(action, path, beQuiet)
@@ -253,28 +225,17 @@ function plmt = emptyplmt(nDates, labels)
 end
 
 function [plmt, uncertainty, dates] = ...
-        formatoutput(plmt, uncertainty, dates, timelim, degree, outputFormat, timeFormat)
-    if ~isempty(timelim)
-        keep = dates >= timelim(1) & dates <= timelim(2);
-        plmt = plmt(keep, :, :);
-        uncertainty = uncertainty(keep, :, :);
-        dates = dates(keep);
-    end
+        formatoutput(coefficients, coefficientStd, labels, dates, degree, outputFormat, timeFormat)
+    % Apply degree selection while compact, then expand labels for lmcosi.
+    nRows = size(labels, 1);
     if ~isempty(degree)
         labels = harmoniclabels(degree);
-        nRows = size(labels, 1);
-        if nRows <= size(plmt, 2)
-            plmt = plmt(:, 1:nRows, :);
-            uncertainty = uncertainty(:, 1:nRows, :);
-        else
-            padded = emptyplmt(numel(dates), labels);
-            paddedStd = padded;
-            padded(:, 1:size(plmt, 2), :) = plmt;
-            paddedStd(:, 1:size(uncertainty, 2), :) = uncertainty;
-            plmt = padded;
-            uncertainty = paddedStd;
-        end
+        nRows = min(nRows, size(labels, 1));
     end
+    plmt = emptyplmt(numel(dates), labels);
+    uncertainty = plmt;
+    plmt(:, 1:nRows, 3:4) = permute(coefficients(1:nRows, :, :), [3, 1, 2]);
+    uncertainty(:, 1:nRows, 3:4) = permute(coefficientStd(1:nRows, :, :), [3, 1, 2]);
     if strcmp(timeFormat, 'datenum')
         dates = datenum(dates); %#ok<DATNM>
     end

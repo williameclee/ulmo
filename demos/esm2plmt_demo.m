@@ -8,7 +8,7 @@
 %
 % Input arguments
 %   graceFile - GRACE file readable by PARSEGRACESOURCEFILE.
-%   outputFolder - Destination for MAT files and the figure. Created as needed.
+%   outputFolder - Destination for NetCDF files and the figure. Created as needed.
 %   Loutput (name-value) - Truncated output degree, no greater than the source.
 %       Default degree: 60.
 %   MakeFigure (name-value) - Whether to save the component comparison figure.
@@ -20,7 +20,7 @@
 %       have nativeSD and truncatedSD. Figure path is returned when generated.
 %
 % Output file content
-%   esmPlmt, esmStdPlmt, dates - See ESM2PLMT.
+%   degree, order, coefficients, uncertainty, time - See CREATESHNC.
 %
 % Notes
 %   HIO is not GSM: it excludes atmosphere and solid Earth and has no DEAL
@@ -32,7 +32,7 @@
 %   missing formal errors use the empirical standard error of each mean.
 %   HI/HIO empirical errors use the summed samples, retaining their observed
 %   cross-component covariance. No temporal correlation correction is applied.
-%   Prepared inputs are $IFILES/ESM/ESAESM2/ESAESM2_COMPONENT.mat.
+%   Prepared inputs are $IFILES/ESM/ESAESM2/ESAESM2_COMPONENT.nc.
 %   Use PREPAREESM separately to import raw files from any source folder.
 %
 % See also
@@ -91,8 +91,11 @@ function products = esm2plmt_demo(graceFile, outputFolder, options)
 end
 
 function file = savefield(stem, esmPlmt, esmStdPlmt, dates, unit)
-    file = stem + "_L" + esmPlmt(1, end, 1) + "_" + unit + ".mat";
-    save(file, 'esmPlmt', 'esmStdPlmt', 'dates');
+    file = stem + "_L" + esmPlmt(1, end, 1) + "_" + unit + ".nc";
+    labels = reshape(esmPlmt(1, :, 1:2), [], 2);
+    writeshnc(file, permute(esmPlmt(:, :, 3:4), [2, 3, 1]), ...
+        permute(esmStdPlmt(:, :, 3:4), [2, 3, 1]), labels, ...
+        datetime(dates, 'ConvertFrom', 'datenum'), unit);
 end
 
 function file = savetruncated(stem, field, uncertainty, dates, degree)
