@@ -28,6 +28,8 @@
 %   Requires the standard ULMO paths, Earth constants and ISSM Love numbers.
 %   Exact GRACE-window means are formed from cached raw samples. These can
 %   differ from the calendar-month means returned by ESM2PLMT(component, "midmonth").
+%   Formal errors are propagated assuming independent samples/components;
+%   unavailable input errors remain NaN. No covariance model is supplied.
 %   ESM inputs are read from $IFILES/ESM/ESAESM2/raw/COMPONENT.
 %
 % See also
@@ -47,9 +49,6 @@ function products = esm2plmt_demo(graceFile, outputFolder, options)
         options.MakeFigure (1, 1) logical = true
     end
     [~, ~, graceDate, intervals] = parsegracesourcefile(graceFile);
-    assert(all(mod(hour(intervals), 6) == 0 & minute(intervals) == 0 & ...
-        second(intervals) == 0), 'ULMO:esm2plmt:InvalidIntervals', ...
-        'The GRACE interval must align with six-hour ESM sampling.');
     if ~isfolder(outputFolder)
         mkdir(outputFolder);
     end
@@ -57,6 +56,7 @@ function products = esm2plmt_demo(graceFile, outputFolder, options)
     prefix = "ESAESM2_";
     suffix = "_" + stamp(1) + "_" + stamp(2);
     mass = struct;
+    massStd = struct;
     products = struct;
     for component = ["H", "I", "O"]
         [gravity, uncertainty, dates] = epochmean(intervals, graceDate, ...
@@ -69,6 +69,7 @@ function products = esm2plmt_demo(graceFile, outputFolder, options)
         [density, uncertainty, dates] = epochmean(intervals, graceDate, ...
             'Component', component, 'Unit', 'SD');
         mass.(component) = density;
+        massStd.(component) = uncertainty;
         products.(component).nativeSD = savefield(stem, density, uncertainty, dates, "SD");
         products.(component).truncatedSD = savetruncated(stem, density, uncertainty, ...
             dates, options.Loutput);
@@ -80,7 +81,12 @@ function products = esm2plmt_demo(graceFile, outputFolder, options)
             density(:, :, 3:4) = density(:, :, 3:4) + mass.O(:, :, 3:4);
         end
         uncertainty = density;
-        uncertainty(:, :, 3:4) = NaN;
+        % Propagate independent component errors; any unknown sigma stays NaN.
+        variance = massStd.H(:, :, 3:4) .^ 2 + massStd.I(:, :, 3:4) .^ 2;
+        if component == "HIO"
+            variance = variance + massStd.O(:, :, 3:4) .^ 2;
+        end
+        uncertainty(:, :, 3:4) = sqrt(variance);
         stem = fullfile(outputFolder, prefix + component + suffix);
         products.(component).nativeSD = savefield(stem, density, uncertainty, dates, "SD");
         products.(component).truncatedSD = savetruncated(stem, density, uncertainty, ...
@@ -109,13 +115,18 @@ function [plmt, uncertainty, dates] = epochmean(interval, midpoint, options)
         options.Component (1, 1) string
         options.Unit (1, 1) string
     end
-    [raw, ~, rawDates] = esm2plmt(options.Component, [], interval, ...
+    [raw, rawStd, rawDates] = esm2plmt(options.Component, [], interval, ...
         'Unit', options.Unit, 'TimeFormat', 'datetime');
-    expected = (interval(1):hours(6):interval(2) - hours(6))';
-    assert(isequal(rawDates(rawDates < interval(2)), expected), ...
-        'ULMO:esm2plmt:IncompleteSampling', ...
+    [coefficients, dates, coefficientStd] = averageepochs(rawDates, ...
+        permute(raw(:, :, 3:4), [2, 3, 1]), interval, hours(6), ...
+        'CheckCompleteness', true, 'SamplingOrigin', datetime(2000, 1, 1), ...
+        'SampleStd', permute(rawStd(:, :, 3:4), [2, 3, 1]));
+    assert(all(isfinite(coefficients), 'all'), 'ULMO:esm2plmt:IncompleteSampling', ...
         'The cached raw data do not cover the complete GRACE interval.');
-    [plmt, uncertainty, dates] = averageesmepochs(rawDates, raw, interval);
+    plmt = raw(1, :, :);
+    uncertainty = rawStd(1, :, :);
+    plmt(:, :, 3:4) = permute(coefficients, [3, 1, 2]);
+    uncertainty(:, :, 3:4) = permute(coefficientStd, [3, 1, 2]);
     assert(isequal(dates, midpoint), 'ESM and GRACE epoch dates differ.');
     dates = datenum(dates); %#ok<DATNM>
 end

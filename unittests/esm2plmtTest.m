@@ -79,6 +79,57 @@ classdef esm2plmtTest < matlab.unittest.TestCase
             end
             testCase.verifyTrue(isfile(unrelated));
         end
+        function monthlyPropagatesCachedFormalUncertainties(testCase)
+            testCase.fullmonth(0, 2);
+            esm2plmt('H', [], [], 'Unit', 'GRAV');
+            data = load(testCase.cachepath());
+            data.esmStdPlmt(:, :, 3) = 2;
+            data.esmStdPlmt(:, :, 4) = 3;
+            save(testCase.cachepath(), '-struct', 'data');
+            rmdir(testCase.RawFolder, 's');
+            [p, s] = esm2plmt('H', 'midmonth', [], 'Unit', 'GRAV');
+            testCase.verifyEqual(s(1, :, 3), repmat(2 / sqrt(124), 1, 6), 'RelTol', 1e-14);
+            testCase.verifyEqual(s(1, :, 4), repmat(3 / sqrt(124), 1, 6), 'RelTol', 1e-14);
+            testCase.verifyEqual(s(:, :, 1:2), p(:, :, 1:2));
+            cached = load(testCase.cachepath('midmonth'));
+            testCase.verifyEqual(cached.esmStdPlmt, s);
+        end
+        function demoPropagatesEpochAndComponentUncertainties(testCase)
+            % Non-grid bounds exercise the shared completeness logic as well.
+            for k = 0:3
+                testCase.fixture(k, k + 1);
+            end
+            esm2plmt('H', [], [], 'Unit', 'GRAV');
+            data = load(testCase.cachepath());
+            data.esmStdPlmt(:, :, 3) = 3;
+            data.esmStdPlmt(:, :, 4) = 4;
+            folder = fileparts(testCase.cachepath());
+            for component = ["H", "I", "O"]
+                for unit = ["GRAV", "SD_ISSM"]
+                    save(fullfile(folder, "ESAESM2_" + component + "_" + unit + ".mat"), '-struct', 'data');
+                end
+            end
+            graceFile = fullfile(testCase.Scratch, 'GSM-fixture');
+            fid = fopen(graceFile, 'w');
+            for row = 1:size(data.esmPlmt, 2)
+                fprintf(fid, 'GRCOF2 %d %d 1 0 0 0 20030101.0100 20030101.1300 nnnn\n', ...
+                    data.esmPlmt(1, row, 1:2));
+            end
+            fclose(fid);
+            products = esm2plmt_demo(graceFile, fullfile(testCase.Scratch, 'products'), ...
+                'Loutput', 1, 'MakeFigure', false);
+            h = load(products.H.nativeSD);
+            hi = load(products.HI.nativeSD);
+            hio = load(products.HIO.nativeSD);
+            testCase.verifyEqual(h.esmStdPlmt(1, 1, 3), 3 / sqrt(2), 'RelTol', 1e-14);
+            testCase.verifyEqual(hi.esmStdPlmt(1, 1, 3), 3, 'RelTol', 1e-14);
+            testCase.verifyEqual(hio.esmStdPlmt(1, 1, 3), 3 * sqrt(3 / 2), 'RelTol', 1e-14);
+            testCase.verifyEqual(hio.esmStdPlmt(:, :, 1:2), hio.esmPlmt(:, :, 1:2));
+            testCase.verifyEqual(h.dates, datenum(datetime(2003, 1, 1, 7, 0, 0)));
+        end
+        function graceOptionRemainsUnsupported(testCase)
+            testCase.verifyError(@() esm2plmt('O', 'GRACE'), 'ULMO:esm2plmt:InvalidTimeStep');
+        end
         function requiresConfiguredDataRoot(testCase)
             range = [testCase.Start, testCase.Start + hours(6)];
             setenv('IFILES', '');
@@ -172,7 +223,7 @@ classdef esm2plmtTest < matlab.unittest.TestCase
         function incompleteMonthsDoNotBecomeBiasedMeans(testCase)
             testCase.fixture(0, 100);
             testCase.verifyWarning(@() esm2plmt('H', 'midmonth', [], ...
-                'Unit', 'GRAV'), 'ULMO:esm2plmt:IncompleteEpoch');
+                'Unit', 'GRAV'), 'ULMO:averageepochs:IncompleteEpoch');
             p = esm2plmt('H', 'midmonth', [], 'Unit', 'GRAV');
             testCase.verifyTrue(all(isnan(p(:, :, 3:4)), 'all'));
             testCase.verifyEqual(squeeze(p(1, :, 1:2)), [0 0; 1 0; 1 1; 2 0; 2 1; 2 2]);
@@ -209,7 +260,7 @@ classdef esm2plmtTest < matlab.unittest.TestCase
             testCase.fullmonth(0, 2);
             testCase.fullmonth(2, 7);
             testCase.verifyWarning(@() esm2plmt('H', 'midmonth', [], ...
-                'Unit', 'GRAV'), 'ULMO:esm2plmt:IncompleteEpoch');
+                'Unit', 'GRAV'), 'ULMO:averageepochs:IncompleteEpoch');
             [p, ~, d] = esm2plmt('H', 'midmonth', [], 'Unit', 'GRAV', ...
                 'TimeFormat', 'datetime');
             testCase.verifySize(p, [3, 6, 4]);

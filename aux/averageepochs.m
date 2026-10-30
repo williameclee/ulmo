@@ -1,92 +1,152 @@
-%% AVERAGEEPOCHS
-% Averages 3D gridded temporal samples within specified solution or epoch
-% windows [start, end).
-%
-% Overlapping solution windows deliberately share samples without temporal
-% interpolation. If no native samples fall within a window, the output grid
-% for that epoch will contain NaNs.
+%% AVERAGEEPOCHS - Averages data and propagates uncertainties over epoch windows.
+% Overlapping windows share samples. Time is the third array dimension,
+% following the gridded-data convention used by SSH2LONLATT and STERIC2LONLATT.
 %
 % Syntax
-%   avgs = AVERAGEEPOCHS(nativeDates, data, epochs)
-%   [avgs, dates] = AVERAGEEPOCHS(nativeDates, data, epochs)
+%   [averages, dates] = averageepochs(nativeDates, data, epochs)
+%   [averages, dates, averageStd] = averageepochs(__, expectedStep, ...
+%       "CheckCompleteness", true, "SampleStd", sampleStd)
 %
 % Input arguments
-%   nativeDates - Timestamps corresponding to the time dimension of data
-%       Data type: DATETIME | DOUBLE (datenum)
-%       Dimension: [M x 1] | [1 x M]
-%   data - 3D numeric array of gridded spatial data over time
-%       The first two dimensions are spatial dimensions and the third
-%       dimension corresponds to nativeDates.
-%       Data type: NUMERIC
-%       Dimension: [nX x nY x M]
-%   epochs - Start and end timestamps defining each averaging window [start, end)
-%       Data type: DATETIME | DOUBLE (datenum)
-%       Dimension: [N x 2]
+%   nativeDates - Sorted, unique timestamps or MATLAB datenums.
+%       Size: (N, 1) or (1, N). Datetime inputs must be unzoned.
+%   data - Real floating-point samples, with NaN denoting missing values.
+%       Size: (A, B, N). No product-specific or harmonic-label columns.
+%   epochs - Start and exclusive end of each window, in datetime or datenum.
+%       Size: (K, 2). Windows may overlap; their input order is preserved.
+%   expectedStep (optional) - Positive sampling interval as duration or days.
+%       Required only when CheckCompleteness is true. Default interval: [].
+%   CheckCompleteness (name-value) - Whether to require the entire expected
+%       timestamp grid and finite data for every element in each epoch.
+%       Default option: false (average available nonmissing values).
+%   SamplingOrigin (name-value) - Timestamp defining the sampling grid phase.
+%       Default origin: [] (first native timestamp). Used only for checking.
+%   SampleStd (name-value) - Formal one-sigma uncertainties for input samples.
+%       Size: same as data. NaN means unknown. Default uncertainties: [].
 %
 % Output arguments
-%   avgs - 3D array of time-averaged grids for each epoch window
-%       Integer data produces double averages. Floating-point data keeps its precision.
-%       Dimension: [nX x nY x N]
-%   dates - Midpoint timestamps of each epoch window
-%       Data type: DATETIME
-%       Dimension: [N x 1]
+%   averages - Arithmetic means within each [start, end) window.
+%       Size: (A, B, K), same floating-point class as data.
+%   dates - Exact epoch midpoints, size (K, 1), datetime.
+%   averageStd - Formal one-sigma uncertainty of each mean, in data units.
+%       Assuming independent sample errors, sigma(mean) = sqrt(sum(sigma_i^2))/n,
+%       using exactly the n samples included in the mean. Missing input sigma,
+%       absent samples or rejected epochs give NaN. A single sample retains
+%       its supplied sigma. This is neither sample variability nor an empirical
+%       standard error estimated from variability. Correlated input errors
+%       require their covariance and are not represented by SampleStd alone.
+%
+% Notes
+%   Without checking, NaN data are omitted separately for each array element;
+%   sigma values are selected with the same mask. Unknown sigma is never
+%   omitted for an otherwise valid data sample. With checking, an incomplete
+%   timestamp grid invalidates the entire epoch; missing data invalidate only
+%   the affected elements. Empty or incomplete results emit IncompleteEpoch.
+%   No interpolation or calendar assumptions are made. The first two outputs
+%   retain the AVERAGEEPOCHS interface used by the GRACE epoch averaging branch.
 %
 % See also
-%   GRACEEPOCHS, FILLGRACEEPOCHS, SSH2LONLATT, STERIC2LONLATT,
-%   INTERPTEMPORAL
+%   CALENDARMONTHEPOCHS, SSH2LONLATT, STERIC2LONLATT
 %
 % Created by
-%   2026/09/25, En-Chi Lee (williameclee@arizona.edu)
-%
-% Last modified
-%   2026/11/01, En-Chi Lee (williameclee@gmail.com)
+%   2026/10/30
 
-function [avgs, dates] = averageepochs(nativeDates, data, epochs)
-
+function [averages, dates, averageStd] = averageepochs(nativeDates, data, epochs, expectedStep, options)
     arguments (Input)
         nativeDates {mustBeA(nativeDates, {'datetime', 'numeric'}), mustBeVector}
-        data {mustBeNumeric}
+        data (:, :, :) {mustBeFloat, mustBeReal}
         epochs (:, 2) {mustBeA(epochs, {'datetime', 'numeric'})}
+        expectedStep = []
+        options.CheckCompleteness (1, 1) logical = false
+        options.SamplingOrigin = []
+        options.SampleStd {mustBeFloat, mustBeReal} = []
     end
-
-    arguments (Output)
-        avgs {mustBeNumeric}
-        dates (:, 1) datetime
+    nativeDates = parsedates(nativeDates);
+    epochs = parsedates(epochs);
+    nativeDates = nativeDates(:);
+    assert(~isempty(nativeDates) && size(data, 3) == numel(nativeDates), ...
+        'ULMO:averageepochs:DimensionMismatch', 'Data time dimension must match nonempty native dates.');
+    assert(all(diff(nativeDates) > seconds(0)), 'ULMO:averageepochs:InvalidDates', ...
+        'Native dates must be sorted and unique.');
+    assert(all(epochs(:, 2) > epochs(:, 1)), 'ULMO:averageepochs:InvalidEpochs', ...
+        'Epoch ends must be later than their starts.');
+    assert(~any(isinf(data), 'all'), 'ULMO:averageepochs:InvalidData', ...
+        'Data must be finite or NaN.');
+    sampleStd = options.SampleStd;
+    if ~isempty(sampleStd)
+        assert(isequal(size(sampleStd), size(data)), 'ULMO:averageepochs:DimensionMismatch', ...
+            'SampleStd must have the same dimensions as data.');
+        assert(all(isnan(sampleStd) | (isfinite(sampleStd) & sampleStd >= 0), 'all'), ...
+            'ULMO:averageepochs:InvalidUncertainty', 'SampleStd must be nonnegative and finite, or NaN.');
     end
-
-    if isnumeric(nativeDates)
-        nativeDates = datetime(nativeDates, 'ConvertFrom', 'datenum');
-    end
-
-    if isnumeric(epochs)
-        epochs = datetime(epochs, 'ConvertFrom', 'datenum');
-    end
-
-    if any(isnat(epochs), 'all') || any(epochs(:, 2) <= epochs(:, 1))
-        error('ULMO:Epochs:InvalidWindows', ...
-        'Epochs must be N-by-2 finite start/end times with end > start.');
-    end
-
-    if size(data, 3) ~= numel(nativeDates)
-        error('ULMO:Epochs:DimensionMismatch', ...
-        'Mesh time dimension must match native dates.');
-    end
-
-    dates = epochs(:, 1) + (epochs(:, 2) - epochs(:, 1)) / 2;
-    outputSize = [size(data, 1), size(data, 2), size(epochs, 1)];
-    if isinteger(data)
-        avgs = nan(outputSize);
-    else
-        avgs = nan(outputSize, 'like', data);
-    end
-
-    for k = 1:size(epochs, 1)
-        selected = nativeDates(:) >= epochs(k, 1) & nativeDates(:) < epochs(k, 2);
-
-        if any(selected)
-            avgs(:, :, k) = mean(data(:, :, selected), 3, 'omitmissing');
+    if options.CheckCompleteness
+        if isnumeric(expectedStep)
+            expectedStep = days(expectedStep);
         end
-
+        assert(isduration(expectedStep) && isscalar(expectedStep) && ...
+            isfinite(seconds(expectedStep)) && expectedStep > seconds(0), ...
+            'ULMO:averageepochs:InvalidTimeStep', 'Checking requires a positive finite expected time step.');
+        origin = options.SamplingOrigin;
+        if isempty(origin)
+            origin = nativeDates(1);
+        else
+            origin = parsedates(origin);
+            assert(isscalar(origin), 'ULMO:averageepochs:InvalidOrigin', ...
+                'SamplingOrigin must be a single timestamp.');
+        end
     end
+    dates = epochs(:, 1) + (epochs(:, 2) - epochs(:, 1)) / 2;
+    averages = nan(size(data, 1), size(data, 2), size(epochs, 1), 'like', data);
+    averageStd = averages;
+    incomplete = false(size(epochs, 1), 1);
+    for k = 1:size(epochs, 1)
+        start = epochs(k, 1);
+        finish = epochs(k, 2);
+        ids = nativeDates >= start & nativeDates < finish;
+        if ~any(ids)
+            incomplete(k) = true;
+            continue
+        end
+        if options.CheckCompleteness
+            firstSample = origin + ceil(seconds(start - origin) / seconds(expectedStep)) * expectedStep;
+            expected = (firstSample:expectedStep:finish)';
+            expected = expected(expected < finish);
+            if ~isequal(nativeDates(ids), expected)
+                incomplete(k) = true;
+                continue
+            end
+        end
+        samples = data(:, :, ids);
+        valid = ~isnan(samples);
+        count = sum(valid, 3);
+        rejected = count == 0;
+        if options.CheckCompleteness
+            rejected = count ~= nnz(ids);
+        end
+        means = mean(samples, 3, 'omitmissing');
+        means(rejected) = NaN;
+        averages(:, :, k) = means;
+        incomplete(k) = any(rejected, 'all');
+        if ~isempty(sampleStd)
+            sigmas = sampleStd(:, :, ids);
+            sigmas(~valid) = 0;
+            uncertainty = sqrt(sum(sigmas .^ 2, 3)) ./ count;
+            uncertainty(rejected) = NaN;
+            averageStd(:, :, k) = uncertainty;
+        end
+    end
+    if any(incomplete)
+        warning('ULMO:averageepochs:IncompleteEpoch', ...
+            '%d epochs contain empty or incomplete averages.', nnz(incomplete));
+    end
+end
 
+function dates = parsedates(dates)
+    if isnumeric(dates)
+        assert(all(isfinite(dates), 'all'), 'ULMO:averageepochs:InvalidDates', 'Dates must be finite.');
+        dates = datetime(dates, 'ConvertFrom', 'datenum');
+    end
+    assert(isdatetime(dates) && ~any(isnat(dates) | isinf(dates), 'all') && ...
+        isempty(dates.TimeZone), 'ULMO:averageepochs:InvalidDates', ...
+        'Use finite, unzoned timestamps or datenums.');
 end

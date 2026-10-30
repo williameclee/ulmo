@@ -127,12 +127,23 @@ suppresses cache progress messages.
 
 ### Epoch generation and future GRACE support
 
-`esmepochs(timestep, nativeDates)` supplies N-by-2 `[start, end)` windows.
-`averageesmepochs(nativeDates, raw, epochs)` accepts those windows explicitly,
+`calendarmonthepochs(nativeDates)` supplies N-by-2 `[start, end)` windows.
+`averageepochs(nativeDates, data, epochs, expectedStep, ...)` accepts those windows explicitly,
 returns their exact midpoints, and has no calendar-month logic. Windows can
-overlap and their boundaries need not align with the six-hour UTC sampling
-grid. Each expected native sample inside a window receives equal weight.
-The demo uses the same averaging helper with its explicit GRACE source window.
+overlap and their boundaries need not align with the native sampling grid.
+The helper averages generic arrays with time in their third dimension; the
+caller handles harmonic labels and layout conversion. The first two outputs
+are means and midpoint dates, retaining the interface on the GRACE epoch
+averaging branch. Its third output is the formal uncertainty of each mean.
+
+`expectedStep` accepts a duration or a numeric number of days.
+`CheckCompleteness=false` is the default and averages available nonmissing
+values. Set it to true to reject incomplete timestamp grids or missing values.
+`SamplingOrigin` specifies the grid phase (default: first native timestamp).
+ESM callers supply `hours(6)`, an explicit UTC grid origin and
+`CheckCompleteness=true`. The calendar helper takes only dates and makes no
+sampling-rate or product assumptions. The demo uses these same averaging and
+completeness rules for its explicit GRACE source window.
 
 This uses the epoch-array convention on `feature/grace-epoch-averaging`.
 A future `'GRACE'` provider can supply actual GRACE windows where available
@@ -146,7 +157,7 @@ to distinguish their caches.
 | Output | Default representation |
 | --- | --- |
 | `esmPlmt` | N-by-M-by-4, columns degree, order, C and S |
-| `esmStdPlmt` | Same labels; coefficient uncertainties are NaN |
+| `esmStdPlmt` | Same labels; formal one-sigma coefficient uncertainties (NaN when unavailable) |
 | `dates` | N-by-1 MATLAB datenums at sample times or month midpoints |
 
 M is `(Loutput+1)*(Loutput+2)/2`: 16,471 rows at degree 180 or 1,891 at degree
@@ -163,6 +174,25 @@ of fresh water. `POT` follows the existing radius-times-Stokes convention.
 The source radius is read for unit conversion. Header metadata are not checked
 or returned; the input is assumed to follow ESAESM2's fully normalized
 coefficient convention. Missing or duplicate harmonic rows still fail.
+
+### Uncertainty definition
+
+`esmStdPlmt` has the same meaning and units as `graceStdPlmt`: formal one-sigma
+coefficient uncertainties. GRACE reads these from its source error columns;
+ESAESM2 supplies no such errors, so its raw and averaged uncertainties remain
+NaN. The variability of six-hour signals is not a formal measurement error.
+
+`averageepochs(..., "SampleStd", sigma)` propagates supplied uncertainties.
+For independent input errors and an equal-weight mean of n samples,
+`sigmaMean = sqrt(sum(sigma.^2))/n`. With missing values allowed, the mean and
+uncertainty use exactly the same data mask; a valid sample with unknown sigma
+makes the resulting sigma unknown. The helper does not infer uncertainty
+from temporal variability or assume that missing errors are zero. Correlated
+errors require covariance information beyond the supplied standard deviations.
+
+The demo also propagates HI/HIO uncertainties in quadrature under independent
+component errors instead of discarding supplied errors. This remains NaN for
+the actual ESM data; it is not a claim that ESM component errors are independent.
 
 ## Save and plot components
 
@@ -244,10 +274,12 @@ max(abs(squeeze(saved.esmPlmt(1,:,3:4)) - reference), [], "all")
 Run the MATLAB regression tests with:
 
 ```matlab
-assertSuccess(runtests(["unittests/esm2plmtTest.m", "unittests/esmEpochsTest.m"]));
+assertSuccess(runtests(["unittests/esm2plmtTest.m", "unittests/epochStatisticsTest.m"]));
 ```
 
 They exercise inclusive time selection, calendar boundaries and leap years,
 raw and monthly cache reuse, full cache coverage before truncation, forced
 refresh and invalidation, disabled saving, missing months, unit conversion,
-low degrees, layouts, padding, malformed inputs and explicit irregular/overlapping epochs.
+low degrees, layouts, padding, malformed inputs, explicit irregular/overlapping
+epochs, arbitrary cadences and formal uncertainty propagation through saved
+monthly and demo products.
