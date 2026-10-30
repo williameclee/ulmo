@@ -57,15 +57,16 @@ approximately 339 MiB after extraction.
 
 Configure ULMO and its dependencies on the MATLAB path, including the usual
 `IFILES` Earth constants and Love-number data for SD conversion. The interface
-is `esm2plmt(timestep, timelim, ...)`; both positional arguments default to `[]`.
+is `esm2plmt(component, timestep, timelim, ...)`; the component defaults to
+`"O"`, and the time step and limits default to `[]`.
 
 ```matlab
 timelim = [datetime(2003, 1, 1), datetime(2003, 1, 31, 23, 59, 59)];
 % Raw six-hour fields within the inclusive time limits:
-[raw, rawStd, rawDates] = esm2plmt([], timelim, "Component", "O");
+[raw, rawStd, rawDates] = esm2plmt("O", [], timelim);
 % Monthly means whose midpoints fall within the inclusive time limits:
-[esmPlmt, esmStdPlmt, dates] = esm2plmt("midmonth", timelim, ...
-    "Component", "O", "Unit", "SD", "Loutput", 60);
+[esmPlmt, esmStdPlmt, dates] = esm2plmt("O", "midmonth", timelim, ...
+    "Unit", "SD", "Loutput", 60);
 ```
 
 `timelim` is an increasing two-element datetime or datenum vector. Empty
@@ -75,7 +76,7 @@ are supported for `timestep`.
 
 Monthly means use all six-hour samples in `[month start, next month start)`
 and are dated at the exact midpoint of that calendar month. A month missing
-any expected sample has NaN coefficients and emits an `IncompleteMonth`
+any expected sample has NaN coefficients and emits an `IncompleteEpoch`
 warning when its cache is built. This includes partially downloaded boundary
 months. Missing whole months between available data are also represented by
 NaN fields. Download complete calendar months for monthly averaging. Calendar
@@ -89,7 +90,8 @@ raw folder. `IFILES` must always identify the configured data root.
 ### Disk caches
 
 Like `ssh2lonlatt`, the loader first checks the requested processed cache,
-otherwise loads the aggregated raw MAT file (or builds it from GFC files),
+and formats/returns a hit immediately. On a miss, it
+loads the aggregated raw MAT file (or builds it from GFC files),
 averages if needed, saves, and finally formats the returned data. **Time
 selection and degree truncation happen after caching.** A narrow time range
 or low `Loutput` never reduces the cache's coverage or degree.
@@ -99,13 +101,15 @@ Caches live in `$IFILES/ESM/ESAESM2/`. Examples for ocean fields:
 | Product | Cache filename |
 | --- | --- |
 | Raw Stokes | `ESAESM2_O_GRAV.mat` |
-| Monthly Stokes | `ESAESM2_O_GRAV-Tmidmonth-mean.mat` |
+| Monthly Stokes | `ESAESM2_O_GRAV-Tmidmonth.mat` |
 | Raw surface density | `ESAESM2_O_SD_ISSM.mat` |
-| Monthly surface density | `ESAESM2_O_SD_ISSM-Tmidmonth-mean.mat` |
+| Monthly surface density | `ESAESM2_O_SD_ISSM-Tmidmonth.mat` |
 | Raw potential | `ESAESM2_O_POT.mat` |
 
-The `-Tmidmonth-mean` suffix follows the time-step/method naming in
-`ssh2lonlatt`. Each component and unit has a separate cache; SD names also
+The `-Tmidmonth` suffix identifies the time step, without an averaging-method
+suffix. Cache path construction accepts the time-step name rather than
+assuming a monthly product. Each component and unit has a separate cache;
+SD names also
 include the Love-number source. Each MAT file contains only `esmPlmt`,
 `esmStdPlmt` and `dates`, in native-degree, time-first form with datetime dates.
 The raw cache retains each six-hour field. The monthly cache retains every
@@ -113,11 +117,31 @@ calendar month spanning those raw dates. Large arrays use MAT v7.3.
 
 Cache hits do not scan the GFC files. After downloading or changing source
 files, call with `ForceNew=true` to rebuild from all available GFC files.
-Saving a rebuilt raw cache invalidates its monthly cache; requesting monthly
+Saving a rebuilt raw cache invalidates all derived `-T*.mat` caches for the
+same component/unit/Love-number source (including the previous `-mean` names);
+requesting monthly
 output then rebuilds both levels. `SaveData=false` suppresses all cache writes
 and invalidation, while still permitting existing cache reads. Combine it
 with `ForceNew=true` to recompute without changing disk caches. `BeQuiet=true`
 suppresses cache progress messages.
+
+### Epoch generation and future GRACE support
+
+`esmepochs(timestep, nativeDates)` supplies N-by-2 `[start, end)` windows.
+`averageesmepochs(nativeDates, raw, epochs)` accepts those windows explicitly,
+returns their exact midpoints, and has no calendar-month logic. Windows can
+overlap and their boundaries need not align with the six-hour UTC sampling
+grid. Each expected native sample inside a window receives equal weight.
+The demo uses the same averaging helper with its explicit GRACE source window.
+
+This uses the epoch-array convention on `feature/grace-epoch-averaging`.
+A future `'GRACE'` provider can supply actual GRACE windows where available
+and fallback windows elsewhere without changing the averaging or formatting
+code. The public time-step options remain `[]` and `'midmonth'`; `'GRACE'` is
+not enabled in this PR. Any future reference-product choices will also need
+to distinguish their caches.
+
+### Output representation
 
 | Output | Default representation |
 | --- | --- |
@@ -157,7 +181,7 @@ This saves native GRAV fields for H/I/O, native and degree-60 SD fields for
 H/I/O/HI/HIO, and a two-column PNG comparing native with truncated H/I/O fields.
 All demo MAT files contain the three outputs above, without a metadata variable.
 For CSR January 2003, the GRACE interval is the complete calendar month, so
-the demo and `esm2plmt("midmonth", ...)` produce the same coefficients.
+the demo and `esm2plmt(component, "midmonth", ...)` produce the same coefficients.
 `HI` and `HIO` add coefficient columns while preserving one set of harmonic
 labels. Use `Loutput=45` to choose
 a different truncated bandwidth or `MakeFigure=false` to skip plotting.
@@ -217,8 +241,13 @@ saved = load(products.O.nativeGRAV);
 max(abs(squeeze(saved.esmPlmt(1,:,3:4)) - reference), [], "all")
 ```
 
-Run the MATLAB regression tests with `assertSuccess(runtests("unittests/esm2plmtTest.m"))`.
+Run the MATLAB regression tests with:
+
+```matlab
+assertSuccess(runtests(["unittests/esm2plmtTest.m", "unittests/esmEpochsTest.m"]));
+```
+
 They exercise inclusive time selection, calendar boundaries and leap years,
 raw and monthly cache reuse, full cache coverage before truncation, forced
 refresh and invalidation, disabled saving, missing months, unit conversion,
-low degrees, layouts, padding, and malformed inputs.
+low degrees, layouts, padding, malformed inputs and explicit irregular/overlapping epochs.
