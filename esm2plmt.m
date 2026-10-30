@@ -227,7 +227,7 @@ end
 function epochs = averagingepochs(timestep, nativeDates)
     switch string(timestep)
         case "midmonth"
-            epochs = calendarmonthepochs(nativeDates);
+            epochs = calendarmonthepochs(nativeDates([1, end]));
         otherwise
             error('ULMO:esm2plmt:InvalidTimeStep', 'Unsupported averaging step: %s.', timestep);
     end
