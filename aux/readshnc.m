@@ -4,14 +4,14 @@
 % empty time selection.
 %
 % Syntax
-%   [plmt, uncertainty, dates] = readshnc(path, timelim, degree)
-%   [coefficients, uncertainty, dates, labels] = readshnc(__, "OutputFormat", "compact")
+%   [plmt, uncs, dates] = readshnc(path, timelim, Lmax)
+%   [coeffs, uncs, dates, labels] = readshnc(__, "OutputFormat", "compact")
 %
 % Input arguments
 %   path - NetCDF file written using CREATESHNC.
 %   timelim (optional) - Inclusive two-element datetime/datenum range.
 %       Default range: [] (all times).
-%   degree (optional) - Maximum degree to read; never pads stored data.
+%   Lmax (optional) - Maximum degree to read; never pads stored data.
 %       Default degree: [] (native degree).
 %   OutputFormat (name-value) - Returned coefficient/uncertainty layout.
 %       'lmcosi': degree, order, cosine, sine columns; 'compact': cosine/sine.
@@ -20,7 +20,7 @@
 %       Default option: false. Used for epoch averaging windows.
 %
 % Output arguments
-%   coefficients, uncertainty - Double arrays, size (M, 4, N) for lmcosi,
+%   coeffs, uncs - Double arrays, size (M, 4, N) for lmcosi,
 %       or (M, 2, N) for compact. Lmcosi uncertainties carry valid degree/order
 %       columns; unavailable errors are NaN only in the cosine/sine columns.
 %   dates - Selected UTC timestamps. Size: (N, 1), datetime.
@@ -30,62 +30,76 @@
 %   CREATESHNC, READSHNCTIME
 %
 % Created by
-%   2026/10/30
+%   2026/10/30, En-Chi Lee (williameclee@gmail.com)
 
-function [coefficients, uncertainty, dates, labels] = readshnc(path, timelim, degree, options)
+function [coeffs, uncs, dates, labels] = readshnc(path, timelim, Lmax, options)
+
     arguments (Input)
         path {mustBeTextScalar, mustBeFile}
         timelim {mustBeTimeRange} = []
-        degree double = []
-        options.OutputFormat {mustBeTextScalar, ...
-            mustBeMember(options.OutputFormat, ["lmcosi", "compact"])} = 'lmcosi'
+        Lmax double = []
+        options.OutputFormat ...
+            {mustBeTextScalar, mustBeMember(options.OutputFormat, ["lmcosi", "compact"])} = 'lmcosi'
         options.EndExclusive (1, 1) logical = false
     end
+
     arguments (Output)
-        coefficients (:, :, :) double
-        uncertainty (:, :, :) double
+        coeffs (:, :, :) double
+        uncs (:, :, :) double
         dates (:, 1) datetime
         labels (:, 2) double
     end
+
     dates = readshnctime(path);
     keep = true(size(dates));
+
     if ~isempty(timelim)
         if isnumeric(timelim), timelim = datetime(timelim, 'ConvertFrom', 'datenum'); end
         keep = dates >= timelim(1) & dates <= timelim(2);
         if options.EndExclusive, keep = keep & dates < timelim(2); end
     end
+
     ids = find(keep);
     info = ncinfo(path);
-    variable = info.Variables(strcmp({info.Variables.Name}, 'coefficients'));
-    assert(isscalar(variable) && isequal({variable.Dimensions.Name}, {'lm', 'cs', 'time'}) && ...
-        variable.Size(2) == 2 && variable.Size(3) == numel(dates), ...
+    varInfo = info.Variables(strcmp({info.Variables.Name}, 'coefficients'));
+    assert(isscalar(varInfo) && isequal({varInfo.Dimensions.Name}, {'lm', 'cs', 'time'}) && ...
+        varInfo.Size(2) == 2 && varInfo.Size(3) == numel(dates), ...
         'ULMO:readshnc:InvalidDimensions', 'Expected coefficients(lm, cs, time).');
-    errorVariable = info.Variables(strcmp({info.Variables.Name}, 'uncertainty'));
-    if ~isempty(errorVariable)
-        assert(isequal({errorVariable.Dimensions.Name}, {'lm', 'cs', 'time'}) && ...
-            isequal(errorVariable.Size, variable.Size), 'ULMO:readshnc:InvalidDimensions', ...
-            'Uncertainty dimensions must match coefficients.');
+    uncInfo = info.Variables(strcmp({info.Variables.Name}, 'uncertainty'));
+
+    if ~isempty(uncInfo)
+        assert(isequal({uncInfo.Dimensions.Name}, {'lm', 'cs', 'time'}) && ...
+            isequal(uncInfo.Size, varInfo.Size), 'ULMO:readshnc:InvalidDimensions', ...
+        'Uncertainty dimensions must match coefficients.');
     end
-    nRows = variable.Size(1);
-    if ~isempty(degree)
-        validateattributes(degree, {'double'}, {'scalar', 'integer', 'nonnegative', 'finite'});
-        nRows = min(nRows, (degree + 1) * (degree + 2) / 2);
+
+    nRows = varInfo.Size(1);
+
+    if ~isempty(Lmax)
+        validateattributes(Lmax, {'double'}, {'scalar', 'integer', 'nonnegative', 'finite'});
+        nRows = min(nRows, (Lmax + 1) * (Lmax + 2) / 2);
     end
+
     labels = [double(ncread(path, 'degree', 1, nRows)), double(ncread(path, 'order', 1, nRows))];
-    coefficients = nan(nRows, 2, numel(ids));
-    uncertainty = coefficients;
+    coeffs = nan(nRows, 2, numel(ids));
+    uncs = coeffs;
     dates = dates(keep);
+
     if ~isempty(ids)
         start = [1, 1, ids(1)];
         count = [nRows, 2, numel(ids)];
-        coefficients = reshape(ncread(path, 'coefficients', start, count), count);
-        if ~isempty(errorVariable)
-            uncertainty = reshape(ncread(path, 'uncertainty', start, count), count);
+        coeffs = reshape(ncread(path, 'coefficients', start, count), count);
+
+        if ~isempty(uncInfo)
+            uncs = reshape(ncread(path, 'uncertainty', start, count), count);
         end
+
     end
+
     if strcmp(options.OutputFormat, 'lmcosi')
         repeatedLabels = repmat(labels, 1, 1, numel(ids));
-        coefficients = cat(2, repeatedLabels, coefficients);
-        uncertainty = cat(2, repeatedLabels, uncertainty);
+        coeffs = cat(2, repeatedLabels, coeffs);
+        uncs = cat(2, repeatedLabels, uncs);
     end
+
 end

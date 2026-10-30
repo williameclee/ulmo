@@ -1,17 +1,16 @@
 %% WRITESHNC - Saves lmcosi or compact harmonic arrays to NetCDF.
-% Writes a temporary file and replaces the destination only on success.
 % Degree/order are stored once; both input layouts produce the same schema.
 %
 % Syntax
-%   writeshnc(path, plmt, uncertainty, dates, unit)
-%   writeshnc(path, coefficients, uncertainty, dates, unit, "Labels", labels)
+%   writeshnc(path, plmt, uncs, dates, unit)
+%   writeshnc(path, coeffs, uncs, dates, unit, "Labels", labels)
 %   writeshnc(__, "Attributes", {"equatorRadius", radius, "source", "ESAESM2"})
 %
 % Input arguments
 %   path - Output NetCDF file.
-%   coefficients - Double array, size (M, 4, N) for lmcosi (degree, order,
+%   coeffs - Double array, size (M, 4, N) for lmcosi (degree, order,
 %       cosine, sine), or (M, 2, N) for compact cosine/sine data.
-%   uncertainty - Same layout/shape as coefficients, or [] to omit the variable.
+%   uncs - Same layout/shape as coefficients, or [] to omit the variable.
 %       Lmcosi uncertainty labels must match the coefficient labels.
 %   dates - Unzoned UTC datetimes, size (N, 1).
 %   unit - GRAV, POT or SD.
@@ -22,50 +21,76 @@
 %   Attributes (name-value) - Additional global attributes as alternating
 %       name/value cells; passed to CREATESHNC. Default attributes: {}.
 %
+% Notes
+%   The function writes a temporary file and replaces the destination only
+%   on success.
+%
 % See also
 %   CREATESHNC, READSHNC
 %
 % Created by
-%   2026/10/30
+%   2026/10/30, En-Chi Lee (williameclee@gmail.com)
 
-function writeshnc(path, coefficients, uncertainty, dates, unit, options)
+function writeshnc(path, coeffs, uncs, dates, unit, options)
+
     arguments (Input)
         path {mustBeTextScalar}
-        coefficients (:, :, :) double
-        uncertainty double
+        coeffs (:, :, :) double
+        uncs double
         dates (:, 1) datetime
         unit {mustBeTextScalar}
         options.Labels (:, 2) double = zeros(0, 2)
         options.Attributes (1, :) cell = {}
     end
-    assert(~isempty(dates) && ismember(size(coefficients, 2), [2, 4]) && ...
-        size(coefficients, 3) == numel(dates) && ...
-        (isempty(uncertainty) || isequal(size(coefficients), size(uncertainty))), ...
-        'ULMO:writeshnc:InvalidDimensions', 'Coefficient, date and uncertainty sizes must match.');
+
+    assert(~isempty(dates) && ismember(size(coeffs, 2), [2, 4]) && ...
+        size(coeffs, 3) == numel(dates) && ...
+        (isempty(uncs) || isequal(size(coeffs), size(uncs))), ...
+        'ULMO:writeshnc:InvalidDimensions', ...
+    'Coefficient, date and uncertainty sizes must match.');
     labels = options.Labels;
-    if size(coefficients, 2) == 4
-        embeddedLabels = coefficients(:, 1:2, 1);
-        assert(all(coefficients(:, 1:2, :) == embeddedLabels, 'all') && ...
+
+    if size(coeffs, 2) == 4
+        embeddedLabels = coeffs(:, 1:2, 1);
+        assert(all(coeffs(:, 1:2, :) == embeddedLabels, 'all') && ...
             (isempty(labels) || isequal(labels, embeddedLabels)) && ...
-            (isempty(uncertainty) || all(uncertainty(:, 1:2, :) == embeddedLabels, 'all')), ...
-            'ULMO:writeshnc:InvalidLabels', 'Lmcosi labels must agree and remain constant across time.');
+            (isempty(uncs) || all(uncs(:, 1:2, :) == embeddedLabels, 'all')), ...
+            'ULMO:writeshnc:InvalidLabels', ...
+        'Lmcosi labels must agree and remain constant across time.');
         labels = embeddedLabels;
-        coefficients = coefficients(:, 3:4, :);
-        if ~isempty(uncertainty), uncertainty = uncertainty(:, 3:4, :); end
+        coeffs = coeffs(:, 3:4, :);
+
+        if ~isempty(uncs)
+            uncs = uncs(:, 3:4, :);
+        end
+
     end
-    assert(~isempty(labels) && size(coefficients, 1) == size(labels, 1), ...
+
+    assert(~isempty(labels) && size(coeffs, 1) == size(labels, 1), ...
         'ULMO:writeshnc:InvalidLabels', 'Compact input requires matching Labels.');
     folder = fileparts(path);
-    if isempty(folder), folder = pwd; end
-    temporary = string(tempname(folder)) + ".nc";
-    cleanup = onCleanup(@() removetemporary(temporary));
-    createshnc(temporary, labels, dates, unit, 'Uncertainty', ~isempty(uncertainty), ...
+
+    if isempty(folder)
+        folder = pwd;
+    end
+
+    tmpPath = string(tempname(folder)) + ".nc";
+    cleanup = onCleanup(@() removetemporary(tmpPath));
+    createshnc(tmpPath, labels, dates, unit, 'Uncertainty', ~isempty(uncs), ...
         'Attributes', options.Attributes);
-    ncwrite(temporary, 'coefficients', coefficients);
-    if ~isempty(uncertainty), ncwrite(temporary, 'uncertainty', uncertainty); end
-    movefile(temporary, path, 'f');
+    ncwrite(tmpPath, 'coefficients', coeffs);
+
+    if ~isempty(uncs)
+        ncwrite(tmpPath, 'uncertainty', uncs);
+    end
+
+    movefile(tmpPath, path, 'f');
 end
 
 function removetemporary(path)
-    if isfile(path), delete(path); end
+
+    if isfile(path)
+        delete(path);
+    end
+
 end
