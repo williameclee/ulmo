@@ -12,48 +12,75 @@ ice), O (ocean), S (solid Earth) and AOHIS (their sum). See the
 [archive README](https://isdc-data.gfz.de/future_missions/esaesm/ESAESM2/README.txt)
 and [Dobslaw et al. (2015)](https://doi.org/10.1007/s00190-014-0787-8).
 
-## Download one interval
+## Download the full record
 
-Set `GRACE_FILE` to a local GRACE source file and export `IFILES` with the same
-staging data root for the download, which may be on an external drive.
+Export `IFILES` with the staging data root, which may be on an external drive.
 The downloader stores GFC files under `$IFILES/ESM/ESAESM2/raw/COMPONENT/`.
-This download root can differ from the MATLAB `IFILES` used for prepared NetCDF files. Run from the repository root with Python
-3.9 or newer:
+This root can differ from the MATLAB `IFILES` used for prepared NetCDF files.
+Run from the repository root with Python 3.9 or newer; no third-party Python
+packages are needed:
 
 ```sh
-python3 data/download_esm_epoch.py \
-  --grace-file "$GRACE_FILE" --components H I O
+# All six components, every six-hour sample from 1995 through 2006.
+python3 data/download_esm.py
+# Full time record for the components used in ocean/land recovery experiments.
+python3 data/download_esm.py --components H I O
+# Optional whole-year subset.
+python3 data/download_esm.py --years 2002 2003 --components O
 ```
 
-No third-party Python dependencies are needed. CLI argument parsing is separate
-from `download_epoch(grace_file, components, data_root)`, which can also be
-called directly with explicit inputs. The downloader reads the exact
-start and exclusive end from the GRCOF2 records, rather than interpreting the
-inclusive day-of-year range in the filename. Boundaries must align with the
-six-hour grid. The six-hour series covers 1995–2006; the separate three-hour,
-degree-360 product is not supported.
+The default covers all 17,532 samples per component in the six-hour,
+degree-180 `mtmshc` product. The separate three-hour, degree-360 product and
+other ESAESM2 variants are not included. No GRACE file or epoch is required.
+The programmatic entry point is
+`download_dataset(components, data_root, years=YEARS)` with explicit inputs;
+CLI/environment parsing is separate.
 
 GFZ packages the samples in yearly `.tar.gz` archives. The downloader streams
-each required archive and saves only the requested samples under
-`$IFILES/ESM/ESAESM2/raw/H`, `raw/I` and `raw/O`. Members need not be
-chronologically ordered. The stream
-stops only after every expected timestamp has been collected; later intervals
-may require reading most of the annual archive. It does not retain or verify
-the full yearly gzip archive.
+one component-year at a time, retaining every expected sample without saving
+the archive itself. Members need not be chronologically ordered. Each saved
+file has a local SHA-256 hash and source URL/member record. These are local
+integrity records, not publisher-supplied digests; the full gzip archive is
+not retained or verified.
 
-`$IFILES/ESM/ESAESM2/manifests/GRACE_FILENAME.json` records the GRACE input checksum, interval, component file
-names, timestamps, source URLs, archive member names and local SHA-256 hashes.
-Completed components are recorded individually, and subsequent component
-downloads preserve earlier entries. Rerunning an existing component reads its
-archive again; existing files must match the downloaded content. Overlapping
-GRACE intervals share the same raw sample files and retain separate manifests
-for their source filenames. A manifest cannot be reused after changing its
-GRACE source contents or interval. The local checksums
-are integrity records, not publisher-supplied digests.
+`$IFILES/ESM/ESAESM2/manifests/ESAESM2_YEAR.json` is saved after each component
+completes. Restarting verifies all recorded sizes and hashes before skipping
+completed component-years. Missing samples trigger another archive read;
+modified files raise an error and are preserved. A failed component-year is
+retried from its archive start, reusing matching files already saved. Completed
+years/components survive later failures. Adding components preserves existing
+manifest entries. Proof-of-concept samples share the same raw paths and can
+be reused when downloading the complete record.
 
-For example, CSR RL06 January 2003 uses `[2003-01-01, 2003-02-01)`, with 124
-samples per component and midpoint `2003-01-16 12:00`. H, I and O together occupy
-approximately 339 MiB after extraction.
+### Optional single-epoch proof-of-concept demo
+
+The January 2003 proof-of-concept example demonstrates ingestion, conversion
+and spatial recovery for one GRACE interval. To reproduce it, set `GRACE_FILE`
+to a local GRACE source file:
+
+```sh
+python3 data/download_esm.py --grace-file "$GRACE_FILE" --components H I O
+```
+
+The downloader reads the exact start and exclusive end from GRCOF2 records,
+rather than the inclusive day-of-year range in the filename. Boundaries must
+align with the six-hour grid. `--grace-file` and `--years` are mutually
+exclusive. The demo defaults to H/I/O when no components are supplied.
+Its programmatic entry point remains
+`download_epoch(grace_file, components, data_root)`.
+
+The stream stops after every requested timestamp has been collected; later
+intervals may require reading most of an annual archive.
+`manifests/GRACE_FILENAME.json` records the GRACE input checksum, interval
+and saved samples. Demo runs reread the relevant archives, require existing
+files to match, and preserve completed components. Overlapping intervals
+share raw files but retain separate source manifests. A changed GRACE input
+or interval cannot reuse its previous manifest.
+
+CSR RL06 January 2003 uses `[2003-01-01, 2003-02-01)`, with 124 samples per
+component and midpoint `2003-01-16 12:00`. H, I and O together occupy
+approximately 339 MiB after extraction. These figures describe the demo,
+not the full production download.
 
 ## MATLAB processing
 
@@ -64,16 +91,21 @@ separate operation:
 ```matlab
 % ESM_SOURCE identifies the extracted files, possibly on an external drive.
 sourceFolder = getenv("ESM_SOURCE");
-prepareesm(sourceFolder, "O");
+for component = ["H", "I", "O"]
+    prepareesm(sourceFolder, component);
+end
+% Return every available monthly epoch from the prepared ocean record.
+[monthly, monthlyStd, monthlyDates] = esm2plmt("O", [], "midmonth", "Loutput", 60);
 ```
 
 `prepareesm` searches the supplied folder recursively for the requested
-component, sorts timestamps, validates sampling and harmonic rows, and writes
+component across all years, sorts timestamps, validates sampling and harmonic rows, and writes
 `$IFILES/ESM/ESAESM2/ESAESM2_O.nc`. It reads at most 32 files per batch and
 writes a temporary NetCDF-4 file, replacing the destination only on success.
 An existing destination requires `ForceNew=true`. Reimport the entire desired
 collection when adding data; imports replace rather than append. The original
-GFC files are never modified and can be kept offline after preparation.
+GFC files are never modified and can be kept offline after preparation. Neither
+the importer nor the production loader restricts data to one GRACE epoch.
 
 ### Prepared input and reader interface
 
@@ -315,7 +347,7 @@ data. Plotting does not change the coefficients or the source data.
 - HIO omits atmosphere and solid Earth and is not a closed whole-Earth mass
   budget. It is also not a GSM-like residual: no DEAL has been subtracted.
 - SD conversion of S describes equivalent mass, not a physical surface load.
-- A single epoch tests ingestion and spatial recovery. Trend experiments need
+- The single-epoch proof of concept demonstrates ingestion and spatial recovery. Trend experiments need
   a multi-epoch record and a fixed truth across the candidate buffers.
 
 ## Validation
@@ -328,7 +360,10 @@ python3 data/verify_esm_epoch.py \
 ```
 
 The downloader and verifier tests require pytest and run offline using
-temporary directories and mocked archive responses. The verifier checks file hashes, complete six-hour sampling and all degree-180
+temporary directories and mocked archive responses. They check full-record
+scheduling, leap years, resumable annual downloads, local corruption detection,
+and optional GRACE-interval selection. The demo verifier checks file hashes,
+complete six-hour sampling and all degree-180
 harmonics, and independently averages each component using Python's standard
 library. It writes `reference_COMPONENT.bin` as little-endian float64 values,
 with C/S interleaved in ascending degree/order, and `raw_validation.json`.

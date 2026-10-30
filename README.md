@@ -14,7 +14,7 @@ See the [Functions](docs/functions.md) page for a list of public functions in th
 
 See [Linear sea-level and low-degree solvers](docs/linear-sle.md) for the shared matrices, response maps, uncertainty propagation and cache reuse.
 
-See [Cached ESAESM2 fields and monthly means](docs/esm-grace-epochs.md) for downloading synthetic mass components, converting them to GRACE-compatible coefficient arrays, and plotting native versus truncated fields.
+See [Cached ESAESM2 fields and monthly means](docs/esm-grace-epochs.md) for downloading the full 1995–2006 synthetic mass record (or an optional single-epoch proof of concept), converting components to GRACE-compatible coefficient arrays, and plotting native versus truncated fields.
 
 ## Installation
 
