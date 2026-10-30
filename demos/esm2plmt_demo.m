@@ -27,7 +27,7 @@
 %   subtraction. One epoch demonstrates ingestion, not trend recovery.
 %   Requires the standard ULMO paths, Earth constants and ISSM Love numbers.
 %   Exact GRACE-window means are formed from cached raw samples. These can
-%   differ from the calendar-month means returned by ESM2PLMT("midmonth").
+%   differ from the calendar-month means returned by ESM2PLMT(component, "midmonth").
 %   ESM inputs are read from $IFILES/ESM/ESAESM2/raw/COMPONENT.
 %
 % See also
@@ -35,6 +35,9 @@
 %
 % Created by
 %   2026/10/29
+%
+% Last modified
+%   2026/10/30
 
 function products = esm2plmt_demo(graceFile, outputFolder, options)
     arguments (Input)
@@ -100,19 +103,19 @@ function file = savetruncated(stem, field, uncertainty, dates, degree)
 end
 
 function [plmt, uncertainty, dates] = epochmean(interval, midpoint, options)
-    arguments
+    arguments (Input)
         interval (1, 2) datetime
         midpoint (1, 1) datetime
         options.Component (1, 1) string
         options.Unit (1, 1) string
     end
-    [raw, rawStd, rawDates] = esm2plmt([], [interval(1), interval(2) - hours(6)], ...
-        'Component', options.Component, 'Unit', options.Unit, 'TimeFormat', 'datetime');
+    [raw, ~, rawDates] = esm2plmt(options.Component, [], interval, ...
+        'Unit', options.Unit, 'TimeFormat', 'datetime');
     expected = (interval(1):hours(6):interval(2) - hours(6))';
-    assert(isequal(rawDates, expected), 'ULMO:esm2plmt:IncompleteSampling', ...
+    assert(isequal(rawDates(rawDates < interval(2)), expected), ...
+        'ULMO:esm2plmt:IncompleteSampling', ...
         'The cached raw data do not cover the complete GRACE interval.');
-    plmt = raw(1, :, :);
-    plmt(:, :, 3:4) = mean(raw(:, :, 3:4), 1);
-    uncertainty = rawStd(1, :, :);
-    dates = datenum(midpoint); %#ok<DATNM>
+    [plmt, uncertainty, dates] = averageesmepochs(rawDates, raw, interval);
+    assert(isequal(dates, midpoint), 'ESM and GRACE epoch dates differ.');
+    dates = datenum(dates); %#ok<DATNM>
 end

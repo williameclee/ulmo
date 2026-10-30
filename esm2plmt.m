@@ -4,11 +4,13 @@
 %
 % Syntax
 %   [esmPlmt, esmStdPlmt, dates] = esm2plmt()
-%   [esmPlmt, esmStdPlmt, dates] = esm2plmt(timestep, timelim)
-%   [esmPlmt, esmStdPlmt, dates] = esm2plmt("midmonth", timelim, ...
-%       "Component", "H", "Unit", "GRAV", "Loutput", 60)
+%   [esmPlmt, esmStdPlmt, dates] = esm2plmt(component, timestep, timelim)
+%   [esmPlmt, esmStdPlmt, dates] = esm2plmt("H", "midmonth", timelim, ...
+%       "Unit", "GRAV", "Loutput", 60)
 %
 % Input arguments
+%   component (optional) - Individual component identifier.
+%       Options: 'A', 'O', 'H', 'I', 'S', 'AOHIS'. Default component: 'O'.
 %   timestep (optional) - Temporal averaging step.
 %       [] returns raw six-hour fields; 'midmonth' returns calendar-month
 %       arithmetic means at the exact midpoint of each month.
@@ -16,8 +18,6 @@
 %   timelim (optional) - Inclusive time range applied to returned timestamps.
 %       Two-element datetime or datenum vector. Empty returns all dates.
 %       Default range: [].
-%   Component (name-value) - Individual component identifier.
-%       Options: 'A', 'O', 'H', 'I', 'S', 'AOHIS'. Default component: 'O'.
 %   Unit (name-value) - Output coefficient unit.
 %       'GRAV': dimensionless Stokes; 'POT': radius times Stokes, following
 %       CONVERTGRAVITY; 'SD': kg/m^2, equivalent to mm of fresh water.
@@ -50,17 +50,20 @@
 %   $IFILES/ESM/ESAESM2/raw/COMPONENT, including its subdirectories.
 %   IFILES must name the configured data root; there is no folder argument.
 %   Caches contain all available dates at native degree, before time selection,
-%   degree truncation/padding and output formatting. Cache names follow SSH2LONLATT:
+%   degree truncation/padding and output formatting. Cache names use the
+%   SSH2LONLATT time-step suffix:
 %   ESAESM2_COMPONENT_UNIT[_LOVESOURCE].mat and
-%   ESAESM2_COMPONENT_UNIT[_LOVESOURCE]-Tmidmonth-mean.mat, in
+%   ESAESM2_COMPONENT_UNIT[_LOVESOURCE]-Tmidmonth.mat, in
 %   $IFILES/ESM/ESAESM2. Love-number source is included for SD only.
 %   Cache variables are esmPlmt, esmStdPlmt and dates (datetime, timefirst).
-%   Rebuilding a saved raw cache invalidates its monthly cache. Cache hits
+%   Rebuilding a saved raw cache invalidates its derived epoch caches. Cache hits
 %   do not scan GFC files; ForceNew refreshes both levels when needed.
 %   Monthly means use [month start, next month start). A month missing any
-%   six-hour sample has NaN coefficients and emits an IncompleteMonth warning.
+%   six-hour sample has NaN coefficients and emits an IncompleteEpoch warning.
 %   Raw mode returns available samples, allowing gaps. Duplicate/off-grid
 %   timestamps and incomplete harmonic rows fail when reading source files.
+%   ESMEPOCHS supplies the averaging windows to AVERAGEESMEPOCHS. The latter
+%   accepts arbitrary epoch boundaries, including overlapping windows.
 %   Calendar-month means do not reproduce irregular GRACE reporting windows
 %   or orbit-dependent observation weights.
 %   ESM fields are anomalies. No WGS84 subtraction, demeaning, low-degree
@@ -78,17 +81,29 @@
 %   ESAESM2. https://isdc-data.gfz.de/future_missions/esaesm/ESAESM2/
 %
 % See also
-%   GRACE2PLMT_NEW, SSH2LONLATT, CONVERTGRAVITY
+%   GRACE2PLMT_NEW, SSH2LONLATT, ESMEPOCHS, AVERAGEESMEPOCHS, CONVERTGRAVITY
 %
 % Created by
 %   2026/10/29
+%
+% Last modified
+%   2026/10/30
 
-function [esmPlmt, esmStdPlmt, dates] = esm2plmt(timestep, timelim, options)
+function [esmPlmt, esmStdPlmt, dates] = esm2plmt(component, varargin)
+    % Consume the component before name-value parsing: otherwise MATLAB
+    % interprets esm2plmt('O', 'midmonth') as OutputFormat='midmonth'.
+    if nargin == 0
+        component = "O";
+    end
+    [esmPlmt, esmStdPlmt, dates] = loadesm(component, varargin{:});
+end
+
+function [esmPlmt, esmStdPlmt, dates] = loadesm(component, timestep, timelim, options)
     arguments (Input)
+        component (1, 1) string {mustBeMember(component, ...
+            ["A", "O", "H", "I", "S", "AOHIS"])}
         timestep = []
         timelim {mustBeTimeRange} = []
-        options.Component (1, 1) string {mustBeMember(options.Component, ...
-            ["A", "O", "H", "I", "S", "AOHIS"])} = "O"
         options.Unit (1, 1) string {mustBeMember(options.Unit, ["GRAV", "POT", "SD"])} = "SD"
         options.Loutput double = []
         options.LoveNumSource (1, 1) string = "ISSM"
@@ -119,41 +134,39 @@ function [esmPlmt, esmStdPlmt, dates] = esm2plmt(timestep, timelim, options)
     dataRoot = getenv('IFILES');
     assert(~isempty(dataRoot), 'ULMO:esm2plmt:MissingDataRoot', ...
         'Set IFILES to the configured data root before reading ESM fields.');
-    [rawPath, monthlyPath] = outputpaths(dataRoot, options.Component, ...
-        options.Unit, options.LoveNumSource);
-    outputPath = rawPath;
-    if ~isempty(timestep)
-        outputPath = monthlyPath;
-    end
+    [rawPath, outputPath] = outputpaths(dataRoot, component, ...
+        options.Unit, options.LoveNumSource, timestep);
     vars = {'esmPlmt', 'esmStdPlmt', 'dates'};
 
     if ~options.ForceNew && validcache(outputPath, vars)
         data = load(outputPath, vars{:});
         reportcache('Loaded', outputPath, options.BeQuiet);
+        [esmPlmt, esmStdPlmt, dates] = formatoutput(data.esmPlmt, ...
+            data.esmStdPlmt, data.dates, timelim, options.Loutput, ...
+            options.OutputFormat, options.TimeFormat);
+        return
+    end
+
+    if ~options.ForceNew && validcache(rawPath, vars)
+        data = load(rawPath, vars{:});
+        reportcache('Loaded', rawPath, options.BeQuiet);
     else
-        if ~options.ForceNew && validcache(rawPath, vars)
-            data = load(rawPath, vars{:});
-            reportcache('Loaded', rawPath, options.BeQuiet);
-        else
-            folder = fullfile(dataRoot, 'ESM', 'ESAESM2', 'raw', options.Component);
-            [data.esmPlmt, data.esmStdPlmt, data.dates] = ...
-                readraw(folder, options.Component, options.Unit, options.LoveNumSource);
-            if options.SaveData
-                save(rawPath, '-struct', 'data', vars{:}, '-v7.3');
-                % Derived averages must not survive a raw-cache rebuild.
-                if isfile(monthlyPath)
-                    delete(monthlyPath);
-                end
-                reportcache('Saved', rawPath, options.BeQuiet);
-            end
+        folder = fullfile(dataRoot, 'ESM', 'ESAESM2', 'raw', component);
+        [data.esmPlmt, data.esmStdPlmt, data.dates] = ...
+            readraw(folder, component, options.Unit, options.LoveNumSource);
+        if options.SaveData
+            save(rawPath, '-struct', 'data', vars{:}, '-v7.3');
+            invalidateepochcaches(rawPath);
+            reportcache('Saved', rawPath, options.BeQuiet);
         end
-        if ~isempty(timestep)
-            [data.esmPlmt, data.esmStdPlmt, data.dates] = ...
-                monthlymean(data.esmPlmt, data.dates);
-            if options.SaveData
-                save(monthlyPath, '-struct', 'data', vars{:}, '-v7.3');
-                reportcache('Saved', monthlyPath, options.BeQuiet);
-            end
+    end
+    if ~isempty(timestep)
+        epochs = esmepochs(timestep, data.dates);
+        [data.esmPlmt, data.esmStdPlmt, data.dates] = ...
+            averageesmepochs(data.dates, data.esmPlmt, epochs);
+        if options.SaveData
+            save(outputPath, '-struct', 'data', vars{:}, '-v7.3');
+            reportcache('Saved', outputPath, options.BeQuiet);
         end
     end
     [esmPlmt, esmStdPlmt, dates] = formatoutput(data.esmPlmt, ...
@@ -161,14 +174,26 @@ function [esmPlmt, esmStdPlmt, dates] = esm2plmt(timestep, timelim, options)
         options.OutputFormat, options.TimeFormat);
 end
 
-function [rawPath, monthlyPath] = outputpaths(dataRoot, component, unit, loveSource)
+function [rawPath, outputPath] = outputpaths(dataRoot, component, unit, loveSource, timestep)
     product = "ESAESM2_" + component + "_" + unit;
     if unit == "SD"
         product = product + "_" + replace(loveSource, " ", "");
     end
     folder = fullfile(dataRoot, 'ESM', 'ESAESM2');
     rawPath = fullfile(folder, product + ".mat");
-    monthlyPath = fullfile(folder, product + "-Tmidmonth-mean.mat");
+    outputPath = rawPath;
+    if ~isempty(timestep)
+        outputPath = fullfile(folder, product + "-T" + string(timestep) + ".mat");
+    end
+end
+
+function invalidateepochcaches(rawPath)
+    % Any averaging windows depend on the same raw component/unit cache.
+    [folder, product] = fileparts(rawPath);
+    caches = dir(fullfile(folder, product + "-T*.mat"));
+    for k = 1:numel(caches)
+        delete(fullfile(caches(k).folder, caches(k).name));
+    end
 end
 
 function valid = validcache(path, vars)
@@ -215,31 +240,6 @@ function [esmPlmt, esmStdPlmt, dates] = readraw(folder, component, unit, loveSou
                 'EquatorRadius', equatorRadius, 'LoveNumSource', loveSource);
         end
         esmPlmt(k, :, 3:4) = reshape(plm(:, 3:4), 1, size(plm, 1), 2);
-    end
-end
-
-function [monthly, uncertainty, dates] = monthlymean(raw, rawDates)
-    first = dateshift(rawDates(1), 'start', 'month');
-    last = dateshift(rawDates(end), 'start', 'month');
-    starts = (first:calmonths(1):last)';
-    ends = starts + calmonths(1);
-    dates = starts + (ends - starts) / 2;
-    labels = reshape(raw(1, :, 1:2), [], 2);
-    monthly = emptyplmt(numel(dates), labels);
-    uncertainty = monthly;
-    incomplete = false(numel(dates), 1);
-    for k = 1:numel(dates)
-        ids = rawDates >= starts(k) & rawDates < ends(k);
-        expected = (starts(k):hours(6):ends(k) - hours(6))';
-        if ~isequal(rawDates(ids), expected)
-            incomplete(k) = true;
-            continue
-        end
-        monthly(k, :, 3:4) = mean(raw(ids, :, 3:4), 1);
-    end
-    if any(incomplete)
-        warning('ULMO:esm2plmt:IncompleteMonth', ...
-            '%d incomplete calendar months have NaN coefficients.', nnz(incomplete));
     end
 end
 

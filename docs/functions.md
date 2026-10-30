@@ -52,6 +52,8 @@ The ultimate goal is to drop the `_new` suffixes and replace the original functi
 | Function name | Description | Package dependencies | Data dependencies | Notes |
 | :--- | :--- | :--- | :--- | :--- |
 | `esm2plmt` | Loads cached raw or calendar-month ESAESM2 harmonics with inclusive time selection and output truncation. | Gravity conversion dependencies for SD/POT | ESAESM2 six-hour GFC files | [Download, processing and plotting guide](esm-grace-epochs.md). |
+| `esmepochs` | Supplies calendar averaging windows independently of ESM coefficient processing. | | Native timestamps | Supports `midmonth`; future GRACE windows use the same epoch-array contract. |
+| `averageesmepochs` | Averages six-hour ESM harmonics over supplied start/end windows, including overlaps. | | Raw coefficients, dates and epochs | Requires complete sampling; returns epoch midpoints. |
 | `gracedeg1` | Reads and converts GRACE TN-13 degree-1 data to appropriate field and format. | | GRACE | Replacement for `gracedeg1` in [slepian_delta](https://github.com/csdms-contrib/slepian_delta.git). |
 | `gracedeg2` | Reads and converts GRACE TN-14 $\Delta C_{2,0}$/$\Delta C_{3,0}$ data to appropriate field and format. | | GRACE | Replacement for `gracedeg2` in [slepian_delta](https://github.com/csdms-contrib/slepian_delta.git). |
 | `aod1b2plmt` | Reads and converts GRACE GAC/GAD data to `lmcosi`-format spherical harmonic fields. | | GRACE | |
