@@ -318,7 +318,7 @@ classdef esm2plmtTest < matlab.unittest.TestCase
     end
     methods (Access = private)
         function data = readfile(~, path)
-            [c, s, dates, labels] = readshnc(path);
+            [c, s, dates, labels] = readshnc(path, 'OutputFormat', 'compact');
             p = nan(numel(dates), size(labels, 1), 4);
             p(:, :, 1:2) = repmat(reshape(labels, 1, [], 2), numel(dates), 1, 1);
             u = p;

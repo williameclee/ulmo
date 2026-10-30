@@ -77,7 +77,7 @@ function path = prepareesm(folder, component, options)
     end
     temporary = string(tempname(destination)) + ".nc";
     cleanup = onCleanup(@() removetemporary(temporary));
-    createshnc(temporary, labels, dates, 'GRAV', 'EquatorRadius', equatorRadius);
+    createshnc(temporary, labels, dates, 'GRAV', 'Attributes', {'equatorRadius', equatorRadius});
     for firstIndex = 1:32:numel(files)
         ids = firstIndex:min(firstIndex + 31, numel(files));
         batch = nan(size(labels, 1), 2, numel(ids));

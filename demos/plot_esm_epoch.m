@@ -42,14 +42,14 @@ function plot_esm_epoch(products, outputFile, options)
     referenceDate = [];
     for row = 1:3
         for column = 1:2
-            [values, ~, dates, labels] = readshnc(products.(components(row)).(variants(column)));
+            [values, ~, dates] = readshnc(products.(components(row)).(variants(column)));
             assert(isscalar(dates), 'Expected one epoch of the requested component.');
             if isempty(referenceDate)
                 referenceDate = dates;
             else
                 assert(isequal(dates, referenceDate), 'ESM epoch dates differ.');
             end
-            coefficients = [labels, values(:, :, 1)];
+            coefficients = values(:, :, 1);
             [fields{row, column}, lon, lat] = plm2xyz(coefficients, ...
                 0.5, [-180, 90, 180, -90], 'BeQuiet', true);
             assert(all(isfinite(fields{row, column}), 'all'));
