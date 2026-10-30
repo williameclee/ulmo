@@ -31,7 +31,7 @@ classdef epochStatisticsTest < matlab.unittest.TestCase
             [p, d, s] = averageepochs(dates, data, epochs, hours(6), 'CheckCompleteness', true);
             testCase.verifyEqual(p(:), [4; 1.5; 2.5]);
             testCase.verifyEqual(d, mean(epochs, 2));
-            testCase.verifyTrue(all(isnan(s), 'all'));
+            testCase.verifyEqual(s(:), [1 / sqrt(3); 0.5; 0.5], 'AbsTol', 1e-14);
         end
         function cadenceAndPhaseAreCallerSupplied(testCase)
             origin = datetime(2020, 1, 1, 0, 15, 0);
@@ -72,12 +72,24 @@ classdef epochStatisticsTest < matlab.unittest.TestCase
             testCase.verifyEqual(p, 7);
             testCase.verifyEqual(s, 3);
         end
-        function unknownSigmaIsNotTreatedAsZero(testCase)
+        function unknownSigmaUsesEmpiricalStandardError(testCase)
             dates = datetime(2020, 1, 1) + days((0:1)');
             [p, ~, s] = averageepochs(dates, reshape([2, 4], 1, 1, []), ...
                 [dates(1), dates(2) + days(1)], 'SampleStd', reshape([3, NaN], 1, 1, []));
             testCase.verifyEqual(p, 3);
+            testCase.verifyEqual(s, 1);
+        end
+        function empiricalEstimateUsesSampleVarianceAndValidCount(testCase)
+            dates = datetime(2020, 1, 1) + days((0:3)');
+            data = reshape([2, NaN, 6, 10], 1, 1, []);
+            epoch = [dates(1), dates(end) + days(1)];
+            [p, ~, s] = averageepochs(dates, data, epoch);
+            testCase.verifyEqual(p, 6);
+            testCase.verifyEqual(s, 4 / sqrt(3), 'RelTol', 1e-14);
+            [~, ~, s] = averageepochs(dates(1), 2, epoch);
             testCase.verifyTrue(isnan(s));
+            [~, ~, s] = averageepochs(dates, ones(size(data)), epoch);
+            testCase.verifyEqual(s, 0);
         end
         function missingValuesUseSameMaskForMeanAndSigma(testCase)
             dates = datetime(2020, 1, 1) + days((0:2)');

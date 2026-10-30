@@ -22,6 +22,9 @@ function epochs = calendarmonthepochs(dates)
     arguments (Input)
         dates {mustBeA(dates, {'datetime', 'numeric'}), mustBeVector}
     end
+    arguments (Output)
+        epochs (:, 2) datetime
+    end
     if isnumeric(dates)
         assert(all(isfinite(dates)), 'ULMO:calendarmonthepochs:InvalidDates', ...
             'Dates must be finite.');

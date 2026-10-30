@@ -2,7 +2,7 @@
 
 `esm2plmt` returns six-hour ESAESM2 fields or calendar-month means, with time
 selection and the coefficient layout and units used by `grace2plmt_new`. Both
-raw and monthly products are cached on disk. It supports land-only, ocean-only
+the native inputs and monthly products use MAT files on disk. It supports land-only, ocean-only
 and combined synthetic recovery experiments.
 
 The [ESAESM2 archive](https://isdc-data.gfz.de/future_missions/esaesm/ESAESM2/)
@@ -15,9 +15,9 @@ and [Dobslaw et al. (2015)](https://doi.org/10.1007/s00190-014-0787-8).
 ## Download one interval
 
 Set `GRACE_FILE` to a local GRACE source file and export `IFILES` with the same
-data root used by MATLAB. The fixed ESM location is
-`$IFILES/ESM/ESAESM2/raw/COMPONENT/`; no input-folder argument is needed in
-either the downloader or `esm2plmt`. Run from the repository root with Python
+staging data root for the download, which may be on an external drive.
+The downloader stores GFC files under `$IFILES/ESM/ESAESM2/raw/COMPONENT/`.
+This download root can differ from the MATLAB `IFILES` used for prepared MAT files. Run from the repository root with Python
 3.9 or newer:
 
 ```sh
@@ -55,75 +55,95 @@ approximately 339 MiB after extraction.
 
 ## MATLAB processing
 
-Configure ULMO and its dependencies on the MATLAB path, including the usual
-`IFILES` Earth constants and Love-number data for SD conversion. The interface
-is `esm2plmt(component, timestep, timelim, ...)`; the component defaults to
-`"O"`, and the time step and limits default to `[]`.
+Configure ULMO and its dependencies on the MATLAB path, including `data/`
+and the usual Earth constants and Love-number data. Raw GFC ingestion is a
+separate operation:
+
+```matlab
+% ESM_SOURCE identifies the extracted files, possibly on an external drive.
+sourceFolder = getenv("ESM_SOURCE");
+prepareesm(sourceFolder, "O");
+```
+
+`prepareesm` searches the supplied folder recursively for the requested
+component, sorts timestamps, validates sampling and harmonic rows, and writes
+`$IFILES/ESM/ESAESM2/ESAESM2_O.mat`. It reads at most 32 files per batch and
+writes a temporary v7.3 MAT file, replacing the destination only on success.
+An existing destination requires `ForceNew=true`. Reimport the entire desired
+collection when adding data; imports replace rather than append. The original
+GFC files are never modified and can be kept offline after preparation.
+
+### Prepared input and reader interface
+
+The prepared file contains:
+
+| Variable | Representation |
+| --- | --- |
+| `esmPlmt` | N-by-M-by-4 native-degree Stokes lmcosi, columns degree/order/C/S |
+| `dates` | N-by-1 sorted, unique, unzoned six-hour datetime timestamps |
+| `equatorRadius` | N-by-1 source radii in metres, used for unit conversion |
+
+No all-NaN uncertainty array is stored for ESAESM2. The reader also accepts an
+optional `esmStdPlmt` with formal Stokes uncertainties in the same layout.
+Use MAT v7.3 for partial array reads. `esm2plmt` expects this fixed prepared
+file and never searches for or reads GFC files, even with `ForceNew=true`.
+
+The interface is `esm2plmt(component, timelim, timestep, ...)`. Component
+defaults to `'O'`, limits to `[]`, and time step to `''`. Text inputs accept
+both char and string scalars.
 
 ```matlab
 timelim = [datetime(2003, 1, 1), datetime(2003, 1, 31, 23, 59, 59)];
-% Raw six-hour fields within the inclusive time limits:
-[raw, rawStd, rawDates] = esm2plmt("O", [], timelim);
-% Monthly means whose midpoints fall within the inclusive time limits:
-[esmPlmt, esmStdPlmt, dates] = esm2plmt("O", "midmonth", timelim, ...
+[raw, rawStd, rawDates] = esm2plmt("O", timelim);
+[esmPlmt, esmStdPlmt, dates] = esm2plmt("O", timelim, "midmonth", ...
     "Unit", "SD", "Loutput", 60);
 ```
 
-`timelim` is an increasing two-element datetime or datenum vector. Empty
-returns all available dates. Raw mode returns all available samples in that
-range, including its endpoints, and allows gaps. Only `[]` and `'midmonth'`
-are supported for `timestep`.
+`timelim` is an increasing two-element datetime or datenum vector, selecting
+output timestamps inclusively; empty returns all dates. Raw mode allows gaps
+and reads only the selected dates and degrees. `'midmonth'` averages all
+samples in `[month start, next month start)` and returns the exact midpoint.
+A missing sample invalidates that month with NaN coefficients/uncertainties
+and an `IncompleteEpoch` warning, including partially downloaded boundary
+months and missing interior months. Download complete calendar months for
+this option. Calendar months need not match GRACE reporting windows.
 
-Monthly means use all six-hour samples in `[month start, next month start)`
-and are dated at the exact midpoint of that calendar month. A month missing
-any expected sample has NaN coefficients and emits an `IncompleteEpoch`
-warning when its cache is built. This includes partially downloaded boundary
-months. Missing whole months between available data are also represented by
-NaN fields. Download complete calendar months for monthly averaging. Calendar
-months need not match irregular GRACE reporting intervals or observation weights.
+### Averaged caches
 
-The processor searches only the requested component's fixed raw folder,
-including subdirectories, when building a cache. Duplicate/off-grid timestamps
-and invalid harmonic rows fail. An existing cache can be loaded without the
-raw folder. `IFILES` must always identify the configured data root.
+Like `ssh2lonlatt`, the reader returns an existing averaged cache immediately.
+On a miss, it reads the prepared MAT file one epoch at a time, converts units,
+averages every epoch at native degree, saves, and then selects/formats output.
+**Averaged caches always cover all epochs at native degree**, regardless of
+`timelim` or `Loutput`. Unit conversions of raw requests are in memory; the
+reader does not save additional full raw copies for each unit.
 
-### Disk caches
+Files live in `$IFILES/ESM/ESAESM2/`. Examples:
 
-Like `ssh2lonlatt`, the loader first checks the requested processed cache,
-and formats/returns a hit immediately. On a miss, it
-loads the aggregated raw MAT file (or builds it from GFC files),
-averages if needed, saves, and finally formats the returned data. **Time
-selection and degree truncation happen after caching.** A narrow time range
-or low `Loutput` never reduces the cache's coverage or degree.
-
-Caches live in `$IFILES/ESM/ESAESM2/`. Examples for ocean fields:
-
-| Product | Cache filename |
+| Product | Filename |
 | --- | --- |
-| Raw Stokes | `ESAESM2_O_GRAV.mat` |
+| Prepared native Stokes input | `ESAESM2_O.mat` |
 | Monthly Stokes | `ESAESM2_O_GRAV-Tmidmonth.mat` |
-| Raw surface density | `ESAESM2_O_SD_ISSM.mat` |
 | Monthly surface density | `ESAESM2_O_SD_ISSM-Tmidmonth.mat` |
-| Raw potential | `ESAESM2_O_POT.mat` |
+| Monthly potential | `ESAESM2_O_POT-Tmidmonth.mat` |
 
-The `-Tmidmonth` suffix identifies the time step, without an averaging-method
-suffix. Cache path construction accepts the time-step name rather than
-assuming a monthly product. Each component and unit has a separate cache;
-SD names also
-include the Love-number source. Each MAT file contains only `esmPlmt`,
-`esmStdPlmt` and `dates`, in native-degree, time-first form with datetime dates.
-The raw cache retains each six-hour field. The monthly cache retains every
-calendar month spanning those raw dates. Large arrays use MAT v7.3.
+Averaged caches contain `esmPlmt`, `esmStdPlmt` and datetime `dates`, in
+native-degree, time-first form. Names use `-TSTEP` without a method suffix;
+SD includes the Love-number source. A cache hit works even when the prepared
+input is temporarily unavailable.
 
-Cache hits do not scan the GFC files. After downloading or changing source
-files, call with `ForceNew=true` to rebuild from all available GFC files.
-Saving a rebuilt raw cache invalidates all derived `-T*.mat` caches for the
-same component/unit/Love-number source (including the previous `-mean` names);
-requesting monthly
-output then rebuilds both levels. `SaveData=false` suppresses all cache writes
-and invalidation, while still permitting existing cache reads. Combine it
-with `ForceNew=true` to recompute without changing disk caches. `BeQuiet=true`
-suppresses cache progress messages.
+`prepareesm(..., "ForceNew", true)` replaces the prepared input and invalidates
+all its component's `-T*.mat` caches, across units and Love-number sources.
+`esm2plmt(..., "ForceNew", true)` only recomputes averages from the prepared
+MAT file. If replacing a MAT file manually, force a rebuild of affected
+averaged caches. `SaveData=false` prevents cache writes, while allowing reads;
+combine with `ForceNew=true` to recompute without changing disk products.
+Neither option changes the prepared input. `BeQuiet=true` suppresses messages.
+
+Earlier draft versions wrote unit-specific raw caches such as
+`ESAESM2_O_GRAV.mat`. These are no longer used: run `prepareesm` once to create
+the canonical input and invalidate the old averaged products. The import
+also ensures old NaN-only uncertainty caches are rebuilt with the new
+empirical estimate; obsolete raw copies may be removed separately.
 
 ### Epoch generation and future GRACE support
 
@@ -134,7 +154,7 @@ overlap and their boundaries need not align with the native sampling grid.
 The helper averages generic arrays with time in their third dimension; the
 caller handles harmonic labels and layout conversion. The first two outputs
 are means and midpoint dates, retaining the interface on the GRACE epoch
-averaging branch. Its third output is the formal uncertainty of each mean.
+averaging branch. Its third output is the uncertainty estimate of each mean.
 
 `expectedStep` accepts a duration or a numeric number of days.
 `CheckCompleteness=false` is the default and averages available nonmissing
@@ -148,7 +168,7 @@ completeness rules for its explicit GRACE source window.
 This uses the epoch-array convention on `feature/grace-epoch-averaging`.
 A future `'GRACE'` provider can supply actual GRACE windows where available
 and fallback windows elsewhere without changing the averaging or formatting
-code. The public time-step options remain `[]` and `'midmonth'`; `'GRACE'` is
+code. The public time-step options are `''` (or `""`) and `'midmonth'`; `'GRACE'` is
 not enabled in this PR. Any future reference-product choices will also need
 to distinguish their caches.
 
@@ -157,7 +177,7 @@ to distinguish their caches.
 | Output | Default representation |
 | --- | --- |
 | `esmPlmt` | N-by-M-by-4, columns degree, order, C and S |
-| `esmStdPlmt` | Same labels; formal one-sigma coefficient uncertainties (NaN when unavailable) |
+| `esmStdPlmt` | Same labels; supplied formal errors or empirical standard errors of means |
 | `dates` | N-by-1 MATLAB datenums at sample times or month midpoints |
 
 M is `(Loutput+1)*(Loutput+2)/2`: 16,471 rows at degree 180 or 1,891 at degree
@@ -171,34 +191,39 @@ conversion data. `SD` uses the existing `convertgravity` implementation, source
 radius, project density of 5517 kg/m³, and the selected load Love numbers
 (default ISSM, with CF degree 1). Its units are kg/m², numerically equal to mm
 of fresh water. `POT` follows the existing radius-times-Stokes convention.
-The source radius is read for unit conversion. Header metadata are not checked
-or returned; the input is assumed to follow ESAESM2's fully normalized
-coefficient convention. Missing or duplicate harmonic rows still fail.
+The importer reads a positive finite source radius for unit conversion.
+Descriptive header metadata are not checked or returned; inputs are assumed
+to follow ESAESM2's fully normalized coefficient convention. The importer
+rejects missing or duplicate harmonic rows.
 
 ### Uncertainty definition
 
-`esmStdPlmt` has the same meaning and units as `graceStdPlmt`: formal one-sigma
-coefficient uncertainties. GRACE reads these from its source error columns;
-ESAESM2 supplies no such errors, so its raw and averaged uncertainties remain
-NaN. The variability of six-hour signals is not a formal measurement error.
+Raw `esmStdPlmt` contains formal coefficient errors like `graceStdPlmt`, or
+NaN when absent. ESAESM2 supplies no formal errors. Averaged errors use one
+of two estimates, separately for each coefficient:
 
-`averageepochs(..., "SampleStd", sigma)` propagates supplied uncertainties.
-For independent input errors and an equal-weight mean of n samples,
-`sigmaMean = sqrt(sum(sigma.^2))/n`. With missing values allowed, the mean and
-uncertainty use exactly the same data mask; a valid sample with unknown sigma
-makes the resulting sigma unknown. The helper does not infer uncertainty
-from temporal variability or assume that missing errors are zero. Correlated
-errors require covariance information beyond the supplied standard deviations.
+- If every included sample has a supplied formal error,
+  `sigmaMean = sqrt(sum(sigma.^2))/n`.
+- Otherwise, the empirical standard error is `std(samples,0)/sqrt(n)`, with
+  sample variance normalized by n−1. At least two valid samples are required;
+  fewer yield NaN. Known and unknown formal errors are not mixed or set to zero.
 
-The demo also propagates HI/HIO uncertainties in quadrature under independent
-component errors instead of discarding supplied errors. This remains NaN for
-the actual ESM data; it is not a claim that ESM component errors are independent.
+Mean and uncertainty use the same valid-data mask. Rejected/empty means have
+NaN uncertainty. Both formulas assume independent samples. Six-hour signals
+can be temporally correlated, so the empirical estimate is descriptive and
+may underestimate uncertainty; it does not measure model bias or provide an
+autocorrelation-adjusted trend uncertainty.
+
+HI/HIO demo means and empirical errors are calculated from summed raw samples,
+retaining their observed cross-component covariance. When all formal errors
+are supplied, component errors are combined in quadrature under the separate
+assumption of independent component errors.
 
 ## Save and plot components
 
 The demo reads inputs from the same fixed location. Its output directory is
 specified separately. It selects the exact GRACE reporting window from the
-raw cache and averages those samples in the demo, so it also supports windows
+prepared MAT files and averages those samples in the demo, so it also supports windows
 that differ from calendar months:
 
 ```matlab
@@ -211,7 +236,7 @@ This saves native GRAV fields for H/I/O, native and degree-60 SD fields for
 H/I/O/HI/HIO, and a two-column PNG comparing native with truncated H/I/O fields.
 All demo MAT files contain the three outputs above, without a metadata variable.
 For CSR January 2003, the GRACE interval is the complete calendar month, so
-the demo and `esm2plmt(component, "midmonth", ...)` produce the same coefficients.
+the demo and `esm2plmt(component, [], "midmonth", ...)` produce the same coefficients.
 `HI` and `HIO` add coefficient columns while preserving one set of harmonic
 labels. Use `Loutput=45` to choose
 a different truncated bandwidth or `MakeFigure=false` to skip plotting.
@@ -235,7 +260,8 @@ data. Plotting does not change the coefficients or the source data.
   real-data low-degree replacement, de-aliasing or GIA removal is applied.
 - C00 and degree 1 are retained for every component. Individual components
   need not have zero total mass.
-- ESM supplies no formal uncertainties. NaN means unavailable, not zero error.
+- ESM supplies no formal uncertainties. Raw errors are NaN; means can use
+  empirical standard errors from sample spread as described above.
 - ISSM conversion matches the ULMO processing convention; it does not prove
   exact inversion of the Love-number spectrum used to generate ESM.
 - The supplied ocean field retains its uniform mass-compensation layer. No
@@ -278,8 +304,8 @@ assertSuccess(runtests(["unittests/esm2plmtTest.m", "unittests/epochStatisticsTe
 ```
 
 They exercise inclusive time selection, calendar boundaries and leap years,
-raw and monthly cache reuse, full cache coverage before truncation, forced
+prepared MAT and monthly cache reuse, full cache coverage before truncation, forced
 refresh and invalidation, disabled saving, missing months, unit conversion,
 low degrees, layouts, padding, malformed inputs, explicit irregular/overlapping
-epochs, arbitrary cadences and formal uncertainty propagation through saved
+epochs, arbitrary cadences and formal/empirical uncertainty estimates through saved
 monthly and demo products.
