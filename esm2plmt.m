@@ -41,8 +41,11 @@
 %   esmPlmt - Degree, order, cosine, sine coefficient columns.
 %       Size: (N, M, 4), or (M, 4, N) for 'traditional'.
 %       M = (Loutput + 1) * (Loutput + 2) / 2.
-%   esmStdPlmt - Same layout, with NaN uncertainties and valid degree/order.
-%       ESAESM2 supplies no formal uncertainties; NaN does not mean zero error.
+%   esmStdPlmt - Formal one-sigma uncertainties, as in GRACE2PLMT_NEW.
+%       Same units/layout as esmPlmt, with valid degree/order columns.
+%       Epoch means propagate independent input errors as sqrt(sum(sigma_i^2))/n.
+%       ESAESM2 supplies no formal uncertainties, so raw and averaged sigma
+%       remain NaN. Temporal variability is not a formal coefficient error.
 %   dates - Raw timestamps or calendar-month midpoints, size (N, 1), in TimeFormat.
 %
 % Notes
@@ -62,7 +65,7 @@
 %   six-hour sample has NaN coefficients and emits an IncompleteEpoch warning.
 %   Raw mode returns available samples, allowing gaps. Duplicate/off-grid
 %   timestamps and incomplete harmonic rows fail when reading source files.
-%   ESMEPOCHS supplies the averaging windows to AVERAGEESMEPOCHS. The latter
+%   CALENDARMONTHEPOCHS supplies windows to AVERAGEEPOCHS. The latter
 %   accepts arbitrary epoch boundaries, including overlapping windows.
 %   Calendar-month means do not reproduce irregular GRACE reporting windows
 %   or orbit-dependent observation weights.
@@ -81,7 +84,7 @@
 %   ESAESM2. https://isdc-data.gfz.de/future_missions/esaesm/ESAESM2/
 %
 % See also
-%   GRACE2PLMT_NEW, SSH2LONLATT, ESMEPOCHS, AVERAGEESMEPOCHS, CONVERTGRAVITY
+%   GRACE2PLMT_NEW, SSH2LONLATT, CALENDARMONTHEPOCHS, AVERAGEEPOCHS, CONVERTGRAVITY
 %
 % Created by
 %   2026/10/29
@@ -161,9 +164,16 @@ function [esmPlmt, esmStdPlmt, dates] = loadesm(component, timestep, timelim, op
         end
     end
     if ~isempty(timestep)
-        epochs = esmepochs(timestep, data.dates);
-        [data.esmPlmt, data.esmStdPlmt, data.dates] = ...
-            averageesmepochs(data.dates, data.esmPlmt, epochs);
+        epochs = averagingepochs(timestep, data.dates);
+        [coefficients, data.dates, coefficientStd] = averageepochs(data.dates, ...
+            permute(data.esmPlmt(:, :, 3:4), [2, 3, 1]), epochs, hours(6), ...
+            'CheckCompleteness', true, 'SamplingOrigin', datetime(2000, 1, 1), ...
+            'SampleStd', permute(data.esmStdPlmt(:, :, 3:4), [2, 3, 1]));
+        labels = reshape(data.esmPlmt(1, :, 1:2), [], 2);
+        data.esmPlmt = emptyplmt(numel(data.dates), labels);
+        data.esmStdPlmt = data.esmPlmt;
+        data.esmPlmt(:, :, 3:4) = permute(coefficients, [3, 1, 2]);
+        data.esmStdPlmt(:, :, 3:4) = permute(coefficientStd, [3, 1, 2]);
         if options.SaveData
             save(outputPath, '-struct', 'data', vars{:}, '-v7.3');
             reportcache('Saved', outputPath, options.BeQuiet);
@@ -172,6 +182,15 @@ function [esmPlmt, esmStdPlmt, dates] = loadesm(component, timestep, timelim, op
     [esmPlmt, esmStdPlmt, dates] = formatoutput(data.esmPlmt, ...
         data.esmStdPlmt, data.dates, timelim, options.Loutput, ...
         options.OutputFormat, options.TimeFormat);
+end
+
+function epochs = averagingepochs(timestep, nativeDates)
+    switch string(timestep)
+        case "midmonth"
+            epochs = calendarmonthepochs(nativeDates);
+        otherwise
+            error('ULMO:esm2plmt:InvalidTimeStep', 'Unsupported averaging step: %s.', timestep);
+    end
 end
 
 function [rawPath, outputPath] = outputpaths(dataRoot, component, unit, loveSource, timestep)
