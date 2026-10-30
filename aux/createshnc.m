@@ -4,7 +4,8 @@
 %
 % Syntax
 %   createshnc(path, labels, dates, unit)
-%   createshnc(__, "Uncertainty", true, "EquatorRadius", radius)
+%   createshnc(__, "Uncertainty", true, ...
+%       "Attributes", {"equatorRadius", radius, "source", "ESAESM2"})
 %
 % Input arguments
 %   path - New NetCDF file; existing files are rejected.
@@ -13,8 +14,9 @@
 %   unit - Coefficient unit: GRAV, POT or SD.
 %   Uncertainty (name-value) - Whether to create an uncertainty variable.
 %       Default option: false.
-%   EquatorRadius (name-value) - Constant reference radius in metres.
-%       Default radius: [] (attribute omitted for converted products).
+%   Attributes (name-value) - Additional global attributes as a cell vector
+%       {name1, value1, name2, value2, ...}. Names accept char/string scalars.
+%       coefficientUnit is reserved for unit. Default attributes: {}.
 %
 % Output file content
 %   degree, order - uint16 labels on dimension lm.
@@ -22,7 +24,8 @@
 %   time - Double seconds since 2000-01-01 00:00:00 UTC.
 %   coefficients, uncertainty (optional) - Double arrays, size (M, 2, N).
 %       Missing values: NaN. Use NCWRITE to fill time slabs after creation.
-%   equatorRadius (optional global attribute) - Scalar reference radius, m.
+%   coefficientUnit (global attribute) - Coefficient unit supplied by unit.
+%   Additional global attributes are taken from Attributes.
 %
 % See also
 %   READSHNC, READSHNCTIME, PREPAREESM
@@ -37,7 +40,7 @@ function createshnc(path, labels, dates, unit, options)
         dates (:, 1) datetime
         unit {mustBeTextScalar, mustBeMember(unit, ["GRAV", "POT", "SD"])}
         options.Uncertainty (1, 1) logical = false
-        options.EquatorRadius double = []
+        options.Attributes (1, :) cell {mustBeAttributes} = {}
     end
     assert(~isfile(path), 'ULMO:createshnc:FileExists', 'File already exists: %s', path);
     assert(~isempty(labels) && all(labels <= double(intmax('uint16')), 'all'), ...
@@ -45,9 +48,6 @@ function createshnc(path, labels, dates, unit, options)
     assert(~isempty(dates) && all(isfinite(dates)) && isempty(dates.TimeZone) && ...
         all(diff(dates) > seconds(0)), 'ULMO:createshnc:InvalidDates', ...
         'Dates must be nonempty, finite, unzoned, sorted and unique.');
-    if ~isempty(options.EquatorRadius)
-        validateattributes(options.EquatorRadius, {'double'}, {'scalar', 'positive', 'finite'});
-    end
     nRows = size(labels, 1);
     nTimes = numel(dates);
     names = {'degree', 'order'};
@@ -73,7 +73,22 @@ function createshnc(path, labels, dates, unit, options)
             'ChunkSize', [min(nRows, 1024), 2, min(nTimes, 8)]);
     end
     ncwriteatt(path, '/', 'coefficientUnit', char(unit));
-    if ~isempty(options.EquatorRadius)
-        ncwriteatt(path, '/', 'equatorRadius', options.EquatorRadius);
+    for k = 1:2:numel(options.Attributes)
+        ncwriteatt(path, '/', options.Attributes{k}, options.Attributes{k + 1});
     end
+end
+
+function mustBeAttributes(attributes)
+    assert(mod(numel(attributes), 2) == 0, 'ULMO:createshnc:InvalidAttributes', ...
+        'Attributes must contain name/value pairs.');
+    names = strings(1, numel(attributes) / 2);
+    for k = 1:numel(names)
+        name = attributes{2 * k - 1};
+        mustBeTextScalar(name);
+        names(k) = string(name);
+    end
+    assert(all(~ismissing(names) & strlength(names) > 0) && ...
+        numel(unique(names)) == numel(names) && ~any(names == "coefficientUnit"), ...
+        'ULMO:createshnc:InvalidAttributes', ...
+        'Attribute names must be nonempty and unique; coefficientUnit is reserved.');
 end

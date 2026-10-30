@@ -132,7 +132,8 @@ function [esmPlmt, esmStdPlmt, dates] = loadesm(component, timelim, timestep, op
     if strlength(timestep) > 0
         outputPath = cachepath(folder, component, options.Unit, options.LoveNumSource, timestep);
         if ~options.ForceNew && isfile(outputPath)
-            [coefficients, uncertainty, dates, labels] = readshnc(outputPath, timelim, options.Loutput);
+            [coefficients, uncertainty, dates, labels] = readshnc(outputPath, timelim, options.Loutput, ...
+                'OutputFormat', 'compact');
             reportcache('Loaded', outputPath, options.BeQuiet);
             [esmPlmt, esmStdPlmt, dates] = formatoutput(coefficients, uncertainty, labels, ...
                 dates, options.Loutput, options.OutputFormat, options.TimeFormat);
@@ -150,7 +151,7 @@ function [esmPlmt, esmStdPlmt, dates] = loadesm(component, timelim, timestep, op
         [coefficients, uncertainty, dates, labels] = averagefile(inputPath, epochs, ...
             options.Unit, options.LoveNumSource);
         if options.SaveData
-            writeshnc(outputPath, coefficients, uncertainty, labels, dates, options.Unit);
+            writeshnc(outputPath, coefficients, uncertainty, dates, options.Unit, 'Labels', labels);
             reportcache('Saved', outputPath, options.BeQuiet);
         end
         % Build the complete epoch product before selecting the returned range.
@@ -183,7 +184,8 @@ function [coefficients, uncertainty, dates, labels] = averagefile(path, epochs, 
 end
 
 function [coefficients, uncertainty, dates, labels] = readnative(path, timelim, degree, unit, loveSource, exclusive)
-    [coefficients, uncertainty, dates, labels] = readshnc(path, timelim, degree, 'EndExclusive', exclusive);
+    [coefficients, uncertainty, dates, labels] = readshnc(path, timelim, degree, ...
+        'OutputFormat', 'compact', 'EndExclusive', exclusive);
     assert(all(mod(hours(dates - datetime(2000, 1, 1)), 6) == 0), ...
         'ULMO:esm2plmt:InvalidPreparedData', 'Prepared samples must lie on the six-hour grid.');
     if ~strcmp(unit, 'GRAV') && ~isempty(dates)

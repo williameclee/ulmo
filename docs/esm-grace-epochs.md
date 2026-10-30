@@ -102,6 +102,29 @@ Explicit dimension declarations preserve a three-dimensional variable even
 for one epoch. MATLAB's NetCDF interface presents dimensions in MATLAB array
 order; C/Python tools may display the reversed dimension order.
 
+The shared helpers expose lmcosi arrays by default while retaining compact
+storage. `readshnc` returns M-by-4-by-N arrays with degree/order in the first
+two columns. `OutputFormat="compact"` returns only the two coefficient columns;
+the fourth output supplies the shared labels. Both layouts read time first
+and load only the selected time/degree slab:
+
+```matlab
+[plmt, sigma, dates] = readshnc(inputFile, timelim, Loutput);
+[coefficients, errors, dates, labels] = readshnc(inputFile, timelim, Loutput, ...
+    "OutputFormat", "compact");
+writeshnc(outputFile, plmt, sigma, dates, "GRAV");
+% Equivalent compact input; degree/order are supplied separately.
+writeshnc(outputFile, coefficients, errors, dates, "GRAV", "Labels", labels);
+```
+
+`writeshnc` infers labels from lmcosi input and verifies that they agree across
+epochs and uncertainty arrays. Pass `[]` for uncertainty to omit that variable.
+Both `createshnc` and `writeshnc` accept additional global attributes through
+an alternating name/value cell, for example
+`Attributes={"equatorRadius",6378137,'source','ESAESM2'}`. Attribute names must
+be unique; `coefficientUnit` is reserved for the unit argument. `esm2plmt`
+explicitly requests compact reads for conversion and averaging.
+
 `esm2plmt` expects the fixed prepared NetCDF file and never searches for or
 reads GFC files, even with `ForceNew=true`.
 
@@ -317,7 +340,7 @@ fid = fopen(fullfile(verificationFolder, "reference_O.bin"), "r", "ieee-le");
 reference = fread(fid, [2, 16471], "double")';
 fclose(fid);
 coefficients = readshnc(products.O.nativeGRAV);
-max(abs(coefficients(:, :, 1) - reference), [], "all")
+max(abs(coefficients(:, 3:4, 1) - reference), [], "all")
 ```
 
 Run the MATLAB regression tests with:
@@ -333,5 +356,6 @@ refresh and invalidation, disabled saving, missing months, unit conversion,
 low degrees, layouts, padding, malformed inputs, explicit irregular/overlapping
 epochs, arbitrary cadences and formal/empirical uncertainty estimates through saved
 monthly and demo products. NetCDF tests check stored integer labels, singleton
-dimensions, exact round trips, and the actual time/degree slab arguments used
-by native and cached reads.
+dimensions, exact round trips for lmcosi and compact layouts, inferred labels,
+additional attributes, preservation of existing files on rejected writes, and
+the actual time/degree slab arguments used by native and cached reads.

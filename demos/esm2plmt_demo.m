@@ -92,9 +92,7 @@ end
 
 function file = savefield(stem, esmPlmt, esmStdPlmt, dates, unit)
     file = stem + "_L" + esmPlmt(1, end, 1) + "_" + unit + ".nc";
-    labels = reshape(esmPlmt(1, :, 1:2), [], 2);
-    writeshnc(file, permute(esmPlmt(:, :, 3:4), [2, 3, 1]), ...
-        permute(esmStdPlmt(:, :, 3:4), [2, 3, 1]), labels, ...
+    writeshnc(file, permute(esmPlmt, [2, 3, 1]), permute(esmStdPlmt, [2, 3, 1]), ...
         datetime(dates, 'ConvertFrom', 'datenum'), unit);
 end
 
