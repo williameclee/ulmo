@@ -2,16 +2,21 @@
 % Uses multiple sampling cadences and independent analytic error propagation.
 %
 % Created by
-%   2026/10/30
+%   2026/10/31, En-Chi Lee (williameclee@gmail.com)
 
 classdef epochStatisticsTest < matlab.unittest.TestCase
+
     methods (TestMethodSetup)
+
         function suppressExpectedWarnings(testCase)
             state = warning('off', 'ULMO:averageepochs:IncompleteEpoch');
             testCase.addTeardown(@() warning(state));
         end
+
     end
+
     methods (Test)
+
         function calendarMonthsSpanLeapYearAndGaps(testCase)
             dates = [datetime(2004, 1, 31), datetime(2004, 3, 1)];
             epochs = calendarmonthepochs(dates);
@@ -20,10 +25,12 @@ classdef epochStatisticsTest < matlab.unittest.TestCase
             testCase.verifyEqual(calendarmonthepochs(datenum(dates)), epochs);
             testCase.verifyEqual(epochs(2, 2) - epochs(2, 1), days(29));
         end
+
         function calendarMonthsRejectInvalidDates(testCase)
             testCase.verifyError(@() calendarmonthepochs([NaT, NaT]), 'ULMO:calendarmonthepochs:InvalidDates');
             testCase.verifyError(@() calendarmonthepochs([0, Inf]), 'ULMO:calendarmonthepochs:InvalidDates');
         end
+
         function calendarRangeIncludesEndpointsAndAcceptsSingleDate(testCase)
             date = datetime(2004, 2, 29, 12, 0, 0);
             expected = [datetime(2004, 2, 1), datetime(2004, 3, 1)];
@@ -33,13 +40,17 @@ classdef epochStatisticsTest < matlab.unittest.TestCase
                 [datetime(2003, 12, 1), datetime(2004, 1, 1); ...
                  datetime(2004, 1, 1), datetime(2004, 2, 1)]);
         end
+
         function calendarRangeRejectsSeriesAndReversedBounds(testCase)
             date = datetime(2004, 1, 1);
+
             for values = {[date + days(1), date], date + days(0:2), date}
                 testCase.verifyError(@() calendarmonthepochs(values{1}), ...
-                    'ULMO:calendarmonthepochs:InvalidRange');
+                'ULMO:calendarmonthepochs:InvalidRange');
             end
+
         end
+
         function irregularOverlappingWindowsUseSuppliedBounds(testCase)
             dates = datetime(2003, 1, 31, 18, 0, 0) + hours((0:4)' * 6);
             data = reshape(1:5, 1, 1, []);
@@ -49,6 +60,7 @@ classdef epochStatisticsTest < matlab.unittest.TestCase
             testCase.verifyEqual(d, mean(epochs, 2));
             testCase.verifyEqual(s(:), [1 / sqrt(3); 0.5; 0.5], 'AbsTol', 1e-14);
         end
+
         function cadenceAndPhaseAreCallerSupplied(testCase)
             origin = datetime(2020, 1, 1, 0, 15, 0);
             dates = origin + hours((0:7)' * 7);
@@ -61,6 +73,28 @@ classdef epochStatisticsTest < matlab.unittest.TestCase
                 'CheckCompleteness', true, 'SamplingOrigin', origin);
             testCase.verifyTrue(isnan(missing));
         end
+
+        function completenessRejectsShiftedSamplesWithMatchingCount(testCase)
+            % A matching count alone does not establish the expected grid.
+            origin = datetime(2020, 1, 1);
+            dates = origin + hours([1; 7; 13; 19]);
+            epoch = [origin, origin + days(1)];
+            result = averageepochs(dates, ones(1, 1, 4), epoch, hours(6), ...
+                'CheckCompleteness', true, 'SamplingOrigin', origin);
+            testCase.verifyTrue(isnan(result));
+        end
+
+        function invalidSamplingIntervalsAreRejected(testCase)
+            date = datetime(2020, 1, 1);
+            epoch = [date, date + days(1)];
+
+            for step = {NaN, Inf, 0, -1, hours(NaN), hours(Inf), hours(0)}
+                testCase.verifyError(@() averageepochs(date, 1, epoch, step{1}, ...
+                    'CheckCompleteness', true), 'ULMO:averageepochs:InvalidTimeStep');
+            end
+
+        end
+
         function checkingCanBeDisabledForIrregularSamples(testCase)
             origin = datetime(2020, 1, 1);
             dates = origin + hours([0; 1; 4]);
@@ -71,6 +105,7 @@ classdef epochStatisticsTest < matlab.unittest.TestCase
             testCase.verifyEqual(unchecked, 5);
             testCase.verifyTrue(isnan(checked));
         end
+
         function independentFormalErrorsPropagateToMean(testCase)
             dates = datetime(2020, 1, 1) + days((0:1)');
             data = reshape([100, -100], 1, 1, []);
@@ -81,6 +116,7 @@ classdef epochStatisticsTest < matlab.unittest.TestCase
             testCase.verifyEqual(p, 0);
             testCase.verifyEqual(s, 2.5); % sqrt(3^2+4^2)/2; not temporal spread.
         end
+
         function singleSampleRetainsFormalSigma(testCase)
             date = datetime(2020, 1, 1);
             [p, ~, s] = averageepochs(date, 7, [date, date + days(1)], ...
@@ -88,6 +124,7 @@ classdef epochStatisticsTest < matlab.unittest.TestCase
             testCase.verifyEqual(p, 7);
             testCase.verifyEqual(s, 3);
         end
+
         function unknownSigmaUsesEmpiricalStandardError(testCase)
             dates = datetime(2020, 1, 1) + days((0:1)');
             [p, ~, s] = averageepochs(dates, reshape([2, 4], 1, 1, []), ...
@@ -95,6 +132,7 @@ classdef epochStatisticsTest < matlab.unittest.TestCase
             testCase.verifyEqual(p, 3);
             testCase.verifyEqual(s, 1);
         end
+
         function empiricalEstimateUsesSampleVarianceAndValidCount(testCase)
             dates = datetime(2020, 1, 1) + days((0:3)');
             data = reshape([2, NaN, 6, 10], 1, 1, []);
@@ -107,6 +145,7 @@ classdef epochStatisticsTest < matlab.unittest.TestCase
             [~, ~, s] = averageepochs(dates, ones(size(data)), epoch);
             testCase.verifyEqual(s, 0);
         end
+
         function missingValuesUseSameMaskForMeanAndSigma(testCase)
             dates = datetime(2020, 1, 1) + days((0:2)');
             data = reshape([2, NaN, 6], 1, 1, []);
@@ -119,6 +158,7 @@ classdef epochStatisticsTest < matlab.unittest.TestCase
                 'SampleStd', sigma, 'CheckCompleteness', true);
             testCase.verifyTrue(isnan(p) && isnan(s));
         end
+
         function arbitraryGridShapeAndSinglePrecision(testCase)
             dates = datetime(2020, 1, 1) + hours((0:2)');
             data = single(reshape(1:18, [2, 3, 3]));
@@ -129,6 +169,7 @@ classdef epochStatisticsTest < matlab.unittest.TestCase
             testCase.verifyEqual(p, mean(data, 3));
             testCase.verifyEqual(s, ones(2, 3, 'single') / sqrt(single(3)), 'RelTol', single(1e-6));
         end
+
         function emptyEpochsAndUncoveredWindows(testCase)
             date = datetime(2020, 1, 1);
             [p, d, s] = averageepochs(date, 1, NaT(0, 2));
@@ -138,6 +179,7 @@ classdef epochStatisticsTest < matlab.unittest.TestCase
             [p, ~, s] = averageepochs(date, 1, [date + days(1), date + days(2)], 'SampleStd', 2);
             testCase.verifyTrue(isnan(p) && isnan(s));
         end
+
         function numericDatesAndStepAreSupported(testCase)
             dates = datetime(2020, 1, 1) + days((0:2)');
             data = reshape(1:3, 1, 1, []);
@@ -147,16 +189,19 @@ classdef epochStatisticsTest < matlab.unittest.TestCase
             testCase.verifyEqual(p, 2);
             testCase.verifyEqual(d, mean(epoch, 2));
         end
+
         function invalidInputsAreRejected(testCase)
             date = datetime(2020, 1, 1);
             epoch = [date, date + days(1)];
             testCase.verifyError(@() averageepochs(date, 1, fliplr(epoch)), 'ULMO:averageepochs:InvalidEpochs');
             testCase.verifyError(@() averageepochs(date, 1, [date, NaT]), 'ULMO:averageepochs:InvalidDates');
-            testCase.verifyError(@() averageepochs([date;date], ones(1,1,2), epoch), 'ULMO:averageepochs:InvalidDates');
-            testCase.verifyError(@() averageepochs(date, ones(1,1,2), epoch), 'ULMO:averageepochs:DimensionMismatch');
+            testCase.verifyError(@() averageepochs([date; date], ones(1, 1, 2), epoch), 'ULMO:averageepochs:InvalidDates');
+            testCase.verifyError(@() averageepochs(date, ones(1, 1, 2), epoch), 'ULMO:averageepochs:DimensionMismatch');
             testCase.verifyError(@() averageepochs(date, 1, epoch, 'CheckCompleteness', true), 'ULMO:averageepochs:InvalidTimeStep');
             testCase.verifyError(@() averageepochs(date, 1, epoch, 'SampleStd', -1), 'ULMO:averageepochs:InvalidUncertainty');
-            testCase.verifyError(@() averageepochs(date, 1, epoch, 'SampleStd', [1,2]), 'ULMO:averageepochs:DimensionMismatch');
+            testCase.verifyError(@() averageepochs(date, 1, epoch, 'SampleStd', [1, 2]), 'ULMO:averageepochs:DimensionMismatch');
         end
+
     end
+
 end

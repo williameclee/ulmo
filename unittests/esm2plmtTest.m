@@ -3,18 +3,18 @@
 % physical unit conversion independently of the downloaded ESM samples.
 %
 % Created by
-%   2026/10/29
-%
-% Last modified
-%   2026/10/30
+%   2026/10/31, En-Chi Lee (williameclee@gmail.com)
 
 classdef esm2plmtTest < matlab.unittest.TestCase
+
     properties
         Scratch
         RawFolder
         Start = datetime(2003, 1, 1)
     end
+
     methods (TestMethodSetup)
+
         function setup(testCase)
             testCase.Scratch = tempname;
             mkdir(testCase.Scratch);
@@ -30,10 +30,13 @@ classdef esm2plmtTest < matlab.unittest.TestCase
             mkdir(fullfile(testCase.Scratch, 'LOVENUMS'));
             loadinggravitationalpotential = zeros(181, 1);
             save(fullfile(testCase.Scratch, 'LOVENUMS', 'lovenumbers-ISSM.mat'), ...
-                'loadinggravitationalpotential');
+            'loadinggravitationalpotential');
         end
+
     end
+
     methods (Test)
+
         function importerUsesExternalFolderAndNetCDF(testCase)
             testCase.fixture(0, 1);
             testCase.fixture(1, 2);
@@ -54,32 +57,38 @@ classdef esm2plmtTest < matlab.unittest.TestCase
             testCase.verifyTrue(all(isnan(s(:, :, 3:4)), 'all'));
             testCase.verifyEqual(d, datenum(data.dates));
         end
+
         function readerNeverImportsGfcFiles(testCase)
             testCase.fixture(0, 2);
             testCase.verifyError(@() esm2plmt('H', 'Unit', 'GRAV'), 'ULMO:esm2plmt:MissingPreparedData');
             testCase.verifyFalse(isfile(testCase.inputpath()));
         end
+
         function requiresConfiguredRoot(testCase)
             setenv('IFILES', '');
             testCase.verifyError(@() esm2plmt('O'), 'ULMO:esm2plmt:MissingDataRoot');
             testCase.verifyError(@() prepareesm(testCase.RawFolder, 'H'), 'ULMO:prepareesm:MissingDataRoot');
         end
+
         function defaultOceanAndCharStringOptions(testCase)
             testCase.fixture(0, 2);
             testCase.prepare();
             copyfile(testCase.inputpath(), fullfile(fileparts(testCase.inputpath()), 'ESAESM2_O.nc'));
             default = esm2plmt();
-            explicit = esm2plmt("O", [], "", "Unit", "SD", "LoveNumSource", "ISSM");
+            explicit = esm2plmt("O", [], "", "Unit", "SD");
             testCase.verifyEqual(default, explicit);
             [p, ~, d] = esm2plmt('O', [], '', 'Unit', 'GRAV', ...
                 'OutputFormat', 'traditional', 'TimeFormat', 'datetime');
             testCase.verifyEqual(p(1, 3), 2e-10);
             testCase.verifyEqual(d, testCase.Start);
         end
+
         function inclusiveRawSelectionAndPadding(testCase)
+
             for k = 0:4
                 testCase.fixture(k, k + 1);
             end
+
             testCase.prepare();
             range = testCase.Start + hours([6, 18]);
             [p, s, dates] = esm2plmt('H', datenum(range), '', 'Unit', 'GRAV', 'Loutput', 3);
@@ -91,6 +100,7 @@ classdef esm2plmtTest < matlab.unittest.TestCase
             data = testCase.readfile(testCase.inputpath());
             testCase.verifySize(data.esmPlmt, [5, 6, 4]);
         end
+
         function monthlyCachesAllDatesAndNativeDegreesBeforeSelection(testCase)
             testCase.Start = datetime(2004, 1, 1);
             testCase.fullmonth(0, 2);
@@ -114,6 +124,27 @@ classdef esm2plmtTest < matlab.unittest.TestCase
             testCase.verifyEqual(s, cached.esmStdPlmt);
             testCase.verifyEqual(d, cached.dates);
         end
+
+        function monthlyDensityUsesIssmAndCacheWithoutSource(testCase)
+            % SD conversion and cache reuse use the fixed ISSM convention.
+            testCase.fullmonth(0, 2);
+            testCase.prepare();
+            [p, s, d] = esm2plmt('H', [], 'midmonth');
+            degree = [0; 1; 1; 2; 2; 2];
+            love = [0; 0.021; 0.021; 0; 0; 0];
+            factor = 6378137 * 5517/3 .* (2 * degree + 1) ./ (1 + love);
+            testCase.verifyEqual(reshape(p(1, :, 3), [], 1), ...
+                2e-10 * (1:6)' .* factor, 'RelTol', 2e-14);
+            folder = fileparts(testCase.inputpath());
+            testCase.verifyTrue(isfile(fullfile(folder, 'ESAESM2_H-SD-Tmidmonth.nc')));
+            testCase.verifyFalse(isfile(fullfile(folder, 'ESAESM2_H-SD_ISSM-Tmidmonth.nc')));
+            delete(testCase.inputpath());
+            [cached, cachedStd, cachedDates] = esm2plmt('H', [], 'midmonth');
+            testCase.verifyEqual(cached, p);
+            testCase.verifyEqual(cachedStd, s);
+            testCase.verifyEqual(cachedDates, d);
+        end
+
         function monthlyEstimatesSpreadAndCachesIt(testCase)
             testCase.fullmonth(0, 1);
             testCase.fixture(0, 125);
@@ -125,6 +156,7 @@ classdef esm2plmtTest < matlab.unittest.TestCase
             data = testCase.readfile(testCase.cachepath());
             testCase.verifyEqual(s, data.esmStdPlmt);
         end
+
         function monthlyPropagatesSuppliedFormalErrors(testCase)
             testCase.fullmonth(0, 2);
             testCase.prepare();
@@ -132,6 +164,7 @@ classdef esm2plmtTest < matlab.unittest.TestCase
             [~, s] = esm2plmt('H', [], 'midmonth', 'Unit', 'GRAV');
             testCase.verifyEqual(s(:, :, 3:4), repmat(3 / sqrt(124), 1, 6, 2), 'RelTol', 1e-14);
         end
+
         function forceNewReadsPreparedDataOnly(testCase)
             testCase.fullmonth(0, 1);
             testCase.prepare();
@@ -143,6 +176,7 @@ classdef esm2plmtTest < matlab.unittest.TestCase
             fresh = esm2plmt('H', [], 'midmonth', 'Unit', 'GRAV', 'ForceNew', true);
             testCase.verifyEqual(fresh(1, 1, 3), 2e-10, 'RelTol', 2e-14);
         end
+
         function saveDataFalsePreservesInputAndCache(testCase)
             testCase.fullmonth(0, 1);
             testCase.prepare();
@@ -160,28 +194,34 @@ classdef esm2plmtTest < matlab.unittest.TestCase
             esm2plmt('H', [], '', 'Unit', 'SD', 'ForceNew', true);
             testCase.verifyEqual(testCase.readfile(testCase.inputpath()), before);
             testCase.verifyEqual(before.dates, original.dates);
-            testCase.verifyFalse(isfile(fullfile(fileparts(testCase.inputpath()), 'ESAESM2_H_SD_ISSM.nc')));
+            testCase.verifyFalse(isfile(fullfile(fileparts(testCase.inputpath()), 'ESAESM2_H-SD.nc')));
         end
+
         function reimportInvalidatesEveryUnitAndEpochVariant(testCase)
             testCase.fixture(0, 1);
             testCase.prepare();
             folder = fileparts(testCase.inputpath());
-            variants = ["ESAESM2_H_GRAV-Tmidmonth.nc", "ESAESM2_H_SD_ISSM-Tfuture.nc", ...
-                "ESAESM2_H_POT-Tmidmonth-mean.nc"];
+            variants = ["ESAESM2_H-GRAV-Tmidmonth.nc", "ESAESM2_H-SD-Tfuture.nc", ...
+                        "ESAESM2_H-POT-Tmidmonth-mean.nc"];
+
             for name = variants
                 copyfile(testCase.inputpath(), fullfile(folder, name));
             end
-            other = fullfile(folder, 'ESAESM2_O_GRAV-Tmidmonth.nc');
+
+            other = fullfile(folder, 'ESAESM2_O-GRAV-Tmidmonth.nc');
             copyfile(testCase.inputpath(), other);
             testCase.fixture(0, 2);
             testCase.prepare('ForceNew', true);
+
             for name = variants
                 testCase.verifyFalse(isfile(fullfile(folder, name)));
             end
+
             testCase.verifyTrue(isfile(other));
             data = testCase.readfile(testCase.inputpath());
             testCase.verifyEqual(data.esmPlmt(1, 1, 3), 2e-10);
         end
+
         function failedImportPreservesPreparedDataAndCaches(testCase)
             testCase.fixture(0, 1);
             testCase.prepare();
@@ -195,6 +235,7 @@ classdef esm2plmtTest < matlab.unittest.TestCase
             testCase.verifyEqual(testCase.readfile(testCase.cachepath()), original);
             testCase.verifyEqual(numel(dir(fullfile(fileparts(testCase.inputpath()), '*.nc'))), 2);
         end
+
         function incompleteMonthAndInteriorGapHaveNaNs(testCase)
             testCase.fullmonth(0, 2);
             testCase.fullmonth(2, 7);
@@ -214,6 +255,7 @@ classdef esm2plmtTest < matlab.unittest.TestCase
             data = testCase.readfile(testCase.cachepath());
             testCase.verifyTrue(all(isnan(data.esmPlmt(2, :, 3:4)), 'all'));
         end
+
         function emptySelectionRetainsShape(testCase)
             testCase.fixture(0, 1);
             testCase.prepare();
@@ -222,6 +264,7 @@ classdef esm2plmtTest < matlab.unittest.TestCase
             testCase.verifySize(s, [0, 10, 4]);
             testCase.verifySize(d, [0, 1]);
         end
+
         function densityAndPotentialConversionPreserveLowDegrees(testCase)
             testCase.fixture(0, 2);
             testCase.fixture(1, 3);
@@ -229,7 +272,7 @@ classdef esm2plmtTest < matlab.unittest.TestCase
             p = esm2plmt('H');
             degree = [0; 1; 1; 2; 2; 2];
             love = [0; 0.021; 0.021; 0; 0; 0];
-            factor = 6378137 * 5517 / 3 .* (2 * degree + 1) ./ (1 + love);
+            factor = 6378137 * 5517/3 .* (2 * degree + 1) ./ (1 + love);
             testCase.verifyEqual(reshape(p(1, :, 3), [], 1), 2e-10 * (1:6)' .* factor, 'RelTol', 2e-14);
             [p, ~, d] = esm2plmt('H', [], '', 'Unit', 'POT', 'Loutput', 1, ...
                 'OutputFormat', 'traditional', 'TimeFormat', 'datetime');
@@ -237,12 +280,14 @@ classdef esm2plmtTest < matlab.unittest.TestCase
             testCase.verifyEqual(squeeze(p(1, 3, :)), [2 * 6378137; 3 * 6378137] * 1e-10, 'RelTol', 1e-14);
             testCase.verifyEqual(d, testCase.Start + hours([0; 6]));
         end
+
         function invalidPreparedInputNeverFallsBackToGfc(testCase)
             testCase.fixture(0, 1);
             testCase.prepare();
             ncwriteatt(testCase.inputpath(), 'time', 'units', 'invalid');
             testCase.verifyError(@() esm2plmt('H'), 'ULMO:readshnc:InvalidTime');
         end
+
         function rejectDuplicateAndOffGridSources(testCase)
             file = testCase.fixture(0, 1);
             mkdir(fullfile(testCase.RawFolder, 'duplicate'));
@@ -252,6 +297,7 @@ classdef esm2plmtTest < matlab.unittest.TestCase
             movefile(file, strrep(file, '_00.gfc', '_01.gfc'));
             testCase.verifyError(@() testCase.prepare(), 'ULMO:prepareesm:InvalidSampling');
         end
+
         function ignoresDescriptiveMetadataButRequiresRadius(testCase)
             file = testCase.fixture(0, 1);
             testCase.rewrite(file, 'fully_normalized', 'unused-description');
@@ -260,6 +306,7 @@ classdef esm2plmtTest < matlab.unittest.TestCase
             testCase.rewrite(file, 'radius 6378137', 'unused-radius 6378137');
             testCase.verifyError(@() testCase.prepare('ForceNew', true), 'ULMO:prepareesm:InvalidRadius');
         end
+
         function radiusMustBeConstantAcrossSamples(testCase)
             testCase.fixture(0, 1);
             testCase.prepare();
@@ -269,30 +316,38 @@ classdef esm2plmtTest < matlab.unittest.TestCase
             testCase.verifyError(@() testCase.prepare('ForceNew', true), 'ULMO:prepareesm:InconsistentRadius');
             testCase.verifyEqual(testCase.readfile(testCase.inputpath()), original);
         end
+
         function rejectsInvalidTimeArguments(testCase)
             testCase.verifyError(@() esm2plmt('H', [], 'GRACE'), 'MATLAB:validators:mustBeMember');
             testCase.verifyError(@() esm2plmt('H', [], []), 'MATLAB:validators:mustBeTextScalar');
             testCase.verifyError(@() esm2plmt('H', [testCase.Start, NaT]), 'ULMO:notValidTimeRange');
             testCase.verifyError(@() esm2plmt('H', repmat(testCase.Start, 2)), 'ULMO:notValidTimeRange');
         end
+
         function demoPropagatesFormalErrorsFromPreparedData(testCase)
+
             for k = 0:3
                 testCase.fixture(k, k + 1);
             end
+
             testCase.prepare();
             testCase.addsigma(3, 4);
             data = testCase.readfile(testCase.inputpath());
             sigma = data.esmPlmt;
             folder = fileparts(testCase.inputpath());
+
             for component = ["I", "O"]
                 copyfile(testCase.inputpath(), fullfile(folder, "ESAESM2_" + component + ".nc"));
             end
+
             graceFile = fullfile(testCase.Scratch, 'GSM-fixture');
             fid = fopen(graceFile, 'w');
+
             for row = 1:6
                 fprintf(fid, 'GRCOF2 %d %d 1 0 0 0 20030101.0100 20030101.1300 nnnn\n', ...
                     sigma(1, row, 1:2));
             end
+
             fclose(fid);
             products = esm2plmt_demo(graceFile, fullfile(testCase.Scratch, 'products'), ...
                 'Loutput', 1, 'MakeFigure', false);
@@ -300,9 +355,9 @@ classdef esm2plmtTest < matlab.unittest.TestCase
             hi = testCase.readfile(products.HI.nativeSD);
             hio = testCase.readfile(products.HIO.nativeSD);
             testCase.verifyEqual(h.esmStdPlmt(1, 1, 3), 3 / sqrt(2), 'RelTol', 1e-14);
-            factor = 6378137 * 5517 / 3;
+            factor = 6378137 * 5517/3;
             testCase.verifyEqual(hi.esmStdPlmt(1, 1, 3), 3 * factor, 'RelTol', 1e-14);
-            testCase.verifyEqual(hio.esmStdPlmt(1, 1, 3), 3 * sqrt(3 / 2) * factor, 'RelTol', 1e-14);
+            testCase.verifyEqual(hio.esmStdPlmt(1, 1, 3), 3 * sqrt(3/2) * factor, 'RelTol', 1e-14);
             testCase.verifyEqual(h.dates, datetime(2003, 1, 1, 7, 0, 0));
             % Perfectly correlated component variability must add before the
             % empirical standard error, rather than combine in quadrature.
@@ -310,13 +365,17 @@ classdef esm2plmtTest < matlab.unittest.TestCase
                 path = fullfile(folder, "ESAESM2_" + component + ".nc");
                 ncwrite(path, 'uncertainty', nan(6, 2, 4));
             end
+
             products = esm2plmt_demo(graceFile, fullfile(testCase.Scratch, 'empirical'), ...
                 'Loutput', 1, 'MakeFigure', false);
             hio = testCase.readfile(products.HIO.nativeSD);
             testCase.verifyEqual(hio.esmStdPlmt(1, 1, 3), 1.5e-10 * factor, 'RelTol', 2e-14);
         end
+
     end
+
     methods (Access = private)
+
         function data = readfile(~, path)
             [c, s, dates, labels] = readshnc(path, 'OutputFormat', 'compact');
             p = nan(numel(dates), size(labels, 1), 4);
@@ -326,6 +385,7 @@ classdef esm2plmtTest < matlab.unittest.TestCase
             u(:, :, 3:4) = permute(s, [3, 1, 2]);
             data = struct('esmPlmt', p, 'esmStdPlmt', u, 'dates', dates);
         end
+
         function addsigma(testCase, cosine, sine)
             info = ncinfo(testCase.inputpath(), 'coefficients');
             nccreate(testCase.inputpath(), 'uncertainty', ...
@@ -334,23 +394,30 @@ classdef esm2plmtTest < matlab.unittest.TestCase
             s = repmat([cosine, sine], info.Size(1), 1, info.Size(3));
             ncwrite(testCase.inputpath(), 'uncertainty', s);
         end
+
         function path = inputpath(testCase)
             path = fullfile(testCase.Scratch, 'ESM', 'ESAESM2', 'ESAESM2_H.nc');
         end
+
         function path = cachepath(testCase)
-            path = fullfile(testCase.Scratch, 'ESM', 'ESAESM2', 'ESAESM2_H_GRAV-Tmidmonth.nc');
+            path = fullfile(testCase.Scratch, 'ESM', 'ESAESM2', 'ESAESM2_H-GRAV-Tmidmonth.nc');
         end
+
         function prepare(testCase, varargin)
             prepareesm(testCase.RawFolder, 'H', 'BeQuiet', true, varargin{:});
         end
+
         function fullmonth(testCase, offset, amplitude)
             first = testCase.Start + calmonths(offset);
             last = first + calmonths(1);
             steps = hours(first - testCase.Start) / 6:hours(last - testCase.Start) / 6 - 1;
+
             for step = steps
                 testCase.fixture(step, amplitude);
             end
+
         end
+
         function file = fixture(testCase, step, amplitude)
             timestamp = testCase.Start + hours(6 * step);
             timestamp.Format = 'yyyyMMdd_HH';
@@ -359,20 +426,25 @@ classdef esm2plmtTest < matlab.unittest.TestCase
             fid = fopen(file, 'w');
             cleanup = onCleanup(@() fclose(fid));
             fprintf(fid, ['product_type gravity_field\nmodelname %s\n', ...
-                'earth_gravity_constant 3.986005D14\nradius 6378137\n', ...
-                'max_degree 2\nerror no\nnorm fully_normalized\nend_of_head\n'], name);
+                              'earth_gravity_constant 3.986005D14\nradius 6378137\n', ...
+                          'max_degree 2\nerror no\nnorm fully_normalized\nend_of_head\n'], name);
             % Deliberately reverse the coefficient rows to check harmonic sorting.
             labels = [0, 0; 1, 0; 1, 1; 2, 0; 2, 1; 2, 2];
+
             for k = 6:-1:1
                 fprintf(fid, 'gfc %d %d %.15e %.15e\n', labels(k, :), ...
                     amplitude * k * 1e-10, amplitude * labels(k, 2) * 1e-10);
             end
+
         end
+
         function rewrite(~, file, old, new)
             content = strrep(fileread(file), old, new);
             fid = fopen(file, 'w');
             cleanup = onCleanup(@() fclose(fid));
             fprintf(fid, '%s', content);
         end
+
     end
+
 end
