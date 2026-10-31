@@ -324,7 +324,7 @@ classdef esm2plmtTest < matlab.unittest.TestCase
             testCase.verifyError(@() esm2plmt('H', repmat(testCase.Start, 2)), 'ULMO:notValidTimeRange');
         end
 
-        function demoPropagatesFormalErrorsFromPreparedData(testCase)
+        function demoDisplaysWithoutSaving(testCase)
 
             for k = 0:3
                 testCase.fixture(k, k + 1);
@@ -349,27 +349,19 @@ classdef esm2plmtTest < matlab.unittest.TestCase
             end
 
             fclose(fid);
-            products = esm2plmt_demo(graceFile, fullfile(testCase.Scratch, 'products'), ...
-                'Loutput', 1, 'MakeFigure', false);
-            h = testCase.readfile(products.H.nativeGRAV);
-            hi = testCase.readfile(products.HI.nativeSD);
-            hio = testCase.readfile(products.HIO.nativeSD);
-            testCase.verifyEqual(h.esmStdPlmt(1, 1, 3), 3 / sqrt(2), 'RelTol', 1e-14);
-            factor = 6378137 * 5517/3;
-            testCase.verifyEqual(hi.esmStdPlmt(1, 1, 3), 3 * factor, 'RelTol', 1e-14);
-            testCase.verifyEqual(hio.esmStdPlmt(1, 1, 3), 3 * sqrt(3/2) * factor, 'RelTol', 1e-14);
-            testCase.verifyEqual(h.dates, datetime(2003, 1, 1, 7, 0, 0));
-            % Perfectly correlated component variability must add before the
-            % empirical standard error, rather than combine in quadrature.
-            for component = ["H", "I", "O"]
-                path = fullfile(folder, "ESAESM2_" + component + ".nc");
-                ncwrite(path, 'uncertainty', nan(6, 2, 4));
-            end
+            before = dir(fullfile(testCase.Scratch, '**', '*'));
+            figuresBefore = findall(groot, 'Type', 'figure');
+            testCase.addTeardown(@() close(setdiff(findall(groot, 'Type', 'figure'), figuresBefore)));
+            esm2plmt_demo(graceFile, 'Loutput', 1);
+            after = dir(fullfile(testCase.Scratch, '**', '*'));
+            testCase.verifyEqual({after.name}, {before.name});
+            testCase.verifyEqual([after.bytes], [before.bytes]);
+            fig = setdiff(findall(groot, 'Type', 'figure'), figuresBefore);
+            testCase.assertNumElements(fig, 1);
+            testCase.verifyEqual(fig.Visible, 'on');
+            testCase.verifyNumElements(findall(fig, 'Type', 'axes'), 6);
+            testCase.verifyNumElements(findall(fig, 'Type', 'image'), 6);
 
-            products = esm2plmt_demo(graceFile, fullfile(testCase.Scratch, 'empirical'), ...
-                'Loutput', 1, 'MakeFigure', false);
-            hio = testCase.readfile(products.HIO.nativeSD);
-            testCase.verifyEqual(hio.esmStdPlmt(1, 1, 3), 1.5e-10 * factor, 'RelTol', 2e-14);
         end
 
     end
