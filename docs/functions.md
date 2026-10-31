@@ -55,6 +55,13 @@ The ultimate goal is to drop the `_new` suffixes and replace the original functi
 | `gracedeg2` | Reads and converts GRACE TN-14 $\Delta C_{2,0}$/$\Delta C_{3,0}$ data to appropriate field and format. | | GRACE | Replacement for `gracedeg2` in [slepian_delta](https://github.com/csdms-contrib/slepian_delta.git). |
 | `aod1b2plmt` | Reads and converts GRACE GAC/GAD data to `lmcosi`-format spherical harmonic fields. | | GRACE | |
 
+### ESM Data Processing
+
+| Function name | Description | Package dependencies | Data dependencies | Notes |
+| :--- | :--- | :--- | :--- | :--- |
+| `prepareesm` | Imports GFC files from a source folder into a compact harmonic NetCDF file. | | ESAESM2 six-hour GFC files | Batches external-drive inputs; invalidates derived caches on replacement. |
+| `esm2plmt` | Loads cached raw or calendar-month ESAESM2 harmonics with inclusive time selection and output truncation. | Gravity conversion dependencies for SD/POT | Prepared ESAESM2 NetCDF files | [Download, processing and plotting guide](esm-grace-epochs.md). |
+
 ### Sea Level Fingerprint/Geocentric Motion Computation
 
 | Function name | Description | Package dependencies | Data dependencies | Notes |
@@ -121,4 +128,4 @@ The ultimate goal is to drop the `_new` suffixes and replace the original functi
 
 ---
 
-Last modified: 2026/09/25, [@williameclee](mailto:williameclee@arizona.edu)
+Last modified: 2026/10/30, [@williameclee](mailto:williameclee@arizona.edu)
