@@ -3,15 +3,18 @@
 % I/O to MATLAB's original function. Tests use isolated temporary files.
 %
 % Created by
-%   2026/10/30
+%   2026/10/31, En-Chi Lee (williameclee@gmail.com)
 
 classdef shncTest < matlab.unittest.TestCase
+
     properties
         Scratch
         Folder
         Labels = [0 0; 1 0; 1 1; 2 0; 2 1; 2 2]
     end
+
     methods (TestMethodSetup)
+
         function setup(testCase)
             testCase.Scratch = tempname;
             testCase.Folder = fullfile(testCase.Scratch, 'ESM', 'ESAESM2');
@@ -21,8 +24,11 @@ classdef shncTest < matlab.unittest.TestCase
             setenv('IFILES', testCase.Scratch);
             testCase.addTeardown(@() setenv('IFILES', oldRoot));
         end
+
     end
+
     methods (Test)
+
         function nativeReadsTimeFirstAndOnlyRequestedSlab(testCase)
             dates = datetime(2003, 1, 1) + hours((0:9)' * 6);
             path = fullfile(testCase.Folder, 'ESAESM2_O.nc');
@@ -37,10 +43,11 @@ classdef shncTest < matlab.unittest.TestCase
             testCase.verifyTrue(all(isnan(s(:, :, 3:4)), 'all'));
             testCase.verifySlab('coefficients', [1, 1, 3], [3, 2, 2]);
         end
+
         function cacheHitReadsOnlySelectedEpochAndDegree(testCase)
             dates = [datetime(2003, 1, 16, 12, 0, 0); datetime(2003, 2, 15); datetime(2003, 3, 16, 12, 0, 0)];
             c = reshape(1:36, 6, 2, 3);
-            path = fullfile(testCase.Folder, 'ESAESM2_O_GRAV-Tmidmonth.nc');
+            path = fullfile(testCase.Folder, 'ESAESM2_O-GRAV-Tmidmonth.nc');
             writeshnc(path, c, c / 10, dates, 'GRAV', 'Labels', testCase.Labels);
             testCase.recordReads();
             [p, s] = esm2plmt('O', [datetime(2003, 2, 1), datetime(2003, 2, 28)], ...
@@ -50,6 +57,7 @@ classdef shncTest < matlab.unittest.TestCase
             testCase.verifySlab('coefficients', [1, 1, 2], [3, 2, 1]);
             testCase.verifySlab('uncertainty', [1, 1, 2], [3, 2, 1]);
         end
+
         function emptySelectionDoesNotReadCoefficientVariables(testCase)
             path = fullfile(testCase.Folder, 'ESAESM2_O.nc');
             date = datetime(2003, 1, 1);
@@ -64,12 +72,14 @@ classdef shncTest < matlab.unittest.TestCase
             testCase.verifyEqual(names(1), "time");
             testCase.verifyFalse(any(ismember(names, ["coefficients", "uncertainty"])));
         end
+
         function singletonAndMultipleEpochsRoundTripExactly(testCase)
+
             for n = [1, 3]
                 path = fullfile(testCase.Folder, "roundtrip" + n + ".nc");
-                c = reshape((1:12*n) * pi, 6, 2, n);
+                c = reshape((1:12 * n) * pi, 6, 2, n);
                 c(3, 2, 1) = NaN;
-                dates = datetime(1999, 12, 31, 12, 0, 0) + seconds((0:n-1)' * 43201.5);
+                dates = datetime(1999, 12, 31, 12, 0, 0) + seconds((0:n - 1)' * 43201.5);
                 writeshnc(path, c, c .^ 2, dates, 'POT', 'Labels', testCase.Labels);
                 [actual, sigma, actualDates, labels] = readshnc(path, 'OutputFormat', 'compact');
                 testCase.verifyEqual(actual, c);
@@ -83,7 +93,9 @@ classdef shncTest < matlab.unittest.TestCase
                 testCase.verifyClass(ncread(path, 'degree'), 'uint16');
                 testCase.verifyEqual(ncread(path, 'cs'), uint8([0; 1]));
             end
+
         end
+
         function defaultReadRestoresLmcosiForSelectedSlab(testCase)
             path = fullfile(testCase.Folder, 'default-layout.nc');
             dates = datetime(2003, 1, 1) + days((0:2)');
@@ -100,6 +112,7 @@ classdef shncTest < matlab.unittest.TestCase
             testCase.verifyEqual(labels, testCase.Labels(1:3, :));
             testCase.verifySlab('coefficients', [1, 1, 2], [3, 2, 2]);
         end
+
         function defaultEmptyReadKeepsLmcosiShapeWithoutCoefficientIO(testCase)
             path = fullfile(testCase.Folder, 'empty-lmcosi.nc');
             date = datetime(2003, 1, 1);
@@ -113,10 +126,12 @@ classdef shncTest < matlab.unittest.TestCase
             names = cellfun(@(args) string(args{2}), ULMO_NC_READ_LOG);
             testCase.verifyFalse(any(ismember(names, ["coefficients", "uncertainty"])));
         end
+
         function writerInfersLabelsAndMatchesCompactStorage(testCase)
+
             for n = [1, 3]
-                dates = datetime(2003, 1, 1) + days((0:n-1)');
-                c = reshape((1:12*n) * pi, 6, 2, n);
+                dates = datetime(2003, 1, 1) + days((0:n - 1)');
+                c = reshape((1:12 * n) * pi, 6, 2, n);
                 c(2, 1, 1) = NaN;
                 labels = repmat(testCase.Labels, 1, 1, n);
                 plmt = cat(2, labels, c);
@@ -128,35 +143,45 @@ classdef shncTest < matlab.unittest.TestCase
                 [actual, errors] = readshnc(fullPath);
                 testCase.verifyEqual(actual, plmt);
                 testCase.verifyEqual(errors, sigma);
+
                 for variable = ["degree", "order", "coefficients", "uncertainty", "time"]
                     testCase.verifyEqual(ncread(fullPath, variable), ncread(compactPath, variable));
                 end
+
             end
+
         end
+
         function attributesAcceptMixedTextNamesThroughBothWriters(testCase)
             date = datetime(2003, 1, 1);
-            attributes = {"equatorRadius", 6378137, 'source', 'ESAESM2', "versions", int16([1, 2])};
+            attrs = {"equatorRadius", 6378137, 'source', 'ESAESM2', "versions", int16([1, 2])};
             direct = fullfile(testCase.Folder, 'attributes.nc');
-            createshnc(direct, testCase.Labels, date, 'GRAV', 'Attributes', attributes);
+            createshnc(direct, testCase.Labels, date, 'GRAV', 'Attributes', attrs);
             written = fullfile(testCase.Folder, 'written-attributes.nc');
             plmt = [testCase.Labels, ones(6, 2)];
-            writeshnc(written, plmt, [], date, 'GRAV', 'Attributes', attributes);
+            writeshnc(written, plmt, [], date, 'GRAV', 'Attributes', attrs);
+
             for file = [string(direct), string(written)]
                 testCase.verifyEqual(ncreadatt(file, '/', 'equatorRadius'), 6378137);
                 testCase.verifyEqual(ncreadatt(file, '/', 'source'), 'ESAESM2');
                 testCase.verifyEqual(ncreadatt(file, '/', 'versions'), int16([1, 2]));
                 testCase.verifyEqual(ncreadatt(file, '/', 'coefficientUnit'), 'GRAV');
             end
+
         end
+
         function malformedAttributesAreRejectedBeforeCreation(testCase)
             path = fullfile(testCase.Folder, 'invalid-attributes.nc');
             date = datetime(2003, 1, 1);
+
             for attributes = {{'source'}, {'', 1}, {'source', 1, "source", 2}, {'coefficientUnit', 'SD'}}
                 testCase.verifyError(@() createshnc(path, testCase.Labels, date, 'GRAV', ...
                     'Attributes', attributes{1}), 'ULMO:createshnc:InvalidAttributes');
                 testCase.verifyFalse(isfile(path));
             end
+
         end
+
         function invalidLabelsAndAttributesPreserveExistingFile(testCase)
             path = fullfile(testCase.Folder, 'preserved.nc');
             dates = datetime(2003, 1, 1) + days((0:1)');
@@ -165,18 +190,19 @@ classdef shncTest < matlab.unittest.TestCase
             changed = good;
             changed(1, 1, 2) = 1;
             testCase.verifyError(@() writeshnc(path, changed, [], dates, 'GRAV'), ...
-                'ULMO:writeshnc:InvalidLabels');
+            'ULMO:writeshnc:InvalidLabels');
             testCase.verifyError(@() writeshnc(path, good, changed, dates, 'GRAV'), ...
-                'ULMO:writeshnc:InvalidLabels');
+            'ULMO:writeshnc:InvalidLabels');
             testCase.verifyError(@() writeshnc(path, good, [], dates, 'GRAV', ...
                 'Labels', testCase.Labels + 1), 'ULMO:writeshnc:InvalidLabels');
             testCase.verifyError(@() writeshnc(path, ones(6, 2, 2), [], dates, 'GRAV'), ...
-                'ULMO:writeshnc:InvalidLabels');
+            'ULMO:writeshnc:InvalidLabels');
             testCase.verifyError(@() writeshnc(path, good, [], dates, 'GRAV', ...
                 'Attributes', {'source'}), 'ULMO:createshnc:InvalidAttributes');
             testCase.verifyEqual(readshnc(path), good);
             testCase.verifyNumElements(dir(fullfile(testCase.Folder, '*.nc')), 1);
         end
+
         function uncertaintyAxesMustMatchEvenWhenSizesAgree(testCase)
             path = fullfile(testCase.Folder, 'wrong-axes.nc');
             dates = datetime(2003, 1, 1) + days((0:5)');
@@ -184,6 +210,7 @@ classdef shncTest < matlab.unittest.TestCase
             nccreate(path, 'uncertainty', 'Dimensions', {'time', 6, 'cs', 2, 'lm', 6});
             testCase.verifyError(@() readshnc(path), 'ULMO:readshnc:InvalidDimensions');
         end
+
         function exclusiveUpperBoundOmitsNextEpochSample(testCase)
             dates = datetime(2003, 1, 1) + hours([0; 6; 12]);
             path = fullfile(testCase.Folder, 'bounds.nc');
@@ -192,8 +219,11 @@ classdef shncTest < matlab.unittest.TestCase
             testCase.verifySize(c, [6, 2, 2]);
             testCase.verifyEqual(d, dates(1:2));
         end
+
     end
+
     methods (Access = private)
+
         function recordReads(testCase)
             global ULMO_NC_READ_LOG ULMO_ORIGINAL_NCREAD
             ULMO_NC_READ_LOG = {};
@@ -206,13 +236,14 @@ classdef shncTest < matlab.unittest.TestCase
                 'global ULMO_NC_READ_LOG ULMO_ORIGINAL_NCREAD', ...
                 'ULMO_NC_READ_LOG{end + 1} = varargin;', ...
                 'result = ULMO_ORIGINAL_NCREAD(varargin{:});', ...
-                'end');
+            'end');
             fclose(fid);
             oldPath = path;
             addpath(shadow, '-begin');
             testCase.addTeardown(@() path(oldPath));
             testCase.addTeardown(@() clearReadLog());
         end
+
         function verifySlab(testCase, variable, start, count)
             global ULMO_NC_READ_LOG
             names = cellfun(@(args) string(args{2}), ULMO_NC_READ_LOG);
@@ -222,7 +253,9 @@ classdef shncTest < matlab.unittest.TestCase
             testCase.verifyEqual(calls{1}{3}, start);
             testCase.verifyEqual(calls{1}{4}, count);
         end
+
     end
+
 end
 
 function clearReadLog()
