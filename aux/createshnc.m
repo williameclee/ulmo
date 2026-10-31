@@ -31,7 +31,7 @@
 %   READSHNC, READSHNCTIME, PREPAREESM
 %
 % Created by
-%   2026/10/30, En-Chi Lee (williameclee@gmail.com)
+%   2026/10/31, En-Chi Lee (williameclee@gmail.com)
 
 function createshnc(path, labels, dates, unit, options)
 
@@ -44,6 +44,7 @@ function createshnc(path, labels, dates, unit, options)
         options.Attributes (1, :) cell {mustBeAttributes} = {}
     end
 
+    % Check the destination and coordinate storage limits before creating variables.
     assert(~isfile(path), 'ULMO:createshnc:FileExists', 'File already exists: %s', path);
     assert(~isempty(labels) && all(labels <= double(intmax('uint16')), 'all'), ...
         'ULMO:createshnc:InvalidLabels', 'Labels must fit uint16.');
@@ -54,12 +55,14 @@ function createshnc(path, labels, dates, unit, options)
     nTimes = numel(dates);
     names = {'degree', 'order'};
 
-    for column = 1:2
-        nccreate(path, names{column}, 'Dimensions', {'lm', nRows}, ...
+    % Store harmonic labels once; all time slices share these coordinates.
+    for col = 1:2
+        nccreate(path, names{col}, 'Dimensions', {'lm', nRows}, ...
             'Datatype', 'uint16', 'Format', 'netcdf4');
-        ncwrite(path, names{column}, uint16(labels(:, column)));
+        ncwrite(path, names{col}, uint16(labels(:, col)));
     end
 
+    % Define cosine/sine order and encode unzoned UTC dates relative to one epoch.
     nccreate(path, 'cs', 'Dimensions', {'cs', 2}, 'Datatype', 'uint8');
     ncwrite(path, 'cs', uint8([0; 1]));
     ncwriteatt(path, 'cs', 'description', '0=cosine, 1=sine');
@@ -73,32 +76,37 @@ function createshnc(path, labels, dates, unit, options)
         names(end + 1) = "uncertainty";
     end
 
+    % Allocate losslessly compressed arrays in MATLAB (lm, cs, time) order.
+    % Chunks span subsets of rows and times; unwritten entries remain NaN.
     for name = names
         nccreate(path, name, 'Dimensions', {'lm', nRows, 'cs', 2, 'time', nTimes}, ...
             'Datatype', 'double', 'FillValue', NaN, 'DeflateLevel', 4, 'Shuffle', true, ...
             'ChunkSize', [min(nRows, 1024), 2, min(nTimes, 8)]);
     end
 
+    % Write the required unit separately from caller-supplied global metadata.
     ncwriteatt(path, '/', 'coefficientUnit', char(unit));
 
-    for k = 1:2:numel(options.Attributes)
-        ncwriteatt(path, '/', options.Attributes{k}, options.Attributes{k + 1});
+    for iAttr = 1:2:numel(options.Attributes)
+        ncwriteatt(path, '/', options.Attributes{iAttr}, options.Attributes{iAttr + 1});
     end
 
 end
 
+% Validate alternating attribute names and values before any file is created.
 function mustBeAttributes(attributes)
     assert(mod(numel(attributes), 2) == 0, ...
         'ULMO:createshnc:InvalidAttributes', ...
     'Attributes must contain name/value pairs.');
     names = strings(1, numel(attributes) / 2);
 
-    for k = 1:numel(names)
-        name = attributes{2 * k - 1};
+    for iAttr = 1:numel(names)
+        name = attributes{2 * iAttr - 1};
         mustBeTextScalar(name);
-        names(k) = string(name);
+        names(iAttr) = string(name);
     end
 
+    % Prevent duplicate names or replacement of the required unit attribute.
     assert(all(~ismissing(names) & strlength(names) > 0) && ...
         numel(unique(names)) == numel(names) && ~any(names == "coefficientUnit"), ...
         'ULMO:createshnc:InvalidAttributes', ...

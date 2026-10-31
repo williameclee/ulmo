@@ -30,7 +30,7 @@
 %   CREATESHNC, READSHNCTIME
 %
 % Created by
-%   2026/10/30, En-Chi Lee (williameclee@gmail.com)
+%   2026/10/31, En-Chi Lee (williameclee@gmail.com)
 
 function [coeffs, uncs, dates, labels] = readshnc(path, timelim, Lmax, options)
 
@@ -50,22 +50,32 @@ function [coeffs, uncs, dates, labels] = readshnc(path, timelim, Lmax, options)
         labels (:, 2) double
     end
 
+    % Read the small time coordinate first to determine the required data slab
     dates = readshnctime(path);
     keep = true(size(dates));
 
     if ~isempty(timelim)
-        if isnumeric(timelim), timelim = datetime(timelim, 'ConvertFrom', 'datenum'); end
+
+        if isnumeric(timelim)
+            timelim = datetime(timelim, 'ConvertFrom', 'datenum');
+        end
+
         keep = dates >= timelim(1) & dates <= timelim(2);
-        if options.EndExclusive, keep = keep & dates < timelim(2); end
+
+        if options.EndExclusive
+            keep = keep & dates < timelim(2);
+        end
+
     end
 
+    % Check named dimensions before interpreting coefficient or uncertainty axes
     ids = find(keep);
-    info = ncinfo(path);
-    varInfo = info.Variables(strcmp({info.Variables.Name}, 'coefficients'));
+    fileInfo = ncinfo(path);
+    varInfo = fileInfo.Variables(strcmp({fileInfo.Variables.Name}, 'coefficients'));
     assert(isscalar(varInfo) && isequal({varInfo.Dimensions.Name}, {'lm', 'cs', 'time'}) && ...
         varInfo.Size(2) == 2 && varInfo.Size(3) == numel(dates), ...
         'ULMO:readshnc:InvalidDimensions', 'Expected coefficients(lm, cs, time).');
-    uncInfo = info.Variables(strcmp({info.Variables.Name}, 'uncertainty'));
+    uncInfo = fileInfo.Variables(strcmp({fileInfo.Variables.Name}, 'uncertainty'));
 
     if ~isempty(uncInfo)
         assert(isequal({uncInfo.Dimensions.Name}, {'lm', 'cs', 'time'}) && ...
@@ -73,6 +83,8 @@ function [coeffs, uncs, dates, labels] = readshnc(path, timelim, Lmax, options)
         'Uncertainty dimensions must match coefficients.');
     end
 
+    % For degree-major triangular ordering, degrees through L occupy the first
+    % (L+1)*(L+2)/2 rows. Clamp the request to the stored degree.
     nRows = varInfo.Size(1);
 
     if ~isempty(Lmax)
@@ -80,11 +92,14 @@ function [coeffs, uncs, dates, labels] = readshnc(path, timelim, Lmax, options)
         nRows = min(nRows, (Lmax + 1) * (Lmax + 2) / 2);
     end
 
+    % Read labels once and leave unavailable uncertainties as NaN
     labels = [double(ncread(path, 'degree', 1, nRows)), double(ncread(path, 'order', 1, nRows))];
     coeffs = nan(nRows, 2, numel(ids));
     uncs = coeffs;
     dates = dates(keep);
 
+    % Sorted times make the selected interval contiguous. Empty selections skip
+    % coefficient reads; reshape restores dimensions dropped for singleton slabs.
     if ~isempty(ids)
         start = [1, 1, ids(1)];
         count = [nRows, 2, numel(ids)];
@@ -96,10 +111,13 @@ function [coeffs, uncs, dates, labels] = readshnc(path, timelim, Lmax, options)
 
     end
 
-    if strcmp(options.OutputFormat, 'lmcosi')
-        repeatedLabels = repmat(labels, 1, 1, numel(ids));
-        coeffs = cat(2, repeatedLabels, coeffs);
-        uncs = cat(2, repeatedLabels, uncs);
+    % Expand labels only for the public lmcosi layout, including uncertainty arrays
+    if ~strcmp(options.OutputFormat, 'lmcosi')
+        return
     end
+
+    repeatedLabels = repmat(labels, 1, 1, numel(ids));
+    coeffs = cat(2, repeatedLabels, coeffs);
+    uncs = cat(2, repeatedLabels, uncs);
 
 end

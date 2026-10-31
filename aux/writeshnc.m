@@ -1,10 +1,9 @@
 %% WRITESHNC - Saves lmcosi or compact harmonic arrays to NetCDF.
-% Degree/order are stored once; both input layouts produce the same schema.
 %
 % Syntax
 %   writeshnc(path, plmt, uncs, dates, unit)
 %   writeshnc(path, coeffs, uncs, dates, unit, "Labels", labels)
-%   writeshnc(__, "Attributes", {"equatorRadius", radius, "source", "ESAESM2"})
+%   writeshnc(__, "Attributes", attrs)
 %
 % Input arguments
 %   path - Output NetCDF file.
@@ -15,11 +14,11 @@
 %   dates - Unzoned UTC datetimes, size (N, 1).
 %   unit - GRAV, POT or SD.
 %   Labels (name-value) - Degree/order pairs, size (M, 2).
-%       Required for compact input; inferred from lmcosi input. If supplied
-%       with lmcosi, must agree. Labels must be constant across time.
+%       Required for compact input; inferred from lmcosi input.
 %       Default labels: [] (infer from lmcosi).
 %   Attributes (name-value) - Additional global attributes as alternating
-%       name/value cells; passed to CREATESHNC. Default attributes: {}.
+%       name/value cells.
+%       Default attributes: {}.
 %
 % Notes
 %   The function writes a temporary file and replaces the destination only
@@ -29,7 +28,7 @@
 %   CREATESHNC, READSHNC
 %
 % Created by
-%   2026/10/30, En-Chi Lee (williameclee@gmail.com)
+%   2026/10/31, En-Chi Lee (williameclee@gmail.com)
 
 function writeshnc(path, coeffs, uncs, dates, unit, options)
 
@@ -43,6 +42,7 @@ function writeshnc(path, coeffs, uncs, dates, unit, options)
         options.Attributes (1, :) cell = {}
     end
 
+    % Check time and uncertainty sizes before normalizing the input layout
     assert(~isempty(dates) && ismember(size(coeffs, 2), [2, 4]) && ...
         size(coeffs, 3) == numel(dates) && ...
         (isempty(uncs) || isequal(size(coeffs), size(uncs))), ...
@@ -50,6 +50,8 @@ function writeshnc(path, coeffs, uncs, dates, unit, options)
     'Coefficient, date and uncertainty sizes must match.');
     labels = options.Labels;
 
+    % Extract shared labels from lmcosi and reject labels that change with time
+    % Only cosine/sine columns are written to the compact data variables
     if size(coeffs, 2) == 4
         embeddedLabels = coeffs(:, 1:2, 1);
         assert(all(coeffs(:, 1:2, :) == embeddedLabels, 'all') && ...
@@ -66,6 +68,7 @@ function writeshnc(path, coeffs, uncs, dates, unit, options)
 
     end
 
+    % Compact inputs must provide one label pair per coefficient row
     assert(~isempty(labels) && size(coeffs, 1) == size(labels, 1), ...
         'ULMO:writeshnc:InvalidLabels', 'Compact input requires matching Labels.');
     folder = fileparts(path);
@@ -74,6 +77,7 @@ function writeshnc(path, coeffs, uncs, dates, unit, options)
         folder = pwd;
     end
 
+    % Write beside the destination and remove partial output if any step fails
     tmpPath = string(tempname(folder)) + ".nc";
     cleanup = onCleanup(@() removetemporary(tmpPath));
     createshnc(tmpPath, labels, dates, unit, 'Uncertainty', ~isempty(uncs), ...
@@ -84,9 +88,12 @@ function writeshnc(path, coeffs, uncs, dates, unit, options)
         ncwrite(tmpPath, 'uncertainty', uncs);
     end
 
+    % Replace the destination only after all variables have been written
     movefile(tmpPath, path, 'f');
 end
 
+%% Subfunctions
+% Remove an unfinished temporary file; a successful move leaves none
 function removetemporary(path)
 
     if isfile(path)
