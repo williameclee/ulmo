@@ -4,6 +4,9 @@
 %
 % Created by
 %   2026/10/31, En-Chi Lee (williameclee@gmail.com)
+%
+% Last modified
+%   2026/11/01, En-Chi Lee (williameclee@gmail.com)
 
 classdef esm2plmtTest < matlab.unittest.TestCase
 
@@ -136,8 +139,8 @@ classdef esm2plmtTest < matlab.unittest.TestCase
             testCase.verifyEqual(reshape(p(1, :, 3), [], 1), ...
                 2e-10 * (1:6)' .* factor, 'RelTol', 2e-14);
             folder = fileparts(testCase.inputpath());
-            testCase.verifyTrue(isfile(fullfile(folder, 'ESAESM2_H-SD-Tmidmonth.nc')));
-            testCase.verifyFalse(isfile(fullfile(folder, 'ESAESM2_H-SD_ISSM-Tmidmonth.nc')));
+            testCase.verifyTrue(isfile(fullfile(folder, 'ESAESM2_H_SD_ISSM-Tmidmonth.nc')));
+            testCase.verifyFalse(isfile(fullfile(folder, 'ESAESM2_H_SD-Tmidmonth.nc')));
             delete(testCase.inputpath());
             [cached, cachedStd, cachedDates] = esm2plmt('H', [], 'midmonth');
             testCase.verifyEqual(cached, p);
@@ -194,21 +197,21 @@ classdef esm2plmtTest < matlab.unittest.TestCase
             esm2plmt('H', [], '', 'Unit', 'SD', 'ForceNew', true);
             testCase.verifyEqual(testCase.readfile(testCase.inputpath()), before);
             testCase.verifyEqual(before.dates, original.dates);
-            testCase.verifyFalse(isfile(fullfile(fileparts(testCase.inputpath()), 'ESAESM2_H-SD.nc')));
+            testCase.verifyFalse(isfile(fullfile(fileparts(testCase.inputpath()), 'ESAESM2_H_SD_ISSM.nc')));
         end
 
         function reimportInvalidatesEveryUnitAndEpochVariant(testCase)
             testCase.fixture(0, 1);
             testCase.prepare();
             folder = fileparts(testCase.inputpath());
-            variants = ["ESAESM2_H-GRAV-Tmidmonth.nc", "ESAESM2_H-SD-Tfuture.nc", ...
-                        "ESAESM2_H-POT-Tmidmonth-mean.nc"];
+            variants = ["ESAESM2_H_GRAV-Tmidmonth.nc", "ESAESM2_H_SD_ISSM-Tfuture.nc", ...
+                        "ESAESM2_H_POT-Tmidmonth-mean.nc"];
 
             for name = variants
                 copyfile(testCase.inputpath(), fullfile(folder, name));
             end
 
-            other = fullfile(folder, 'ESAESM2_O-GRAV-Tmidmonth.nc');
+            other = fullfile(folder, 'ESAESM2_O_GRAV-Tmidmonth.nc');
             copyfile(testCase.inputpath(), other);
             testCase.fixture(0, 2);
             testCase.prepare('ForceNew', true);
@@ -358,7 +361,7 @@ classdef esm2plmtTest < matlab.unittest.TestCase
             testCase.verifyEqual([after.bytes], [before.bytes]);
             fig = setdiff(findall(groot, 'Type', 'figure'), figuresBefore);
             testCase.assertNumElements(fig, 1);
-            testCase.verifyEqual(fig.Visible, 'on');
+            testCase.verifyEqual(string(fig.Visible), "on");
             testCase.verifyNumElements(findall(fig, 'Type', 'axes'), 6);
             testCase.verifyNumElements(findall(fig, 'Type', 'image'), 6);
 
@@ -392,7 +395,7 @@ classdef esm2plmtTest < matlab.unittest.TestCase
         end
 
         function path = cachepath(testCase)
-            path = fullfile(testCase.Scratch, 'ESM', 'ESAESM2', 'ESAESM2_H-GRAV-Tmidmonth.nc');
+            path = fullfile(testCase.Scratch, 'ESM', 'ESAESM2', 'ESAESM2_H_GRAV-Tmidmonth.nc');
         end
 
         function prepare(testCase, varargin)
