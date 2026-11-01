@@ -1,8 +1,7 @@
 %% GSHHSCOASTLINE Retrieves the GSHHS coastline data and formats it
 %
 % Last modified
-%   2026/02/12, williameclee@arizona.edu (@williameclee)
-%     - Added variable check before loading
+%   2026/09/25, williameclee@arizona.edu (@williameclee)
 
 function varargout = gshhscoastline(varargin)
     %% Initialisation
@@ -157,7 +156,9 @@ function p = croptolims(p, latlim, lonlim, lonOrigin)
     XY = poly2xy(p);
     [Y, X] = ...
         flatearthpoly(XY(:, 2), XY(:, 1), lonOrigin);
-    X = X - floor(min(X(:)) / 360) * 360;
+    while max(X) <= min(lonlim)
+        X = X + 360;
+    end
     p = polyshape([X, Y]);
 
     %% Cropping

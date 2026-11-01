@@ -70,9 +70,7 @@
 %   OCEANPOLY, GSHHSCOASTLINE, BUFFER4OCEANS
 %
 % Last modified
-%   2026/02/12, williameclee@arizona.edu (@williameclee)
-%     - Added variable check before loading
-%   2025/06/02, williameclee@arizona.edu (@williameclee)
+%   2026/09/25, williameclee@arizona.edu (@williameclee)
 
 function varargout = oceans(varargin)
     %% Initialisation
@@ -121,19 +119,18 @@ function varargout = oceans(varargin)
     % Find the ocean boundary (not accounting for the coastlines)
     [oceanPoly, oceanLatlim, oceanLonlim] = oceanpoly( ...
         oceanParts, latlim, lonOrigin, 'BeQuiet', beQuiet);
+    % Extend land beyond the ocean's latitude limits. Clipping both operands
+    % to the same edge can leave microscopic gaps after polyshape roundoff,
+    % turning Antarctic peninsulas into holes with spurious closing edges.
+    coastLatlim = [max(-90, oceanLatlim(1) - 1), ...
+                       min(90, oceanLatlim(2) + 1)];
     % Find the coastline
     [~, coastPoly] = gshhscoastline('l', 'Buffer', buf, ...
-        'LatLim', oceanLatlim, 'LonLim', oceanLonlim, ...
+        'LatLim', coastLatlim, 'LonLim', oceanLonlim, ...
         'LonOrigin', lonOrigin, 'BeQuiet', beQuiet);
     % Crop out more buffers
     [~, coastPoly] = buffer4oceans(coastPoly, ...
         'MoreBuffers', moreBufs, 'LonOrigin', lonOrigin);
-    figure(998)
-    clf
-    hold on
-    plot(coastPoly)
-    plot(oceanPoly)
-    hold off
     % Manually remove small holes
     coastPoly = manualadjustments(coastPoly, buf, moreBufs, lonOrigin);
     % Subtract the land regions from the ocean boundary

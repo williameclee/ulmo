@@ -1,0 +1,11 @@
+%% GIA2PLMT - Supplies nonzero synthetic GIA and records the requested model and dates.
+%
+% Created by
+%   2026/10/26, En-Chi Lee (williameclee@gmail.com)
+
+function p = gia2plmt(dates, model, varargin)
+    global DEGREE1_CONVERGENCE_FIXTURE
+    DEGREE1_CONVERGENCE_FIXTURE.giaDates = dates;
+    DEGREE1_CONVERGENCE_FIXTURE.giaModel = model;
+    p = DEGREE1_CONVERGENCE_FIXTURE.gia;
+end
