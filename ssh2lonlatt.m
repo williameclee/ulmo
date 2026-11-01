@@ -18,7 +18,8 @@
 %       available as of right now.
 %   timestep - Temporal interpolation time step
 %       - Numeric or duration scalar, in units of days.
-%       - Character vector, 'midmonth' (at the middle of each month).
+%       - 'midmonth': mean of native samples in each calendar month,
+%         dated at the midpoint.
 %       - 'GRACE': mean within CSR RL06 degree-60 GRACE solution windows.
 %         Missing months use calendar boundaries inside the gap, with outer
 %         bounds aligned to adjacent real solutions. Dates are window midpoints.
@@ -38,7 +39,8 @@
 %       performed.
 %   Interpolation - Interpolation method, for both temporal and spatial
 %       - An INTERP1 method, or 'mean' to average native samples.
-%         'midmonth' means use calendar months. Fixed-step means use
+%         For 'midmonth' and 'GRACE', this option controls spatial
+%         interpolation only. Fixed-step means use
 %         half-open windows centered on the output dates. Spatial
 %         interpolation uses 'linear' when 'mean' is requested.
 %       The default interpolation method is 'linear'. This option is only
@@ -156,7 +158,7 @@ function [ssh, sshSigma, dates, lon, lat] = ssh2lonlatt(product, timestep, meshs
     end
 
     %% Checking for existing data
-    useMean = ~isempty(timestep) && (strcmpi(timestep, 'GRACE') || strcmpi(intpMthd, 'mean'));
+    useMean = ~isempty(timestep) && (ischar(timestep) || isstring(timestep) || strcmpi(intpMthd, 'mean'));
     spatialIntpMthd = intpMthd;
 
     if strcmpi(spatialIntpMthd, 'mean')
@@ -421,6 +423,13 @@ function outPath = outputpath( ...
         else
             error('ULMO:ssh2lonlatt:InvalidTimeStep', ...
                 'Unrecognised time step input for saving: %s', class(timeStep));
+        end
+
+        % Earlier linear fixed-step caches could contain bin averages.
+        if isduration(timeStep) && strcmpi(intpMthd, 'linear')
+            timeStepStr = [timeStepStr, '-interp'];
+        elseif strcmpi(timeStep, 'midmonth') && ~strcmpi(intpMthd, 'mean')
+            timeStepStr = [timeStepStr, '-mean'];
         end
 
     end

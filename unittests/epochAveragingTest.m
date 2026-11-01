@@ -175,15 +175,58 @@ classdef epochAveragingTest < matlab.unittest.TestCase
         end
 
         function testInterpTemporal(testCase)
-            dates = datetime(2020, 1, 1) + days(0:99)';
-            mesh = cat(1, reshape(1:100, 1, 1, []), reshape(101:200, 1, 1, []));
-            [vals, labels] = interptemporal(dates, mesh, days(10), 'linear', BeQuiet = true);
-            [~, group] = min(abs(dates(:)' - labels(:)), [], 1);
+            % Coarse steps sample the interpolant even when several inputs span one step.
+            dates = datetime(2020, 1, 1) + days(0:30)';
+            mesh = reshape((0:30).^2, 1, 1, []);
+            mesh = cat(1, mesh, mesh + 100);
+            [values, labels] = interptemporal(dates, mesh, days(10.5), BeQuiet = true);
+            testCase.verifyEqual(labels(:), dates(1) + days([0; 10.5; 21]));
+            expected = [0; (100 + 121) / 2; 441];
+            testCase.verifyEqual(squeeze(values(1, 1, :)), expected);
+            testCase.verifyEqual(squeeze(values(2, 1, :)), expected + 100);
 
-            for k = 1:numel(labels)
-                testCase.verifyEqual(vals(:, :, k), mean(mesh(:, :, group == k), 3));
-            end
+            % Numeric dates and a time range use the same fixed grid and requested method.
+            [values, labels] = interptemporal(datenum(dates), mesh, 10.5, 'previous', ...
+                TimeRange = dates([10, 15]), BeQuiet = true); %#ok<DATNM>
+            testCase.verifyEqual(labels, datenum(dates(1)) + 10.5); %#ok<DATNM>
+            testCase.verifyEqual(values, [100; 200]);
+        end
 
+        function testInterpTemporalRejectsAveragingOptions(testCase)
+            % Named epochs and means belong to the product readers.
+            dates = datetime(2020, 1, 1:3);
+            mesh = reshape(1:3, 1, 1, []);
+            testCase.verifyError(@() interptemporal(dates, mesh, 'GRACE'), 'MATLAB:validators:mustBeA');
+            testCase.verifyError(@() interptemporal(dates, mesh, "midmonth"), 'MATLAB:validators:mustBeA');
+            testCase.verifyError(@() interptemporal(dates, mesh, days(1), 'mean'), 'MATLAB:unrecognizedStringChoice');
+        end
+
+        function testMidmonthProductMeans(testCase)
+            % Both readers average the entire month even with a point interpolation method.
+            folder = testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture);
+            testCase.applyFixture(matlab.unittest.fixtures.EnvironmentVariableFixture('IFILES', folder.Folder));
+            sshFolder = fullfile(folder.Folder, 'SSH');
+            stericFolder = fullfile(folder.Folder, 'STERIC', 'EN4c14');
+            mkdir(sshFolder);
+            mkdir(stericFolder);
+            dates = datetime(2020, 1, [1; 16; 31]);
+            lon = [0; 180];
+            lat = [-90; 0; 90];
+            sshs = repmat(reshape([0, 3, 15], 1, 1, []), 2, 3);
+            stericSl = permute(sshs, [2, 1, 3]);
+            save(fullfile(sshFolder, 'MEaSUREs.mat'), 'sshs', 'dates', 'lon', 'lat');
+            save(fullfile(stericFolder, 'EN4c14-StericSeaLevel.mat'), 'stericSl', 'dates', 'lon', 'lat');
+            % An old nearest-midpoint cache would return 3 instead of the monthly mean.
+            sshs = sshs(:, :, 2);
+            dates = datetime(2020, 1, 16, 12, 0, 0);
+            save(fullfile(sshFolder, 'MEaSUREs-Tmidmonth-nearest.mat'), 'sshs', 'dates', 'lon', 'lat');
+
+            [ssh, ~, sshDate] = ssh2lonlatt('MEaSUREs', 'midmonth', Interpolation = 'nearest', BeQuiet = true);
+            [steric, ~, stericDate] = steric2lonlatt('EN4c14', 'midmonth', Type = 'total', BeQuiet = true);
+            testCase.verifyEqual(sshDate, dates);
+            testCase.verifyEqual(stericDate, dates);
+            testCase.verifyEqual(ssh, 6 * ones(3, 2));
+            testCase.verifyEqual(steric, ssh);
         end
 
         function testFillGraceEpochs(testCase)
