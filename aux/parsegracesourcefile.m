@@ -22,6 +22,7 @@
 % Notes
 %   If the file starts at degree 2, the function inserts C00 = 1 and zeros
 %   for the remaining degree 0 and 1 coefficients and their uncertainties.
+%   Requested reference parameters must have finite positive values.
 %
 % See also
 %   GRACE2PLMT (GRACE2PLMT_NEW), AOD1B2PLMT
@@ -57,10 +58,12 @@ function [gravSph, gravStdSph, epochCentres, epochRange, gravParam, eqRad] = ...
     % Extract the data from the file
     dataStr = fileread(dataPath);
     dataStart = regexp(dataStr, '(?m)^GRCOF2[ \t]', 'once');
+
     if isempty(dataStart)
         error('ULMO:parsegracesourcefile:InvalidFormat', ...
             'No GRCOF2 records found in %s', dataPath);
     end
+
     data = dataStr(dataStart:end);
     data = textscan(data, '%s%f%f%f%f%f%f%s%s%s');
     gravSph = [data{2}, data{3}, data{4}, data{5}];
@@ -113,18 +116,27 @@ function [gravSph, gravStdSph, epochCentres, epochRange, gravParam, eqRad] = ...
 
     %% Fetching the parameters
     header = dataStr(1:dataStart - 1);
+    % RL05
+    % RL05 stores GM and radius, in that order, on one EARTH record
     earth = regexp(header, '(?m)^EARTH[ \t]+([^\r\n]+)', 'tokens', 'once');
+
     if ~isempty(earth)
-        parameters = sscanf(regexprep(earth{1}, '[dD]', 'E'), '%f');
-        if numel(parameters) < 2 || any(~isfinite(parameters(1:2))) || any(parameters(1:2) <= 0)
+        params = sscanf(regexprep(earth{1}, '[dD]', 'E'), '%f');
+
+        if numel(params) < 2 || any(~isfinite(params(1:2))) || any(params(1:2) <= 0)
             error('ULMO:parsegracesourcefile:InvalidHeader', ...
                 'Invalid EARTH parameters in %s', dataPath);
         end
-        gravParam = parameters(1);
-        eqRad = parameters(2);
+
+        gravParam = params(1);
+        eqRad = params(2);
         return
     end
-    lines = strtrim(strsplit(header, '\n'));
+
+    % RL06
+    % Keep the leading whitespace. In RL06 YAML it identifies which
+    % attribute owns each value.
+    lines = regexp(header, '\r?\n', 'split');
 
     gravParam = extractheadervalue(lines, 'earth_gravity_param');
 
@@ -136,24 +148,50 @@ end
 
 %% Subfunctions
 % Extract non-standard attributes from the header
-function param = extractheadervalue(header, paramName)
+function param = extractheadervalue(lines, paramName)
+    % Match the complete attribute key and capture its indentation in match{1}
+    key = ['^([ \t]*)', paramName, '[ \t]*:'];
 
-    if ischar(header)
-        header = strtrim(strsplit(header, '\n'));
-    end
+    for iKey = 1:numel(lines)
+        match = regexp(lines{iKey}, key, 'tokens', 'once');
 
-    nameId = find(contains(header, paramName));
-
-    for valueId = nameId + 1:length(header)
-
-        if ~contains(header{valueId}, 'value')
+        if isempty(match)
             continue
         end
 
-        param = strsplit(header{valueId}, ':');
-        param = strtrim(param{end});
-        param = str2double(param);
+        for iLine = iKey + 1:numel(lines)
+            line = lines{iLine};
+
+            if isempty(strtrim(line)) || startsWith(strtrim(line), '#')
+                continue
+            end
+
+            indent = regexp(line, '^[ \t]*', 'match', 'once');
+
+            % The next field at this level or above ends the attribute.
+            % Otherwise a missing GM could inherit the following radius value.
+            if numel(indent) <= numel(match{1})
+                break
+            end
+
+            value = regexp(line, '^\s*value\s*:\s*(\S+)', 'tokens', 'once');
+
+            if ~isempty(value)
+                % Convert Fortran D exponents before checking the physical constant
+                param = str2double(regexprep(value{1}, '[dD]', 'E'));
+
+                if isreal(param) && isfinite(param) && param > 0
+                    return
+                end
+
+                break
+            end
+
+        end
+
         break
     end
 
+    error('ULMO:parsegracesourcefile:InvalidHeader', ...
+        'Missing or invalid %s in GRACE header', paramName);
 end
