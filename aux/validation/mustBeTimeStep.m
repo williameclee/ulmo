@@ -7,13 +7,13 @@ function mustBeTimeStep(timeStep)
 
     if (ischar(timeStep) || isstring(timeStep))
 
-        if ~ismember(timeStep, {'midmonth', 'GRACE'})
+        if ~any(strcmpi(timeStep, {'midmonth', 'GRACE'}))
             error(eid, 'Time step string must be ''midmonth'' or ''GRACE''. Got "%s".', timeStep);
         end
 
-    elseif ~isnumeric(timeStep) || isduration(timeStep)
+    elseif isnumeric(timeStep) || isduration(timeStep)
 
-        if ~(isscalar(timeStep) && timeStep > 0)
+        if ~(isscalar(timeStep) && isfinite(timeStep) && timeStep > 0)
             error(eid, 'Time step must be a positive scalar.');
         end
 

@@ -23,7 +23,7 @@
 %         Missing months use calendar boundaries inside the gap, with outer
 %         bounds aligned to adjacent real solutions. Dates are window midpoints.
 %         Monthly inputs are averaged by native timestamps, not reconstructed
-%         at daily resolution. Epoch means are not cached.
+%         at daily resolution.
 %       When not specified, no temporal interpolation is performed.
 %   meshsize - Spatial interpolation grid size in degrees
 %       - Real scalar, in units of degrees.
@@ -37,8 +37,11 @@
 %       used. This option is only relevant when spatial interpolation is
 %       performed.
 %   Interpolation - Interpolation method, for both temporal and spatial
-%       - A string of valid method for INTERP1.
-%       The default intepolation method is 'linear'. This option is only
+%       - An INTERP1 method, or 'mean' to average native samples.
+%         'midmonth' means use calendar months. Fixed-step means use
+%         half-open windows centered on the output dates. Spatial
+%         interpolation uses 'linear' when 'mean' is requested.
+%       The default interpolation method is 'linear'. This option is only
 %       relevant when temporal or spatial interpolation is performed.
 %   OutputFormat - Format of the output mesh
 %       - 'meshgrid' or 'ndgrid' for (lat, lon, t) or (lon, lat, t)
@@ -52,7 +55,7 @@
 %       The default unit is 'm'.
 %	ForceNew - Logical flag to force reprocess of the data
 %		The default option is false.
-%	SaveData - Logical flag to save the data
+%	SaveData - Logical flag to cache the interpolated grid over the full data time range
 %		The default option is true.
 %	BeQuiet - Logical flag to print messages
 %		- true: Suppress all messages.
@@ -79,14 +82,11 @@
 %	MEaSUREs Gridded Sea Surface Height Anomalies Version 2205
 % 		https://podaac.jpl.nasa.gov/dataset/SEA_SURFACE_HEIGHT_ALT_GRIDS_L4_2SATS_5DAY_6THDEG_V_JPL2205
 %
-% See also
-%	INTERP1
+% Created by
+%	2025/05/19, En-Chi Lee (williameclee@arizona.edu)
 %
-% Authored by
-%	2025/05/19, williameclee@arizona.edu (@williameclee)
-%
-% Last modified by
-%	2026/09/25, williameclee@arizona.edu (@williameclee)
+% Last modified
+%	2026/11/01, En-Chi Lee (williameclee@gmail.com)
 
 function [ssh, sshSigma, dates, lon, lat] = ssh2lonlatt(product, timestep, meshsize, timelim, options)
 
@@ -96,8 +96,7 @@ function [ssh, sshSigma, dates, lon, lat] = ssh2lonlatt(product, timestep, meshs
         meshsize = []
         timelim {mustBeTimeRange} = []
         options.LonOrigin {mustBeFinite, mustBeReal} = []
-        options.Interpolation ...
-            {mustBeTextScalar, mustBeMember(options.Interpolation, {'linear', 'nearest', 'next', 'previous', 'spline', 'pchip'})} = 'linear'
+        options.Interpolation {mustBeTextScalar} = 'linear'
         options.TimeFormat (1, :) DateFormat = 'datetime'
         options.OutputFormat (1, :) MeshFormat = 'meshgrid'
         options.Unit {mustBeTextScalar, mustBeMember(options.Unit, {'mm', 'm'})} = 'm'
@@ -113,49 +112,6 @@ function [ssh, sshSigma, dates, lon, lat] = ssh2lonlatt(product, timestep, meshs
         dates (:, 1) {mustBeVector}
         lon (:, :) {mustBeReal, mustBeVector}
         lat (:, :) {mustBeReal, mustBeVector}
-    end
-
-    % Average native temporal samples; reuse only the existing spatial cache.
-    if (ischar(timestep) || isstring(timestep)) && strcmpi(timestep, 'grace')
-        epochOptions = options;
-        epochOptions.TimeFormat = 'datetime';
-        epochArgs = namedargs2cell(epochOptions);
-        [ssh, sshSigma, nativeDates, lon, lat] = ...
-            ssh2lonlatt(product, [], meshsize, [], epochArgs{:});
-        epochRange = timelim;
-        if isempty(epochRange), epochRange = [min(nativeDates), max(nativeDates)]; end
-        epochs = graceepochs({'CSR', 'RL06', 60}, epochRange);
-        [ssh, dates] = averageepochs(nativeDates, ssh, epochs);
-        % Root-mean-square input uncertainty (no independence assumption).
-        if ~isempty(sshSigma)
-            sshSigma = sqrt(averageepochs(nativeDates, sshSigma .^ 2, epochs));
-        end
-
-        if ~isempty(timelim)
-
-            if isnumeric(timelim)
-                timelim = datetime(timelim, 'ConvertFrom', 'datenum');
-            end
-
-            keep = dates >= min(timelim) & dates <= max(timelim);
-            ssh = ssh(:, :, keep);
-
-            if ~isempty(sshSigma)
-                sshSigma = sshSigma(:, :, keep);
-            end
-
-            dates = dates(keep);
-        end
-
-        if strcmpi(options.TimeFormat, 'datenum')
-            dates = datenum(dates); %#ok<DATNM>
-        end
-
-        if nargout == 0
-            plotsealeveltseries(dates, ssh, lon, lat, product, options.Unit, 'Epoch mean sea level');
-        end
-
-        return
     end
 
     lonOrigin = options.LonOrigin;
@@ -200,76 +156,101 @@ function [ssh, sshSigma, dates, lon, lat] = ssh2lonlatt(product, timestep, meshs
     end
 
     %% Checking for existing data
-    intpOutputPath = ...
-        outputpath(product, intpMthd, timestep, meshsize, lonOrigin);
+    useMean = ~isempty(timestep) && (strcmpi(timestep, 'GRACE') || strcmpi(intpMthd, 'mean'));
+    spatialIntpMthd = intpMthd;
 
+    if strcmpi(spatialIntpMthd, 'mean')
+        spatialIntpMthd = 'linear';
+    end
+
+    intpOutPath = outputpath(product, intpMthd, timestep, meshsize, lonOrigin);
     vars = {'sshs', 'dates', 'lon', 'lat'};
 
-    if ~forceNew && exist(intpOutputPath, 'file') && ...
-            all(ismember(vars, who('-file', intpOutputPath)))
+    intpDataExists = ~forceNew && isfile(intpOutPath) && ...
+        all(ismember(vars, who('-file', intpOutPath)));
 
-        if beQuiet <= 1
-            t = tic;
-            msg = 'this may take a while...';
-            fprintf('[ULMO>%s] Loading <a href="matlab: fprintf(''%s\\n'');open(''%s'')">interpolated SSH product</a>, %s\n', ...
-                callchaintext(callChain), intpOutputPath, intpOutputPath, msg);
-        end
-
-        if ismember('sshErrors', who('-file', intpOutputPath))
-            data = load(intpOutputPath, vars{:}, 'sshErrors');
-        else
-            data = load(intpOutputPath, vars{:});
-            data.sshErrors = [];
-        end
-
-        if beQuiet <= 1
-            fprintf(repmat('\b', 1, length(msg) + 1));
-            fprintf('took %.1f seconds.\n', toc(t));
-        end
-
-        if nargout > 0
-            [ssh, sshSigma, dates, lon, lat] = formatoutput( ...
-                data.sshs, data.sshErrors, data.dates, data.lon, data.lat, ...
-                timelim, timeFmt, outputFmt, unit);
-        else
-            plotsealeveltseries(data.dates, data.sshs, data.lon, data.lat, ...
-                product, unit, 'Global mean sea surface height');
-        end
-
-        return
+    if intpDataExists
+        inPath = intpOutPath;
+    else
+        inPath = outputpath(product);
     end
 
-    %% Main
-    inputPath = outputpath(product);
-
-    if ~exist(inputPath, 'file')
+    if ~exist(inPath, 'file')
         error('ULMO:InputDataNotFound', ...
-            'Input data not found at %s.', inputPath);
-    elseif ~all(ismember(vars, who('-file', inputPath)))
-        notFoundVars = vars(~ismember(vars, who('-file', inputPath)));
+            'Input data not found at %s.', inPath);
+    elseif ~all(ismember(vars, who('-file', inPath)))
+        notFoundVars = vars(~ismember(vars, who('-file', inPath)));
         error('ULMO:InputDataIncomplete', ...
             'Input data at %s is missing variables: %s.', ...
-            inputPath, strjoin(notFoundVars, ', '));
+            inPath, strjoin(notFoundVars, ', '));
     end
 
-    if ismember('sshErrors', who('-file', inputPath))
-        data = load(inputPath, vars{:}, 'sshErrors');
+    if ismember('sshErrors', who('-file', inPath))
+        data = load(inPath, vars{:}, 'sshErrors');
     else
-        data = load(inputPath, vars{:});
+        data = load(inPath, vars{:});
         data.sshErrors = [];
     end
 
-    if ~isempty(timestep)
-        nativeDates = data.dates;
-        [data.sshs, data.dates] = interptemporal( ...
-            data.dates, data.sshs, timestep, intpMthd, BeQuiet = (beQuiet == 2), CallChain = callChain);
+    if beQuiet <= 1
+        fprintf('[ULMO>%s] Loaded %s.\n', callchaintext(callChain), filehref(inPath, 'SSH product'));
+    end
 
-        if ~isempty(data.sshErrors)
-            data.sshErrors = interptemporal( ...
-                nativeDates, data.sshErrors, timestep, intpMthd, BeQuiet = (beQuiet == 2), CallChain = callChain);
+    if ~intpDataExists
+        nativeDates = data.dates;
+
+        if useMean
+            data = preparegrid(data, meshsize, lonOrigin, spatialIntpMthd, beQuiet, callChain);
+
+            % The cached epochs span the product. Apply timelim only to the output.
+            epochs = temporalmeanepochs(nativeDates, timestep, []);
+            [data.sshs, data.dates] = averageepochs(nativeDates, data.sshs, epochs);
+
+            if ~isempty(data.sshErrors)
+                % RMS of native uncertainties, without assuming independent errors.
+                data.sshErrors = sqrt(averageepochs(nativeDates, data.sshErrors .^ 2, epochs));
+            end
+        else
+            if ~isempty(timestep)
+                [data.sshs, data.dates] = interptemporal(nativeDates, data.sshs, timestep, intpMthd, ...
+                    BeQuiet = (beQuiet == 2), CallChain = callChain);
+
+                if ~isempty(data.sshErrors)
+                    data.sshErrors = interptemporal(nativeDates, data.sshErrors, timestep, intpMthd, ...
+                        BeQuiet = (beQuiet == 2), CallChain = callChain);
+                end
+            end
+
+            data = preparegrid(data, meshsize, lonOrigin, spatialIntpMthd, beQuiet, callChain);
         end
 
+        if saveData
+            save(intpOutPath, '-struct', 'data', 'sshs', 'sshErrors', 'dates', 'lon', 'lat', '-v7.3');
+
+            if beQuiet <= 1
+                fprintf('[ULMO>%s] Saved %s.\n', callchaintext(callChain), filehref(intpOutPath, 'SSH product'));
+            end
+        end
     end
+
+    if nargout == 0
+        timeFmt = 'datetime';
+    end
+
+    [ssh, sshSigma, dates, lon, lat] = formatoutput( ...
+        data.sshs, data.sshErrors, data.dates, data.lon, data.lat, ...
+        timelim, timeFmt, outputFmt, unit);
+
+    if nargout > 0
+        return
+    end
+
+    plotsealeveltseries(dates, ssh, lon, lat, product, unit, 'Global mean sea surface height');
+
+end
+
+%% Subfunctions
+function data = preparegrid(data, meshsize, lonOrigin, intpMthd, beQuiet, callChain)
 
     if ~isempty(meshsize) || ~isempty(lonOrigin)
 
@@ -293,32 +274,11 @@ function [ssh, sshSigma, dates, lon, lat] = ssh2lonlatt(product, timestep, meshs
 
     end
 
-    if saveData
-        save(intpOutputPath, ...
-            '-struct', 'data', 'sshs', 'sshErrors', 'dates', 'lon', 'lat', '-v7.3');
-
-        if beQuiet <= 1
-            fprintf('[ULMO>%s] Saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">SSH product</a>.\n', ...
-                callchaintext(callChain), intpOutputPath, intpOutputPath);
-        end
-
-    end
-
-    if nargout > 0
-        [ssh, sshSigma, dates, lon, lat] = formatoutput( ...
-            data.sshs, data.sshErrors, data.dates, data.lon, data.lat, ...
-            timelim, timeFmt, outputFmt, unit);
-    else
-        plotsealeveltseries(data.dates, data.sshs, data.lon, data.lat, ...
-            product, unit, 'Global mean sea surface height');
-    end
-
 end
 
-%% Subfunctions
 % Interpolation
-function [meshIntp, lonIntp, latIntp] = ...
-        interpspatial(lon, lat, mesh, meshSize, lonOrigin, intpMthd, beQuiet, callChain)
+function [meshIntp, lonIntp, latIntp] = interpspatial( ...
+        lon, lat, mesh, meshSize, lonOrigin, intpMthd, beQuiet, callChain)
 
     lonIntp = (-180:meshSize:180) + lonOrigin;
     latIntp = -90:meshSize:90;
@@ -377,158 +337,6 @@ function [meshIntp, lonIntp, latIntp] = ...
 
 end
 
-% % Load the aggregated raw data (i.e. data from all time stamps in the same array)
-% function [sshs, sshErrors, dates, lon, lat] = loadAggregatedRawData( ...
-%         product, forceNew, beQuiet, saveData, outputFolder, inputFolder, callChain)
-%     vars = {'sshs', 'sshErrors', 'dates', 'lon', 'lat'};
-%     % Output location
-%     outputFile = sprintf('%s.mat', product);
-%     outputPath = fullfile(outputFolder, outputFile);
-
-%     %% Checking output file
-%     if exist(outputPath, 'file') && ~forceNew && ...
-%             all(ismember(vars, who('-file', outputPath)))
-
-%         if beQuiet <= 1
-%             t = tic;
-%             msg = 'this may take a while...';
-%             fprintf('[ULMO>%s] Loading <a href="matlab: fprintf(''%s\\n'');open(''%s'')">SSH product</a>, %s\n', ...
-%                 callchaintext(callChain), outputPath, outputPath, msg);
-%         end
-
-%         data = load(outputPath, vars{:});
-%         sshs = data.sshs;
-%         sshErrors = data.sshErrors;
-%         dates = data.dates;
-%         lon = data.lon;
-%         lat = data.lat;
-
-%         if beQuiet <= 1
-%             fprintf(repmat('\b', 1, length(msg) + 1));
-%             fprintf('took %.1f seconds.\n', toc(t));
-%         end
-
-%         return
-
-%     end
-
-%     if ~exist(inputFolder, 'dir')
-%         error('ULMO:LoadData:FileNotFound', ...
-%             'Input folder not found at %s\n', inputFolder);
-%     end
-
-%     inputFileTemplate = 'ssh_grids_*.nc';
-%     inputFiles = {dir(fullfile(inputFolder, inputFileTemplate)).name};
-
-%     if isempty(inputFiles)
-%         error('ULMO:LoadData:FileNotFound', ...
-%             'No input files found at %s, data can be accessed from <a href="%s">PO.DAAC</a>\n', ...
-%             inputFolder, 'https://podaac.jpl.nasa.gov/dataset/SEA_SURFACE_HEIGHT_ALT_GRIDS_L4_2SATS_5DAY_6THDEG_V_JPL2205');
-%     end
-
-%     inputFiles = sort(inputFiles);
-
-%     nDates = length(inputFiles);
-
-%     iDate = 1;
-%     inputFile = inputFiles{iDate};
-%     inputPath = fullfile(inputFolder, inputFile);
-
-%     %% Initialisation and preallocation
-%     wbar = waitbar(iDate / nDates, ...
-%         sprintf('Reading raw data (%d/%d)', iDate, nDates), ...
-%         "Name", upper(mfilename), "CreateCancelBtn", 'setappdata(gcbf,''canceling'',1)');
-
-%     [ssh, sshError, date, dateRef, lon, lat] = readRawData(inputPath);
-
-%     sshsSize = [length(lon), length(lat), nDates];
-%     dates = nan([1, nDates]);
-%     sshs = nan(sshsSize, 'single');
-%     sshErrors = nan(sshsSize, 'single');
-
-%     dates(iDate) = date;
-%     sshs(:, :, iDate) = ssh;
-%     sshErrors(:, :, iDate) = sshError;
-
-%     %% Looping over all files
-%     for iDate = 2:nDates
-%         waitbar(iDate / nDates, wbar, ...
-%             sprintf('Reading raw data (%d/%d)', iDate, nDates));
-
-%         if getappdata(wbar, 'canceling')
-%             delete(wbar);
-%             warning(sprintf('%s:ProcessCancelledByUser', upper(mfilename)), ...
-%             'Processing cancelled');
-%             return
-%         end
-
-%         % Read the data
-%         [ssh, sshError, date] = ...
-%             readRawData(fullfile(inputFolder, inputFiles{iDate}));
-
-%         % Store the data
-%         dates(iDate) = date;
-%         sshs(:, :, iDate) = ssh;
-%         sshErrors(:, :, iDate) = sshError;
-%     end
-
-%     dates = dateRef + days(dates);
-
-%     if ~saveData
-%         delete(wbar);
-%         return
-%     end
-
-%     waitbar(iDate / nDates, wbar, 'Saving data (this may take a while)');
-
-%     if getappdata(wbar, 'canceling')
-%         delete(wbar);
-%         warning(sprintf('%s:ProcessCancelledByUser', upper(mfilename)), ...
-%         'Saving cancelled');
-%         return
-%     end
-
-%     save(outputPath, vars{:}, '-v7.3');
-%     delete(wbar);
-
-%     if beQuiet <= 1
-%         fprintf('[ULMO>%s] Saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">SSH product</a>.\n', ...
-%             callchaintext(callChain), outputPath, outputPath);
-%     end
-
-% end
-
-% % Read the raw data of a sigle time stamp from the NetCDF file
-% function [ssh, sshError, time, timeRef, lon, lat] = readRawData(inputPath)
-%     % Read the data
-%     ssh = ncread(inputPath, 'SLA');
-%     sshError = ncread(inputPath, 'SLA_ERR');
-%     time = ncread(inputPath, 'Time');
-
-%     % Convert format
-%     ssh = single(ssh);
-%     sshError = single(sshError);
-
-%     if nargout <= 3
-%         return
-%     end
-
-%     % Read the time reference if asked
-%     inputInfo = ncinfo(inputPath);
-%     timeInfo = ...
-%         inputInfo.Variables(strcmp({inputInfo.Variables.Name}, 'Time')).Attributes;
-%     timeRef = timeInfo(strcmp({timeInfo.Name}, 'units')).Value;
-%     timeRef = ...
-%         datetime(strrep(timeRef, 'Days since ', ''), ...
-%         "InputFormat", 'yyyy-MM-dd HH:mm:ss');
-
-%     % Read lon/lat if asked
-%     lon = ncread(inputPath, 'Longitude');
-%     lat = ncread(inputPath, 'Latitude');
-%     lon = single(lon);
-%     lat = single(lat);
-% end
-
 % Format the output
 function [sshs, sshErrors, dates, lon, lat] = ...
         formatoutput(sshs, sshErrors, dates, lon, lat, timelim, timeFmt, outputFmt, unit)
@@ -578,8 +386,8 @@ function [sshs, sshErrors, dates, lon, lat] = ...
 end
 
 % Get output path for interpolated data
-function outputPath = ...
-        outputpath(product, intpMthd, timeStep, meshSize, lonOrigin)
+function outPath = outputpath( ...
+        product, intpMthd, timeStep, meshSize, lonOrigin)
 
     arguments (Input)
         product (1, :) char
@@ -590,14 +398,13 @@ function outputPath = ...
     end
 
     arguments (Output)
-        outputPath (1, :) char
+        outPath (1, :) char
     end
 
-    outputFolder = fullfile(getenv('IFILES'), 'SSH');
+    outFolder = fullfile(getenv('IFILES'), 'SSH');
 
-    if isempty(intpMthd) && isempty(timeStep) && ...
-            isempty(meshSize) && isempty(lonOrigin)
-        outputPath = fullfile(outputFolder, sprintf('%s.mat', product));
+    if isempty(intpMthd) && isempty(timeStep) && isempty(meshSize) && isempty(lonOrigin)
+        outPath = fullfile(outFolder, sprintf('%s.mat', product));
         return
     end
 
@@ -605,30 +412,30 @@ function outputPath = ...
 
     if ~isempty(timeStep)
 
-        if ischar(timeStep) && strcmpi(timeStep, 'midmonth')
-            timeStepStr = '-Tmidmonth';
+        if isstring(timeStep) || ischar(timeStep)
+            timeStepStr = sprintf('-T%s', lower(timeStep));
         elseif isduration(timeStep)
             timeStepStr = sprintf('-T%s', erase(sprintf('%s', timeStep), ' '));
         elseif isnumeric(timeStep)
             timeStepStr = sprintf('-T%d', timeStep);
         else
-            error(sprintf('ULMO:%s:InvalidTimeStep', upper(mfilename)), ...
+            error('ULMO:ssh2lonlatt:InvalidTimeStep', ...
                 'Unrecognised time step input for saving: %s', class(timeStep));
         end
 
     end
 
-    spaceIntpStr = '';
+    spatialIntpStr = '';
 
     if ~isempty(meshSize) && ~isempty(lonOrigin)
-        spaceIntpStr = ['-H', num2str(meshSize), 'O', num2str(lonOrigin)];
+        spatialIntpStr = ['-H', num2str(meshSize), 'O', num2str(lonOrigin)];
     elseif ~isempty(meshSize)
-        spaceIntpStr = ['-H', num2str(meshSize)];
+        spatialIntpStr = ['-H', num2str(meshSize)];
     elseif ~isempty(lonOrigin)
-        spaceIntpStr = ['-O', num2str(lonOrigin)];
+        spatialIntpStr = ['-O', num2str(lonOrigin)];
     end
 
-    outputFile = sprintf('%s%s%s-%s.mat', ...
-        product, timeStepStr, spaceIntpStr, intpMthd);
-    outputPath = fullfile(outputFolder, outputFile);
+    outFile = sprintf('%s%s%s-%s.mat', ...
+        product, timeStepStr, spatialIntpStr, intpMthd);
+    outPath = fullfile(outFolder, outFile);
 end
