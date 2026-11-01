@@ -5,7 +5,7 @@
 %       parsegracesourcefile(dataPath)
 %
 % Input arguments
-%   dataPath - Path to a GSM, GAC, or GAD text file with a YAML header.
+%   dataPath - Path to a GSM, GAC, or GAD text file with an RL05 SHM or RL06 YAML header.
 %
 % Output arguments
 %   gravSph - Gravity field spherical harmonics.
@@ -20,7 +20,8 @@
 %       Unit: m.
 %
 % Notes
-%   If the file starts at degree 2, the function inserts zero degrees 0 and 1.
+%   If the file starts at degree 2, the function inserts C00 = 1 and zeros
+%   for the remaining degree 0 and 1 coefficients and their uncertainties.
 %
 % See also
 %   GRACE2PLMT (GRACE2PLMT_NEW), AOD1B2PLMT
@@ -54,10 +55,13 @@ function [gravSph, gravStdSph, epochCentres, epochRange, gravParam, eqRad] = ...
     end
 
     % Extract the data from the file
-    dataBarrier = '# End of YAML header\n';
     dataStr = fileread(dataPath);
-    dataStr = strsplit(dataStr, dataBarrier);
-    data = dataStr{2};
+    dataStart = regexp(dataStr, '(?m)^GRCOF2[ \t]', 'once');
+    if isempty(dataStart)
+        error('ULMO:parsegracesourcefile:InvalidFormat', ...
+            'No GRCOF2 records found in %s', dataPath);
+    end
+    data = dataStr(dataStart:end);
     data = textscan(data, '%s%f%f%f%f%f%f%s%s%s');
     gravSph = [data{2}, data{3}, data{4}, data{5}];
 
@@ -69,7 +73,7 @@ function [gravSph, gravStdSph, epochCentres, epochRange, gravParam, eqRad] = ...
 
     if padLowDegrees
         gravSph = ...
-            [[0, 0, 0, 0; 1, 0, 0, 0; 1, 1, 0, 0]; gravSph];
+            [[0, 0, 1, 0; 1, 0, 0, 0; 1, 1, 0, 0]; gravSph];
     end
 
     %% Quality check
@@ -108,7 +112,18 @@ function [gravSph, gravStdSph, epochCentres, epochRange, gravParam, eqRad] = ...
     end
 
     %% Fetching the parameters
-    header = dataStr{1};
+    header = dataStr(1:dataStart - 1);
+    earth = regexp(header, '(?m)^EARTH[ \t]+([^\r\n]+)', 'tokens', 'once');
+    if ~isempty(earth)
+        parameters = sscanf(regexprep(earth{1}, '[dD]', 'E'), '%f');
+        if numel(parameters) < 2 || any(~isfinite(parameters(1:2))) || any(parameters(1:2) <= 0)
+            error('ULMO:parsegracesourcefile:InvalidHeader', ...
+                'Invalid EARTH parameters in %s', dataPath);
+        end
+        gravParam = parameters(1);
+        eqRad = parameters(2);
+        return
+    end
     lines = strtrim(strsplit(header, '\n'));
 
     gravParam = extractheadervalue(lines, 'earth_gravity_param');
