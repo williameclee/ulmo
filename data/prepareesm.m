@@ -3,19 +3,19 @@
 % The source may reside on an external drive and is never modified.
 %
 % Syntax
-%   path = prepareesm(folder, component)
-%   path = prepareesm(folder, component, "ForceNew", true)
+%   outPath = prepareesm(inFolder, comp)
+%   outPath = prepareesm(inFolder, comp, "ForceNew", true)
 %
 % Input arguments
-%   folder - Folder containing mtmshc_COMPONENT_YYYYMMDD_HH.gfc files.
-%   component - 'A', 'O', 'H', 'I', 'S' or 'AOHIS'.
+%   inFolder - Folder containing mtmshc_COMPONENT_YYYYMMDD_HH.gfc files.
+%   comp - 'A', 'O', 'H', 'I', 'S' or 'AOHIS'.
 %   ForceNew (name-value) - Whether to replace an existing prepared NetCDF file.
 %       Default option: false (an existing destination raises an error).
 %   BeQuiet (name-value) - Whether to suppress the completion message.
 %       Default option: false.
 %
 % Output arguments
-%   path - Prepared NetCDF file at $IFILES/ESM/ESAESM2/ESAESM2_COMPONENT.nc.
+%   outPath - Prepared NetCDF file at $IFILES/ESM/ESAESM2/ESAESM2_COMPONENT.nc.
 %
 % Output file content
 %   degree, order - uint16 vectors on the shared lm dimension. Size: (M, 1).
@@ -25,7 +25,7 @@
 %   equatorRadius (global attribute) - Constant reference radius, metres.
 %
 % Notes
-%   Requires IFILES. Imports at most 32 samples per batch to a temporary NetCDF-4
+%   Imports at most 32 samples per batch to a temporary NetCDF-4
 %   file, then replaces the destination after successful validation/import.
 %   Duplicate/off-grid timestamps and missing harmonic rows are rejected.
 %   Formal errors are absent from ESAESM2; no redundant NaN array is stored.
@@ -37,103 +37,147 @@
 %   ESM2PLMT
 %
 % Created by
-%   2026/10/30
+%   2026/10/31, En-Chi Lee (williameclee@gmail.com)
 
-function path = prepareesm(folder, component, options)
+function outPath = prepareesm(inFolder, comp, options)
+
     arguments (Input)
-        folder {mustBeTextScalar, mustBeFolder}
-        component {mustBeTextScalar, mustBeMember(component, ...
-            ["A", "O", "H", "I", "S", "AOHIS"])}
+        inFolder {mustBeTextScalar, mustBeFolder}
+        comp ...
+            {mustBeTextScalar, mustBeMember(comp, ["A", "O", "H", "I", "S", "AOHIS"])}
         options.ForceNew (1, 1) logical = false
         options.BeQuiet (1, 1) logical = false
     end
+
     arguments (Output)
-        path (1, 1) string
+        outPath (1, 1) string
     end
-    root = getenv('IFILES');
-    assert(~isempty(root), 'ULMO:prepareesm:MissingDataRoot', 'Set IFILES before importing ESM.');
-    destination = fullfile(root, 'ESM', 'ESAESM2');
-    path = fullfile(destination, "ESAESM2_" + string(component) + ".nc");
-    assert(options.ForceNew || ~isfile(path), 'ULMO:prepareesm:FileExists', ...
-        'Prepared data already exist. Use ForceNew=true to replace %s.', path);
-    files = dir(fullfile(folder, '**', "mtmshc_" + string(component) + "_*.gfc"));
-    assert(~isempty(files), 'ULMO:prepareesm:MissingData', 'No ESM files found in %s.', folder);
-    dates = NaT(numel(files), 1);
-    for k = 1:numel(files)
-        token = regexp(files(k).name, '^mtmshc_' + string(component) + ...
+
+    % Discover component files and resolve the configured prepared-data destination.
+    [inFiles, outPath] = getIOpaths(inFolder, comp);
+
+    % Parse timestamps from filenames before ordering the coefficient samples.
+    dates = NaT(numel(inFiles), 1);
+
+    for k = 1:numel(inFiles)
+        token = regexp(inFiles(k).name, '^mtmshc_' + string(comp) + ...
             '_(\d{8}_\d{2})\.gfc$', 'tokens', 'once');
         assert(~isempty(token), 'ULMO:prepareesm:InvalidName', ...
-            'Invalid ESM filename: %s', files(k).name);
+            'Invalid ESM filename: %s', inFiles(k).name);
         dates(k) = datetime(token{1}, 'InputFormat', 'yyyyMMdd_HH');
     end
+
+    % Keep files and timestamps in the same order; reject duplicate/off-grid samples.
     [dates, order] = sort(dates);
-    files = files(order);
+    inFiles = inFiles(order);
     assert(numel(unique(dates)) == numel(dates) && all(mod(hour(dates), 6) == 0), ...
-        'ULMO:prepareesm:InvalidSampling', 'Duplicate or off-grid %s samples.', component);
-    [first, equatorRadius] = readesmfile(fullfile(files(1).folder, files(1).name));
+        'ULMO:prepareesm:InvalidSampling', 'Duplicate or off-grid %s samples.', comp);
+    % Use the first sample to establish the shared harmonic labels and radius.
+    [first, eqRad] = readesmfile(fullfile(inFiles(1).folder, inFiles(1).name));
     labels = first(:, 1:2);
-    if ~isfolder(destination)
-        mkdir(destination);
-    end
-    temporary = string(tempname(destination)) + ".nc";
-    cleanup = onCleanup(@() removetemporary(temporary));
-    createshnc(temporary, labels, dates, 'GRAV', 'Attributes', {'equatorRadius', equatorRadius});
-    for firstIndex = 1:32:numel(files)
-        ids = firstIndex:min(firstIndex + 31, numel(files));
+
+    % Build a temporary output so failed imports do not replace prepared data.
+    tmpPath = string(tempname(outFolder)) + ".nc";
+    cleanup = onCleanup(@() removetemporary(tmpPath));
+    createshnc(tmpPath, labels, dates, 'GRAV', 'Attributes', {'equatorRadius', eqRad});
+
+    % Read and write file in batches
+    for firstIdx = 1:32:numel(inFiles)
+        ids = firstIdx:min(firstIdx + 31, numel(inFiles));
         batch = nan(size(labels, 1), 2, numel(ids));
+
+        % Require every sample to use the same harmonic rows and reference radius.
         for j = 1:numel(ids)
             k = ids(j);
-            [plm, radius] = readesmfile(fullfile(files(k).folder, files(k).name));
+            [plm, fileEqRad] = readesmfile(fullfile(inFiles(k).folder, inFiles(k).name));
             assert(isequal(plm(:, 1:2), labels), 'ULMO:prepareesm:InvalidCoefficients', ...
-                'Harmonic rows differ in %s.', files(k).name);
-            assert(radius == equatorRadius, 'ULMO:prepareesm:InconsistentRadius', ...
-                'Reference radius differs in %s.', files(k).name);
+                'Harmonic rows differ in %s.', inFiles(k).name);
+            assert(fileEqRad == eqRad, 'ULMO:prepareesm:InconsistentRadius', ...
+                'Reference radius differs in %s.', inFiles(k).name);
             batch(:, :, j) = plm(:, 3:4);
         end
-        ncwrite(temporary, 'coefficients', batch, [1, 1, ids(1)]);
+
+        % Write the batch directly into its time slab instead of retaining the record.
+        ncwrite(tmpPath, 'coefficients', batch, [1, 1, ids(1)]);
     end
-    movefile(temporary, path, 'f');
-    caches = dir(fullfile(destination, "ESAESM2_" + string(component) + "_*-T*.nc"));
+
+    % Publish the completed input before removing derived caches that are now stale.
+    movefile(tmpPath, outPath, 'f');
+    caches = dir(fullfile(outFolder, "ESAESM2_" + string(comp) + "-*-T*.nc"));
+
     for k = 1:numel(caches)
         delete(fullfile(caches(k).folder, caches(k).name));
     end
+
     if ~options.BeQuiet
-        fprintf('[ULMO>prepareesm] Saved %s (%d samples).\n', path, numel(dates));
+        fprintf('[ULMO>%s] Saved %s (%d samples).\n', mfilename, outPath, numel(dates));
     end
+
 end
 
+% Delete partial output on failure; do nothing after a successful move.
 function removetemporary(path)
+
     if isfile(path)
         delete(path);
     end
+
 end
 
-function [plm, equatorRadius] = readesmfile(path)
+% Parse one GFC header and coefficient table without changing its normalization.
+function [plm, eqRad] = readesmfile(path)
     contents = fileread(path);
     endHeader = regexp(contents, '(?m)^end_of_head[^\r\n]*\r?\n', 'end', 'once');
-    assert(~isempty(endHeader), 'ULMO:prepareesm:InvalidHeader', ...
-        'Missing end_of_head in %s', path);
-    radiusText = regexp(contents(1:endHeader), '(?m)^radius[ \t]+(\S+)', 'tokens', 'once');
-    equatorRadius = NaN;
-    if ~isempty(radiusText)
-        equatorRadius = str2double(regexprep(radiusText{1}, '[dD]', 'E'));
+    assert(~isempty(endHeader), ...
+        'ULMO:prepareesm:InvalidHeader', 'Missing end_of_head in %s', path);
+    radTxt = regexp(contents(1:endHeader), '(?m)^radius[ \t]+(\S+)', 'tokens', 'once');
+    eqRad = NaN;
+
+    if ~isempty(radTxt)
+        eqRad = str2double(regexprep(radTxt{1}, '[dD]', 'E'));
     end
-    assert(isscalar(equatorRadius) && isfinite(equatorRadius) && equatorRadius > 0, ...
+
+    assert(isscalar(eqRad) && isfinite(eqRad) && eqRad > 0, ...
         'ULMO:prepareesm:InvalidRadius', 'Missing or invalid radius in %s', path);
+    % Accept Fortran D exponents, then sort coefficients into degree-major order.
     data = regexprep(contents(endHeader + 1:end), '[dD]', 'E');
-    columns = textscan(data, '%s%f%f%f%f', 'ReturnOnError', false);
-    plm = [columns{2:5}];
+    cols = textscan(data, '%s%f%f%f%f', 'ReturnOnError', false);
+    plm = [cols{2:5}];
     plm = sortrows(plm, [1, 2]);
-    assert(~isempty(plm) && all(strcmp(columns{1}, 'gfc')) && all(isfinite(plm), 'all') && ...
+    % Compare against the full triangular label set to detect missing or duplicate rows.
+    assert(~isempty(plm) && all(strcmp(cols{1}, 'gfc')) && all(isfinite(plm), 'all') && ...
         all(plm(:, 1:2) >= 0 & plm(:, 1:2) == fix(plm(:, 1:2)), 'all') && ...
         isequal(plm(:, 1:2), harmoniclabels(plm(end, 1))), ...
         'ULMO:prepareesm:InvalidCoefficients', 'Incomplete or invalid harmonics in %s', path);
 end
 
+% Resolve the output under IFILES and recursively discover source component files.
+function [inFiles, outPath] = getIOpaths(inFolder, comp)
+    dataRoot = getenv('IFILES');
+    assert(~isempty(dataRoot), 'ULMO:prepareesm:MissingDataRoot', ...
+    'Set IFILES before importing ESM fields.');
+    outFolder = fullfile(dataRoot, 'ESM', 'ESAESM2');
+    outPath = fullfile(outFolder, "ESAESM2_" + string(comp) + ".nc");
+    assert(options.ForceNew || ~isfile(outPath), ...
+        'ULMO:prepareesm:FileExists', ...
+        'Prepared data already exist. Use ForceNew=true to replace %s.', outPath);
+    inFiles = dir(fullfile(inFolder, '**', "mtmshc_" + string(comp) + "_*.gfc"));
+    assert(~isempty(inFiles), ...
+        'ULMO:prepareesm:MissingData', 'No ESM files found in %s.', inFolder);
+
+    if ~isfolder(outFolder)
+        mkdir(outFolder);
+    end
+
+end
+
+% Construct the complete (degree, order) sequence expected in each GFC file.
 function labels = harmoniclabels(degree)
     labels = zeros((degree + 1) * (degree + 2) / 2, 2);
+
     for l = 0:degree
         rows = l * (l + 1) / 2 + (1:l + 1);
         labels(rows, :) = [repmat(l, l + 1, 1), (0:l)'];
     end
+
 end
