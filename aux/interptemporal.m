@@ -24,8 +24,8 @@
 % Last modified by
 %   2026/09/25, En-Chi Lee (williameclee@arizona.edu)
 
-function [meshIntp, datesIntp] = ...
-        interptemporal(dates, mesh, timeStep, intpMthd, options)
+function [meshIntp, datesIntp] = interptemporal( ...
+        dates, mesh, timeStep, intpMthd, options)
 
     arguments (Input)
         dates {mustBeA(dates, {'datetime', 'numeric'}), mustBeVector}

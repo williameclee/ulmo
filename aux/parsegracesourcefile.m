@@ -1,22 +1,55 @@
-%% PARSEGRACESOURCEFILE
-% Parses a GRACE source file and returns the gravity field and its uncertainty. Should work for both GSM and GAC/GAD files.
+%% PARSEGRACESOURCEFILE - Read spherical harmonic coefficients from a GRACE source file.
 %
-% See also
-%	GRACE2PLMT (GRACE2PLMT_NEW), AOD1B2PLMT
+% Syntax
+%   [gravSph, gravStdSph, epochMidDate, epochRange, gravParam, eqRad] = ...
+%       parsegracesourcefile(dataPath)
+%
+% Input arguments
+%   dataPath - Path to a GSM, GAC, or GAD text file with a YAML header.
+%
+% Output arguments
+%   gravSph - Gravity field spherical harmonics.
+%       Layout is in lmcosi order.
+%   gravStdSph - Gravity field stanard deviation spherical harmonics.
+%   epochMidDate - Midpoint of each epoch.
+%   epochRange - Start and end times of the epoch.
+%       Size: (1, 2).
+%   gravParam - Earth's gravitational parameter from the header.
+%       Unit: m^3/s^2.
+%   eqRad - Mean equatorial radius from the header.
+%       Unit: m.
 %
 % Notes
-%	This is a helper function with limited documentation.
+%   If the file starts at degree 2, the function inserts zero degrees 0 and 1.
 %
-% Authored by
-%   2025/05/20, williameclee@arizona.edu (@williameclee)
+% See also
+%   GRACE2PLMT (GRACE2PLMT_NEW), AOD1B2PLMT
 %
-% Last modified by
-%   2025/07/21, williameclee@arizona.edu (@williameclee)
+% Created by
+%   2025/05/20, En-Chi Lee (williameclee@arizona.edu)
+%
+% Last modified
+%   2026/11/01, En-Chi Lee (williameclee@gmail.com)
 
-function varargout = parsegracesourcefile(dataPath)
+function [gravSph, gravStdSph, epochMidDate, epochRange, gravParam, eqRad] = ...
+        parsegracesourcefile(dataPath)
+
+    arguments (Input)
+        dataPath
+    end
+
+    arguments (Output)
+        gravSph (:, 4) double
+        gravStdSph (:, 4) double
+        epochMidDate (1, 1) datetime
+        epochRange (1, 2) datetime
+        gravParam (1, 1) double
+        eqRad (1, 1) double
+    end
+
     %% Loading data
     if ~exist(dataPath, 'file')
-        error(sprintf('%s:FileNotFound', upper(mfilename)), ...
+        error('ULMO:parsegracesourcefile:FileNotFound', ...
             'File %s does not exist', dataPath)
     end
 
@@ -26,40 +59,39 @@ function varargout = parsegracesourcefile(dataPath)
     dataStr = strsplit(dataStr, dataBarrier);
     data = dataStr{2};
     data = textscan(data, '%s%f%f%f%f%f%f%s%s%s');
-    gravitySph = [data{2}, data{3}, data{4}, data{5}];
-    gravityStdSph = [data{2}, data{3}, data{6}, data{7}];
+    gravSph = [data{2}, data{3}, data{4}, data{5}];
 
     % Sort the data
-    gravitySph = sortrows(gravitySph, [1, 2], 'ascend');
-    gravityStdSph = sortrows(gravityStdSph, [1, 2], 'ascend');
+    [gravSph, rowOrder] = sortrows(gravSph, [1, 2], 'ascend');
 
     % Pad the degree 0 and 1 data (for JPL)
-    if gravitySph(1, 1) == 2
-        gravitySph = ...
-            [[0, 0, 1, 0; 1, 0, 0, 0; 1, 1, 0, 0]; gravitySph];
-    end
+    padLowDegrees = gravSph(1, 1) == 2;
 
-    if gravityStdSph(1, 1) == 2
-        gravityStdSph = ...
-            [[0, 0, 0, 0; 1, 0, 0, 0; 1, 1, 0, 0]; gravityStdSph];
+    if padLowDegrees
+        gravSph = ...
+            [[0, 0, 0, 0; 1, 0, 0, 0; 1, 1, 0, 0]; gravSph];
     end
 
     %% Quality check
-    % Make sure the sizes of the matrices are correct
-    if ~isequal(size(gravitySph), size(gravityStdSph))
-        error(sprintf('%s:DataSizeNotMatch', upper(mfilename)), ...
-            'Size of the gravity field (%d) and the uncertainty (%d) does not match. Please check the input file %s', ...
-            size(gravitySph, 1), size(gravityStdSph, 1), dataPath)
-    end
-
-    if size(gravitySph, 1) ~= addmup(gravitySph(end, 1))
-        error(sprintf('%s:DataSizeNotMatch', upper(mfilename)), ...
+    if size(gravSph, 1) ~= addmup(gravSph(end, 1))
+        error('ULMO:parsegracesourcefile:DataSizeNotMatch', ...
             'Size of the gravity field (%d) does not match the expectation (%d) for degree %d', ...
-            size(gravitySph, 1), addmup(gravitySph(end, 1)), gravitySph(end, 1))
+            size(gravSph, 1), addmup(gravSph(end, 1)), gravSph(end, 1))
     end
 
-    if nargout <= 2
-        varargout = {gravitySph, gravityStdSph};
+    if nargout < 2
+        return
+    end
+
+    gravStdSph = [data{2}, data{3}, data{6}, data{7}];
+    gravStdSph = gravStdSph(rowOrder, :);
+
+    if padLowDegrees
+        gravStdSph = ...
+            [[0, 0, 0, 0; 1, 0, 0, 0; 1, 1, 0, 0]; gravStdSph];
+    end
+
+    if nargout < 3
         return
     end
 
@@ -68,9 +100,8 @@ function varargout = parsegracesourcefile(dataPath)
         "InputFormat", 'yyyyMMdd.HHmm', "Format", 'yyyy/MM/dd HH:mm');
     endDate = datetime(data{9}{1}, ...
         "InputFormat", 'yyyyMMdd.HHmm', "Format", 'yyyy/MM/dd HH:mm');
-    meanDate = mean([startDate, endDate]);
-
-    varargout = {gravitySph, gravityStdSph, meanDate, [startDate, endDate]};
+    epochRange = [startDate, endDate];
+    epochMidDate = mean(epochRange);
 
     if nargout <= 4
         return
@@ -80,11 +111,12 @@ function varargout = parsegracesourcefile(dataPath)
     header = dataStr{1};
     lines = strtrim(strsplit(header, '\n'));
 
-    gravityParam = extractheadervalue(lines, 'earth_gravity_param');
-    equatorRadius = extractheadervalue(lines, 'mean_equator_radius');
+    gravParam = extractheadervalue(lines, 'earth_gravity_param');
 
-    varargout = ...
-        {gravitySph, gravityStdSph, meanDate, [startDate, endDate], gravityParam, equatorRadius};
+    if nargout == 6
+        eqRad = extractheadervalue(lines, 'mean_equator_radius');
+    end
+
 end
 
 %% Subfunctions

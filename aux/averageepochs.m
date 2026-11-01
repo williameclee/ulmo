@@ -7,14 +7,14 @@
 % for that epoch will contain NaNs.
 %
 % Syntax
-%   averages = AVERAGEEPOCHS(nativeDates, mesh, epochs)
-%   [averages, dates] = AVERAGEEPOCHS(nativeDates, mesh, epochs)
+%   avgs = AVERAGEEPOCHS(nativeDates, data, epochs)
+%   [avgs, dates] = AVERAGEEPOCHS(nativeDates, avgs, epochs)
 %
 % Input arguments
 %   nativeDates - Timestamps corresponding to the time dimension of mesh
 %       Data type: DATETIME | DOUBLE (datenum)
 %       Dimension: [M x 1] | [1 x M]
-%   mesh - 3D numeric array of gridded spatial data over time
+%   avgs - 3D numeric array of gridded spatial data over time
 %       The first two dimensions are spatial dimensions and the third
 %       dimension corresponds to nativeDates.
 %       Data type: NUMERIC
@@ -24,7 +24,7 @@
 %       Dimension: [N x 2]
 %
 % Output arguments
-%   averages - 3D array of time-averaged grids for each epoch window
+%   avgs - 3D array of time-averaged grids for each epoch window
 %       Data type: NUMERIC (matches input mesh)
 %       Dimension: [nX x nY x N]
 %   dates - Midpoint timestamps of each epoch window
@@ -37,17 +37,20 @@
 %
 % Created by
 %   2026/09/25, En-Chi Lee (williameclee@arizona.edu)
+%
+% Last modified
+%   2026/11/01, En-Chi Lee (williameclee@gmail.com)
 
-function [averages, dates] = averageepochs(nativeDates, mesh, epochs)
+function [avgs, dates] = averageepochs(nativeDates, data, epochs)
 
     arguments (Input)
         nativeDates {mustBeA(nativeDates, {'datetime', 'numeric'}), mustBeVector}
-        mesh {mustBeNumeric}
+        data {mustBeNumeric}
         epochs (:, 2) {mustBeA(epochs, {'datetime', 'numeric'})}
     end
 
     arguments (Output)
-        averages {mustBeNumeric}
+        avgs {mustBeNumeric}
         dates (:, 1) datetime
     end
 
@@ -64,19 +67,19 @@ function [averages, dates] = averageepochs(nativeDates, mesh, epochs)
         'Epochs must be N-by-2 finite start/end times with end > start.');
     end
 
-    if size(mesh, 3) ~= numel(nativeDates)
+    if size(data, 3) ~= numel(nativeDates)
         error('ULMO:Epochs:DimensionMismatch', ...
         'Mesh time dimension must match native dates.');
     end
 
     dates = epochs(:, 1) + (epochs(:, 2) - epochs(:, 1)) / 2;
-    averages = nan([size(mesh, 1), size(mesh, 2), size(epochs, 1)], 'like', mesh);
+    avgs = nan([size(data, 1), size(data, 2), size(epochs, 1)], 'like', data);
 
     for k = 1:size(epochs, 1)
         selected = nativeDates(:) >= epochs(k, 1) & nativeDates(:) < epochs(k, 2);
 
         if any(selected)
-            averages(:, :, k) = mean(mesh(:, :, selected), 3, 'omitmissing');
+            avgs(:, :, k) = mean(data(:, :, selected), 3, 'omitmissing');
         end
 
     end

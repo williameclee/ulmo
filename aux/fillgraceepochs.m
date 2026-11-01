@@ -40,6 +40,9 @@
 %
 % Created by
 %   2026/09/25, En-Chi Lee (williameclee@arizona.edu)
+%
+% Last modified
+%   2026/11/01, En-Chi Lee (williameclee@gmail.com)
 
 function [epochs, synthetic] = fillgraceepochs(epochs, timelim)
 
@@ -57,49 +60,59 @@ function [epochs, synthetic] = fillgraceepochs(epochs, timelim)
         epochs = datetime(epochs, 'ConvertFrom', 'datenum');
     end
 
-    labels = mean(epochs, 2);
+    midEpochs = mean(epochs, 2);
 
     if isempty(timelim)
-        timelim = [min(labels), max(labels)];
+        timelim = [min(midEpochs), max(midEpochs)];
     elseif isnumeric(timelim)
         timelim = datetime(timelim, 'ConvertFrom', 'datenum');
     end
 
     if ~isdatetime(timelim) || numel(timelim) ~= 2 || any(isnat(timelim))
-        error('ULMO:Epochs:InvalidRange', 'timelim must contain two valid dates.');
+        error('ULMO:fillgraceepochs:InvalidRange', 'timelim must contain two valid dates.');
     end
 
-    % Build whole runs before filtering, even when the request is inside a gap.
-    first = dateshift(min([labels; timelim(:)]), 'start', 'month');
-    last = dateshift(max([labels; timelim(:)]), 'start', 'month');
-    months = (first:calmonths(1):last)';
-    realMonths = dateshift(labels, 'start', 'month');
-    missing = ~ismember(months, realMonths);
-    runStarts = find(diff([false; missing]) == 1);
-    runEnds = find(diff([missing; false]) == -1);
+    % Build whole runs before filtering, even when the request is inside a gap
+    firstMonth = dateshift(min([midEpochs; timelim(:)]), 'start', 'month');
+    lastMonth = dateshift(max([midEpochs; timelim(:)]), 'start', 'month');
+    allMonths = (firstMonth:calmonths(1):lastMonth)';
+    epochMonths = dateshift(midEpochs, 'start', 'month');
+    missing = ~ismember(allMonths, epochMonths);
+    gapStarts = find(diff([false; missing]) == 1); % these months are the start of a gap
+    gapEnds = find(diff([missing; false]) == -1); % these months are the end of a gap
     extra = NaT(0, 2);
 
-    for k = 1:numel(runStarts)
-        a = months(runStarts(k));
-        b = months(runEnds(k)) + calmonths(1);
-        before = realMonths < a;
-        after = realMonths >= b;
-        if any(before), a = max(epochs(before, 2)); end
-        if any(after), b = min(epochs(after, 1)); end
-        if b <= a, continue; end
-        boundaries = months(runStarts(k) + 1:runEnds(k));
-        boundaries = boundaries(boundaries > a & boundaries < b);
-        edges = [a; boundaries; b];
-        extra = [extra; edges(1:end - 1), edges(2:end)]; %#ok<AGROW>
+    for iMonth = 1:numel(gapStarts)
+        monthStart = allMonths(gapStarts(iMonth));
+        monthEnd = allMonths(gapEnds(iMonth)) + calmonths(1);
+        before = epochMonths < monthStart;
+        after = epochMonths >= monthEnd;
+
+        if any(before)
+            monthStart = max(epochs(before, 2));
+        end
+
+        if any(after)
+            monthEnd = min(epochs(after, 1));
+        end
+
+        if monthEnd <= monthStart
+            continue
+        end
+
+        monthBdrys = allMonths(gapStarts(iMonth) + 1:gapEnds(iMonth));
+        monthBdrys = monthBdrys(monthBdrys > monthStart & monthBdrys < monthEnd);
+        missingEdges = [monthStart; monthBdrys; monthEnd];
+        extra = [extra; missingEdges(1:end - 1), missingEdges(2:end)]; %#ok<AGROW>
     end
 
     synthetic = [false(size(epochs, 1), 1); true(size(extra, 1), 1)];
     epochs = [epochs; extra];
-    labels = mean(epochs, 2);
-    keep = labels >= min(timelim) & labels <= max(timelim);
+    midEpochs = mean(epochs, 2);
+    keep = midEpochs >= min(timelim) & midEpochs <= max(timelim);
     epochs = epochs(keep, :);
     synthetic = synthetic(keep);
-    [~, order] = sort(labels(keep));
+    [~, order] = sort(midEpochs(keep));
     epochs = epochs(order, :);
     synthetic = synthetic(order);
 end
