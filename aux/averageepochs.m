@@ -8,13 +8,13 @@
 %
 % Syntax
 %   avgs = AVERAGEEPOCHS(nativeDates, data, epochs)
-%   [avgs, dates] = AVERAGEEPOCHS(nativeDates, avgs, epochs)
+%   [avgs, dates] = AVERAGEEPOCHS(nativeDates, data, epochs)
 %
 % Input arguments
-%   nativeDates - Timestamps corresponding to the time dimension of mesh
+%   nativeDates - Timestamps corresponding to the time dimension of data
 %       Data type: DATETIME | DOUBLE (datenum)
 %       Dimension: [M x 1] | [1 x M]
-%   avgs - 3D numeric array of gridded spatial data over time
+%   data - 3D numeric array of gridded spatial data over time
 %       The first two dimensions are spatial dimensions and the third
 %       dimension corresponds to nativeDates.
 %       Data type: NUMERIC
@@ -25,7 +25,7 @@
 %
 % Output arguments
 %   avgs - 3D array of time-averaged grids for each epoch window
-%       Data type: NUMERIC (matches input mesh)
+%       Integer data produces double averages. Floating-point data keeps its precision.
 %       Dimension: [nX x nY x N]
 %   dates - Midpoint timestamps of each epoch window
 %       Data type: DATETIME
@@ -73,7 +73,12 @@ function [avgs, dates] = averageepochs(nativeDates, data, epochs)
     end
 
     dates = epochs(:, 1) + (epochs(:, 2) - epochs(:, 1)) / 2;
-    avgs = nan([size(data, 1), size(data, 2), size(epochs, 1)], 'like', data);
+    outputSize = [size(data, 1), size(data, 2), size(epochs, 1)];
+    if isinteger(data)
+        avgs = nan(outputSize);
+    else
+        avgs = nan(outputSize, 'like', data);
+    end
 
     for k = 1:size(epochs, 1)
         selected = nativeDates(:) >= epochs(k, 1) & nativeDates(:) < epochs(k, 2);

@@ -34,6 +34,20 @@ classdef epochAveragingTest < matlab.unittest.TestCase
             testCase.verifyEqual(vals(1, 1, 1), 16.5);
         end
 
+        function testAverageEpochsNumericTypes(testCase)
+            % Integer inputs need fractional means and NaNs. Single inputs retain their precision.
+            dates = datetime(2020, 1, [1, 2]);
+            epochs = [dates(1), dates(2) + days(1); dates(2) + days(1), dates(2) + days(2)];
+            data = reshape(int16([-2, 1]), 1, 1, []);
+            averages = averageepochs(dates, data, epochs);
+            testCase.verifyClass(averages, 'double');
+            testCase.verifyEqual(averages(:), [-0.5; NaN]);
+
+            averages = averageepochs(dates, single(data), epochs);
+            testCase.verifyClass(averages, 'single');
+            testCase.verifyEqual(averages(:), single([-0.5; NaN]));
+        end
+
         function testMonthlyMeanWindows(testCase)
             % Selecting a midpoint keeps the entire leap-year February window.
             dates = datetime(2020, 1, 1) + days(0:90);
@@ -162,8 +176,9 @@ classdef epochAveragingTest < matlab.unittest.TestCase
             testCase.verifyEqual(labels, dates([1, 3]));
             testCase.verifyEqual(squeeze(fullGrid(1, 1, :)), [4; 10]);
             ranges = [datetime(2022, 1, 1), datetime(2022, 3, 1); ...
-                      datetime(2020, 2, 10), datetime(2020, 4, 1); ...
-                      datetime(2019, 12, 1), dates(1)];
+                          datetime(2020, 2, 10), datetime(2020, 4, 1); ...
+                          datetime(2019, 12, 1), dates(1)];
+
             for iRange = 1:size(ranges, 1)
                 limits = ranges(iRange, :);
                 keep = labels >= limits(1) & labels <= limits(2);
@@ -172,12 +187,13 @@ classdef epochAveragingTest < matlab.unittest.TestCase
                 testCase.verifyEqual(selected, labels(keep));
                 testCase.verifyEqual(grid, fullGrid(:, :, keep));
             end
+
         end
 
         function testInterpTemporal(testCase)
             % Coarse steps sample the interpolant even when several inputs span one step.
             dates = datetime(2020, 1, 1) + days(0:30)';
-            mesh = reshape((0:30).^2, 1, 1, []);
+            mesh = reshape((0:30) .^ 2, 1, 1, []);
             mesh = cat(1, mesh, mesh + 100);
             [values, labels] = interptemporal(dates, mesh, days(10.5), BeQuiet = true);
             testCase.verifyEqual(labels(:), dates(1) + days([0; 10.5; 21]));
