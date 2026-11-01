@@ -135,7 +135,8 @@ classdef epochAveragingTest < matlab.unittest.TestCase
             testCase.verifyEqual(squeeze(steric(2, 2, :)), [97; 115]);
             testCase.verifyEqual(x, 0:90:360);
             testCase.verifyEqual(y, (-90:90:90)');
-            testCase.verifyTrue(all(isnan(sigma), 'all'));
+            % Unavailable steric uncertainty is represented by a zero grid.
+            testCase.verifyEqual(sigma, zeros(size(steric), 'like', steric));
         end
 
         function testStericGraceTruncation(testCase)
