@@ -193,10 +193,10 @@ classdef epochStatisticsTest < matlab.unittest.TestCase
         function invalidInputsAreRejected(testCase)
             date = datetime(2020, 1, 1);
             epoch = [date, date + days(1)];
-            testCase.verifyError(@() averageepochs(date, 1, fliplr(epoch)), 'ULMO:averageepochs:InvalidEpochs');
-            testCase.verifyError(@() averageepochs(date, 1, [date, NaT]), 'ULMO:averageepochs:InvalidDates');
-            testCase.verifyError(@() averageepochs([date; date], ones(1, 1, 2), epoch), 'ULMO:averageepochs:InvalidDates');
-            testCase.verifyError(@() averageepochs(date, ones(1, 1, 2), epoch), 'ULMO:averageepochs:DimensionMismatch');
+            testCase.verifyError(@() averageepochs(date, 1, fliplr(epoch), days(1)), 'ULMO:averageepochs:InvalidEpochs');
+            testCase.verifyError(@() averageepochs(date, 1, [date, NaT], days(1)), 'ULMO:averageepochs:InvalidDates');
+            testCase.verifyError(@() averageepochs([date; date], ones(1, 1, 2), epoch, days(1)), 'ULMO:averageepochs:InvalidDates');
+            testCase.verifyError(@() averageepochs(date, ones(1, 1, 2), epoch, days(1)), 'ULMO:averageepochs:DimensionMismatch');
             testCase.verifyError(@() averageepochs(date, 1, epoch, 'CheckCompleteness', true), 'ULMO:averageepochs:InvalidTimeStep');
             testCase.verifyError(@() averageepochs(date, 1, epoch, 'SampleStd', -1), 'ULMO:averageepochs:InvalidUncertainty');
             testCase.verifyError(@() averageepochs(date, 1, epoch, 'SampleStd', [1, 2]), 'ULMO:averageepochs:DimensionMismatch');
