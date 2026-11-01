@@ -1,4 +1,4 @@
-# Cached ESAESM2 fields and monthly means
+# ESAESM2 Fields and Monthly Means
 
 `esm2plmt` returns six-hour ESAESM2 fields or calendar-month means, with time
 selection and the coefficient layout and units used by `grace2plmt_new`. Both
@@ -12,7 +12,7 @@ ice), O (ocean), S (solid Earth) and AOHIS (their sum). See the
 [archive README](https://isdc-data.gfz.de/future_missions/esaesm/ESAESM2/README.txt)
 and [Dobslaw et al. (2015)](https://doi.org/10.1007/s00190-014-0787-8).
 
-## Download the full record
+## Download the Full Record
 
 Export `IFILES` with the staging data root, which may be on an external drive.
 The downloader stores GFC files under `$IFILES/ESM/ESAESM2/raw/COMPONENT/`.
@@ -25,15 +25,13 @@ packages are needed:
 python3 data/download_esm.py
 # Full time record for the components used in ocean/land recovery experiments.
 python3 data/download_esm.py --components H I O
-# Optional whole-year subset.
-python3 data/download_esm.py --years 2002 2003 --components O
 ```
 
-The default covers all 17,532 samples per component in the six-hour,
+Every run covers all 17,532 samples per component in the six-hour,
 degree-180 `mtmshc` product. The separate three-hour, degree-360 product and
 other ESAESM2 variants are not included. No GRACE file or epoch is required.
 The programmatic entry point is
-`download_dataset(components, data_root, years=YEARS)` with explicit inputs;
+`download_dataset(components, data_root)` with explicit inputs;
 CLI/environment parsing is separate.
 
 GFZ packages the samples in yearly `.tar.gz` archives. The downloader streams
@@ -52,37 +50,7 @@ years/components survive later failures. Adding components preserves existing
 manifest entries. Proof-of-concept samples share the same raw paths and can
 be reused when downloading the complete record.
 
-### Optional single-epoch proof-of-concept demo
-
-The January 2003 proof-of-concept example demonstrates ingestion, conversion
-and spatial recovery for one GRACE interval. To reproduce it, set `GRACE_FILE`
-to a local GRACE source file:
-
-```sh
-python3 data/download_esm.py --grace-file "$GRACE_FILE" --components H I O
-```
-
-The downloader reads the exact start and exclusive end from GRCOF2 records,
-rather than the inclusive day-of-year range in the filename. Boundaries must
-align with the six-hour grid. `--grace-file` and `--years` are mutually
-exclusive. The demo defaults to H/I/O when no components are supplied.
-Its programmatic entry point remains
-`download_epoch(grace_file, components, data_root)`.
-
-The stream stops after every requested timestamp has been collected; later
-intervals may require reading most of an annual archive.
-`manifests/GRACE_FILENAME.json` records the GRACE input checksum, interval
-and saved samples. Demo runs reread the relevant archives, require existing
-files to match, and preserve completed components. Overlapping intervals
-share raw files but retain separate source manifests. A changed GRACE input
-or interval cannot reuse its previous manifest.
-
-CSR RL06 January 2003 uses `[2003-01-01, 2003-02-01)`, with 124 samples per
-component and midpoint `2003-01-16 12:00`. H, I and O together occupy
-approximately 339 MiB after extraction. These figures describe the demo,
-not the full production download.
-
-## MATLAB processing
+## MATLAB Processing
 
 Configure ULMO and its dependencies on the MATLAB path, including `data/`
 and the usual Earth constants and Love-number data. Raw GFC ingestion is a
@@ -198,19 +166,18 @@ Files live in `$IFILES/ESM/ESAESM2/`. Examples:
 | Product | Filename |
 | --- | --- |
 | Prepared native Stokes input | `ESAESM2_O.nc` |
-| Monthly Stokes | `ESAESM2_O_GRAV-Tmidmonth.nc` |
-| Monthly surface density | `ESAESM2_O_SD_ISSM-Tmidmonth.nc` |
-| Monthly potential | `ESAESM2_O_POT-Tmidmonth.nc` |
+| Monthly Stokes | `ESAESM2_O-GRAV-Tmidmonth.nc` |
+| Monthly surface density | `ESAESM2_O-SD-Tmidmonth.nc` |
+| Monthly potential | `ESAESM2_O-POT-Tmidmonth.nc` |
 
 Averaged caches use the same compact `degree`, `order`, `cs`, `time`,
 `coefficients` and `uncertainty` schema, at native degree. They do not repeat
 labels for each time or for the uncertainty array. Names use `-TSTEP` without
-a method suffix;
-SD includes the Love-number source. A cache hit works even when the prepared
+a method or Love-number source suffix. A cache hit works even when the prepared
 input is temporarily unavailable.
 
 `prepareesm(..., "ForceNew", true)` replaces the prepared input and invalidates
-all its component's `-T*.nc` caches, across units and Love-number sources.
+all its component's `-T*.nc` caches, across units.
 `esm2plmt(..., "ForceNew", true)` only recomputes averages from the prepared
 NetCDF file. If replacing a NetCDF file manually, force a rebuild of affected
 averaged caches. `SaveData=false` prevents cache writes, while allowing reads;
@@ -221,7 +188,7 @@ Existing MAT files are not read or deleted. Run `prepareesm` to generate
 NetCDF inputs; averaged `.nc` caches are built on demand. The importer only
 invalidates derived NetCDF caches for the component it replaces.
 
-### Epoch generation and future GRACE support
+### Epoch Generation and Future GRACE Support
 
 `calendarmonthepochs([firstDate, lastDate])` supplies N-by-2 `[start, end)`
 windows spanning the inclusive date range. Equal endpoints select one month.
@@ -249,7 +216,7 @@ code. The public time-step options are `''` (or `""`) and `'midmonth'`; `'GRACE'
 not enabled in this PR. Any future reference-product choices will also need
 to distinguish their caches.
 
-### Output representation
+### Output Representation
 
 | Output | Default representation |
 | --- | --- |
@@ -265,15 +232,15 @@ also support `OutputFormat="traditional"` (M-by-4-by-N),
 
 `GRAV` returns dimensionless Stokes coefficients without requiring gravity
 conversion data. `SD` uses the existing `convertgravity` implementation, source
-radius, project density of 5517 kg/m³, and the selected load Love numbers
-(default ISSM, with CF degree 1). Its units are kg/m², numerically equal to mm
+radius, project density of 5517 kg/m³, and ISSM load Love numbers
+with CF degree 1. Its units are kg/m², numerically equal to mm
 of fresh water. `POT` follows the existing radius-times-Stokes convention.
 The importer reads a positive finite source radius for unit conversion.
 Descriptive header metadata are not checked or returned; inputs are assumed
 to follow ESAESM2's fully normalized coefficient convention. The importer
 rejects missing or duplicate harmonic rows.
 
-### Uncertainty definition
+### Uncertainty Definition
 
 Raw `esmStdPlmt` contains formal coefficient errors like `graceStdPlmt`, or
 NaN when absent. ESAESM2 supplies no formal errors. Averaged errors use one
@@ -291,48 +258,26 @@ can be temporally correlated, so the empirical estimate is descriptive and
 may underestimate uncertainty; it does not measure model bias or provide an
 autocorrelation-adjusted trend uncertainty.
 
-HI/HIO demo means and empirical errors are calculated from summed raw samples,
-retaining their observed cross-component covariance. When all formal errors
-are supplied, component errors are combined in quadrature under the separate
-assumption of independent component errors.
+## Plot Components
 
-## Save and plot components
-
-The demo reads inputs from the same fixed location. Its output directory is
-specified separately. It selects the exact GRACE reporting window from the
-prepared NetCDF files and averages those samples in the demo, so it also supports windows
-that differ from calendar months:
+The demo reads prepared inputs from the same fixed location and averages the
+exact GRACE reporting window, including windows that differ from calendar months:
 
 ```matlab
-outputFolder = fullfile(getenv("IFILES"), "ESM", "ESAESM2", "processed");
 graceFile = string(getenv("GRACE_FILE"));
-products = esm2plmt_demo(graceFile, outputFolder);
+esm2plmt_demo(graceFile);
+esm2plmt_demo(graceFile, "Loutput", 45, "ColorLimits", [500, 500, 100]);
 ```
 
-This saves native GRAV fields for H/I/O, native and degree-60 SD fields for
-H/I/O/HI/HIO, and a two-column PNG comparing native with truncated H/I/O fields.
-Demo NetCDF files use the same compact schema as averaged caches; the figure
-reader reconstructs the required lmcosi field from coefficients and labels.
-For CSR January 2003, the GRACE interval is the complete calendar month, so
-the demo and `esm2plmt(component, [], "midmonth", ...)` produce the same coefficients.
-`HI` and `HIO` add coefficient columns while preserving one set of harmonic
-labels. Use `Loutput=45` to choose
-a different truncated bandwidth or `MakeFigure=false` to skip plotting.
-
-The figure synthesizes the complete fields on a 0.5-degree grid; it does not
-mask out spectral coastal tails. Each row shares a symmetric color scale.
-Display saturation is stated in the caption and can be changed without
-reprocessing the coefficients:
-
-```matlab
-plot_esm_epoch(products, fullfile(outputFolder, "comparison.png"), ...
-    "ColorLimits", [500, 500, 100]);
-```
+It displays native and truncated H/I/O fields without saving data, caches or
+figures. The default truncated degree is 60. Fields are synthesized on a
+0.5-degree grid without a coastal mask. Each row shares a symmetric color
+scale; values beyond the display limits saturate.
 
 The figure requires `plm2xyz` dependencies and MATLAB's `coastlines` example
 data. Plotting does not change the coefficients or the source data.
 
-## Scientific conventions
+## Scientific Conventions
 
 - ESM fields are anomalies. No WGS84 subtraction, temporal demeaning, filtering,
   real-data low-degree replacement, de-aliasing or GIA removal is applied.
@@ -353,30 +298,12 @@ data. Plotting does not change the coefficients or the source data.
 ## Validation
 
 ```sh
-python3 -B -m pytest unittests/test_esm_download.py unittests/test_esm_verify.py
-python3 data/verify_esm_epoch.py \
-  "$IFILES/ESM/ESAESM2/manifests/${GRACE_FILE##*/}.json" \
-  --output "$IFILES/ESM/ESAESM2/verification"
+python3 -B -m pytest unittests/test_esm_download.py
 ```
 
-The downloader and verifier tests require pytest and run offline using
-temporary directories and mocked archive responses. They check full-record
-scheduling, leap years, resumable annual downloads, local corruption detection,
-and optional GRACE-interval selection. The demo verifier checks file hashes,
-complete six-hour sampling and all degree-180
-harmonics, and independently averages each component using Python's standard
-library. It writes `reference_COMPONENT.bin` as little-endian float64 values,
-with C/S interleaved in ascending degree/order, and `raw_validation.json`.
-Compare a saved native GRAV product in MATLAB as follows:
-
-```matlab
-verificationFolder = fullfile(getenv("IFILES"), "ESM", "ESAESM2", "verification");
-fid = fopen(fullfile(verificationFolder, "reference_O.bin"), "r", "ieee-le");
-reference = fread(fid, [2, 16471], "double")';
-fclose(fid);
-coefficients = readshnc(products.O.nativeGRAV);
-max(abs(coefficients(:, 3:4, 1) - reference), [], "all")
-```
+The downloader tests require pytest and run offline using temporary directories
+and mocked archive responses. They check full-record scheduling, leap years,
+resumable annual downloads, local corruption detection, and component selection.
 
 Run the MATLAB regression tests with:
 
