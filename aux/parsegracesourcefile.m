@@ -1,7 +1,7 @@
 %% PARSEGRACESOURCEFILE - Read spherical harmonic coefficients from a GRACE source file.
 %
 % Syntax
-%   [gravSph, gravStdSph, epochMidDate, epochRange, gravParam, eqRad] = ...
+%   [gravSph, gravStdSph, epochCentres, epochRange, gravParam, eqRad] = ...
 %       parsegracesourcefile(dataPath)
 %
 % Input arguments
@@ -11,7 +11,7 @@
 %   gravSph - Gravity field spherical harmonics.
 %       Layout is in lmcosi order.
 %   gravStdSph - Gravity field stanard deviation spherical harmonics.
-%   epochMidDate - Midpoint of each epoch.
+%   epochCentres - Midpoint of each epoch.
 %   epochRange - Start and end times of the epoch.
 %       Size: (1, 2).
 %   gravParam - Earth's gravitational parameter from the header.
@@ -31,7 +31,7 @@
 % Last modified
 %   2026/11/01, En-Chi Lee (williameclee@gmail.com)
 
-function [gravSph, gravStdSph, epochMidDate, epochRange, gravParam, eqRad] = ...
+function [gravSph, gravStdSph, epochCentres, epochRange, gravParam, eqRad] = ...
         parsegracesourcefile(dataPath)
 
     arguments (Input)
@@ -41,7 +41,7 @@ function [gravSph, gravStdSph, epochMidDate, epochRange, gravParam, eqRad] = ...
     arguments (Output)
         gravSph (:, 4) double
         gravStdSph (:, 4) double
-        epochMidDate (1, 1) datetime
+        epochCentres (1, 1) datetime
         epochRange (1, 2) datetime
         gravParam (1, 1) double
         eqRad (1, 1) double
@@ -101,7 +101,7 @@ function [gravSph, gravStdSph, epochMidDate, epochRange, gravParam, eqRad] = ...
     endDate = datetime(data{9}{1}, ...
         "InputFormat", 'yyyyMMdd.HHmm', "Format", 'yyyy/MM/dd HH:mm');
     epochRange = [startDate, endDate];
-    epochMidDate = mean(epochRange);
+    epochCentres = mean(epochRange);
 
     if nargout <= 4
         return
