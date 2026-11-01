@@ -138,6 +138,41 @@ classdef epochAveragingTest < matlab.unittest.TestCase
             testCase.verifyTrue(all(isnan(sigma), 'all'));
         end
 
+        function testStericGraceTruncation(testCase)
+            % Truncation selects the same midpoints and uses the same native samples as a full run.
+            folder = testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture);
+            testCase.applyFixture(matlab.unittest.fixtures.EnvironmentVariableFixture('IFILES', folder.Folder));
+            testCase.applyFixture(matlab.unittest.fixtures.EnvironmentVariableFixture('ORIGINALGRACEDATA', folder.Folder));
+            stericFolder = fullfile(folder.Folder, 'STERIC', 'EN4c14');
+            refFolder = fullfile(folder.Folder, 'RL06', 'CSR');
+            mkdir(stericFolder);
+            mkdir(refFolder);
+            writelines(["# End of YAML header"; ...
+                        "GRCOF2 0 0 1 0 0 0 20200101.0000 20200201.0000 0"], ...
+                fullfile(refFolder, 'GSM-2_test_BA01_0600'));
+            dates = [datetime(2020, 1, 16, 12, 0, 0); datetime(2020, 2, 1); datetime(2020, 2, 15, 12, 0, 0)];
+            lon = [0, 180];
+            lat = [-90; 0; 90];
+            stericSl = repmat(reshape([4, 8, 12], 1, 1, []), 3, 2);
+            save(fullfile(stericFolder, 'EN4c14-StericSeaLevel.mat'), 'dates', 'lon', 'lat', 'stericSl');
+
+            args = {'Type', 'total', 'BeQuiet', true};
+            [fullGrid, ~, labels] = steric2lonlatt('EN4c14', 'GRACE', [], [], args{:});
+            testCase.verifyEqual(labels, dates([1, 3]));
+            testCase.verifyEqual(squeeze(fullGrid(1, 1, :)), [4; 10]);
+            ranges = [datetime(2022, 1, 1), datetime(2022, 3, 1); ...
+                      datetime(2020, 2, 10), datetime(2020, 4, 1); ...
+                      datetime(2019, 12, 1), dates(1)];
+            for iRange = 1:size(ranges, 1)
+                limits = ranges(iRange, :);
+                keep = labels >= limits(1) & labels <= limits(2);
+                [grid, ~, selected] = steric2lonlatt('EN4c14', 'GRACE', [], limits, args{:}, ...
+                    TruncationBeforeInterpolation = true);
+                testCase.verifyEqual(selected, labels(keep));
+                testCase.verifyEqual(grid, fullGrid(:, :, keep));
+            end
+        end
+
         function testInterpTemporal(testCase)
             dates = datetime(2020, 1, 1) + days(0:99)';
             mesh = cat(1, reshape(1:100, 1, 1, []), reshape(101:200, 1, 1, []));

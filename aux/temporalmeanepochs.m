@@ -19,11 +19,22 @@ function epochs = temporalmeanepochs(nativeDates, timestep, timelim)
     end
 
     if strcmpi(timestep, 'GRACE')
-        epochs = graceepochs({'CSR', 'RL06', 60}, timelim);
-        return
-    end
+        timelim = [max(nativeRange(1), timelim(1)), min(nativeRange(2), timelim(2))];
 
-    if strcmpi(timestep, 'midmonth')
+        if timelim(1) > timelim(2)
+            epochs = NaT(0, 2);
+            return
+        end
+
+        % Use the same gap boundaries as the full product before selecting midpoints
+        if nativeRange(1) == nativeRange(2)
+            monthStart = dateshift(nativeRange(1), 'start', 'month');
+            nativeRange = [monthStart, monthStart + calmonths(1)];
+        end
+
+        epochs = graceepochs({'CSR', 'RL06', 60}, nativeRange);
+        epochCentres = mean(epochs, 2);
+    elseif strcmpi(timestep, 'midmonth')
         epochCentres = midmonth(nativeRange);
         epochStarts = dateshift(epochCentres(:), 'start', 'month');
         epochs = [epochStarts, epochStarts + calmonths(1)];
