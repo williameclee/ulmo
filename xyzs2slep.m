@@ -37,7 +37,8 @@
 %   rankTolerance (name-value) - Relative SVD cutoff in [0,1).
 %       Default max(nObs,J)*eps per mask. Rank deficiency raises an error.
 %   blockSize (name-value) - Maximum points per basis evaluation block.
-%       Default 1024. The dense nPoint-by-J sampled basis is stored.
+%       Default 1024. Only rows used by at least one field are sampled
+%       unless the fifth output requests a reusable design.
 %
 % Output arguments
 %   C - J-by-nField coefficients in field units, using 4*pi real harmonics.
@@ -75,15 +76,15 @@ function [C, V, N, fit, design] = xyzs2slep(vals, grid, varargin)
         varargin = varargin(4:end);
         design = [];
     end
-    [C, V, N, fit, design] = fitFields(vals, design, geometry, nargout >= 4, varargin{:});
+    [C, V, N, fit, design] = fitFields(vals, design, geometry, nargout, varargin{:});
 end
 
-function [C, V, N, fit, design] = fitFields(vals, design, geometry, wantFit, options)
+function [C, V, N, fit, design] = fitFields(vals, design, geometry, outputCount, options)
     arguments (Input)
         vals (:, :) {mustBeNumeric, mustBeReal}
         design
         geometry cell
-        wantFit logical
+        outputCount (1, 1) double
         options.GVN cell = {}
         options.truncation double {mustBeScalarOrEmpty, mustBeFinite, mustBeInteger, mustBePositive} = []
         options.rankTolerance double {mustBeScalarOrEmpty, mustBeFinite, mustBeNonnegative, mustBeLessThan(options.rankTolerance, 1)} = []
@@ -124,8 +125,6 @@ function [C, V, N, fit, design] = fitFields(vals, design, geometry, wantFit, opt
             options.estimateNoiseVariance]) > 1
         error('ULMO:xyzs2slep:ConflictingUncertainty', 'Select only one weight or uncertainty model.');
     end
-    [sigma, covariance, fullFactor, source] = prepareUncertainty(options.dataStd, ...
-        options.dataCovariance, options.estimateNoiseVariance, nPoint);
     valid = ~isnan(vals) & ~isnan(lon) & ~isnan(lat);
     if ~isempty(weight)
         active = weight > 0;
@@ -141,23 +140,48 @@ function [C, V, N, fit, design] = fitFields(vals, design, geometry, wantFit, opt
     if ~isempty(emptyField)
         error('ULMO:xyzs2slep:ObservationSize', 'Field %d has no usable observations.', emptyField);
     end
+    sampleRows = true(nPoint, 1);
     if isempty(geometry)
         validateattributes(design.A, {'double'}, {'real', '2d', 'nrows', nPoint, 'nonempty'});
         validateBasis(design.GVN);
         if size(design.A, 2) ~= numel(design.GVN{2})
             error('ULMO:xyzs2slep:InvalidDesign', 'Design columns must match the retained basis.');
         end
+        basis = design.GVN;
+        sampled = design.A;
     else
-        design = sampleBasis(lon, lat, geometry{3}, geometry{4}, options);
+        basis = selectBasis(geometry{3}, geometry{4}, options);
     end
-
-    [~, V, N] = design.GVN{:};
+    [G, V, N] = basis{:};
     J = numel(V);
+    field = find(nObs < J, 1);
+    if ~isempty(field)
+        error('ULMO:xyzs2slep:InvalidTruncation', ...
+            'Field %d has %d usable points for %d coefficients.', field, nObs(field), J);
+    end
+    if options.estimateNoiseVariance
+        field = find(nObs == J, 1);
+        if ~isempty(field)
+            error('ULMO:xyzs2slep:NoiseDegreesOfFreedom', ...
+                'Field %d needs positive residual degrees of freedom.', field);
+        end
+    end
+    [sigma, covariance, fullFactor, source] = prepareUncertainty(options.dataStd, ...
+        options.dataCovariance, options.estimateNoiseVariance, nPoint);
+    if ~isempty(geometry)
+        if outputCount < 5
+            sampleRows = any(valid, 2);
+        end
+        sampled = sampleBasis(lon(sampleRows), lat(sampleRows), G, geometry{4}, options.blockSize);
+        if outputCount >= 5
+            design = struct('A', sampled, 'lon', lon, 'lat', lat, 'GVN', {basis});
+        end
+    end
     nField = size(vals, 2);
     C = zeros(J, nField);
     fit = struct('nObs', nObs, 'rank', zeros(1, nField), 'condNum', zeros(1, nField), ...
         'residualRms', zeros(1, nField), 'uncSrc', source, 'coeffStds', [], 'coeffCov', []);
-    wantStd = wantFit && options.uncertaintyOutput ~= "none" && source ~= "none";
+    wantStd = outputCount >= 4 && options.uncertaintyOutput ~= "none" && source ~= "none";
     wantCov = wantStd && options.uncertaintyOutput == "covariance";
     if wantStd
         fit.coeffStds = zeros(J, nField);
@@ -171,15 +195,8 @@ function [C, V, N, fit, design] = fitFields(vals, design, geometry, wantFit, opt
         rows = masks(iMask, :).';
         fields = find(group == iMask);
         count = nObs(fields(1));
-        if count < J
-            error('ULMO:xyzs2slep:InvalidTruncation', ...
-                'Field %d has %d usable points for %d coefficients.', fields(1), count, J);
-        end
-        if options.estimateNoiseVariance && count == J
-            error('ULMO:xyzs2slep:NoiseDegreesOfFreedom', ...
-                'Field %d needs positive residual degrees of freedom.', fields(1));
-        end
-        A = design.A(rows, :);
+        % rows indexes the original observations. Only A may be compact.
+        A = sampled(rows(sampleRows), :);
         data = double(vals(rows, fields));
         B = A;
         rhs = data;
@@ -203,7 +220,7 @@ function [C, V, N, fit, design] = fitFields(vals, design, geometry, wantFit, opt
         end
         [C(:, fields), rnk, condition, invFactor] = solveMask(B, rhs, ...
             fields(1), options.rankTolerance, wantStd);
-        if ~wantFit
+        if outputCount < 4
             continue
         end
         residual = data - A * C(:, fields);
@@ -282,7 +299,7 @@ function validateBasis(GVN)
     end
 end
 
-function design = sampleBasis(lon, lat, domain, L, options)
+function basis = selectBasis(domain, L, options)
     validateattributes(L, {'numeric'}, {'real', 'scalar', 'integer', 'nonnegative', 'finite'});
     J = options.truncation;
     if ~isempty(options.GVN)
@@ -316,12 +333,16 @@ function design = sampleBasis(lon, lat, domain, L, options)
     end
     G = double(G(:, order(1:J)));
     V = V(:);
-    A = nan(numel(lon), J);
+    basis = {G, V(1:J), N};
+end
+
+function A = sampleBasis(lon, lat, G, L, blockSize)
+    A = nan(numel(lon), size(G, 2));
     points = find(~isnan(lon) & ~isnan(lat));
     orders = addmout(L);
     scale = sqrt(4 * pi) * (-1).^orders(:);
-    for first = 1:options.blockSize:numel(points)
-        rows = points(first:min(first+options.blockSize-1, end));
+    for first = 1:blockSize:numel(points)
+        rows = points(first:min(first + blockSize - 1, end));
         if L == 0
             A(rows, :) = G;
         else
@@ -329,7 +350,6 @@ function design = sampleBasis(lon, lat, domain, L, options)
             A(rows, :) = (Y .* scale).' * G;
         end
     end
-    design = struct('A', A, 'lon', lon, 'lat', lat, 'GVN', {{G, V(1:J), N}});
 end
 
 function [sigma, cov, fac, src] = prepareUncertainty(sigma, cov, estimate, cnt)
