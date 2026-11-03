@@ -1,0 +1,3 @@
+function p=gia2plmt(varargin)
+    p=zeros(3,6,4);
+end
