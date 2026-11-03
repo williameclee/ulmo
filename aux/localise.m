@@ -1,6 +1,5 @@
-%% LOCALISE
-% Localise spherical harmonic coefficients to a domain.
-% This goal is very similar to that of Slepian functions', but this 
+%% LOCALISE - Localises spherical harmonic coefficients to a domain.
+% The goal is very similar to that of Slepian functions', but this
 % function don't truncate anything.
 %
 % Syntax
@@ -11,7 +10,7 @@
 %
 % Input arguments
 %   Plm - Spherical harmonic coefficients
-%       The coefficients are in the form lmcosi, but the first two columns 
+%       The coefficients are in the form lmcosi, but the first two columns
 %       (degree and order) can be omitted.
 %       Can be three-dimensional, where the third dimension is the data.
 %   domain - Geographic domain
@@ -23,6 +22,9 @@
 %   "K" - Kernel matrix
 %       The default value is computed using KERNELCP_NEW.
 %       For large L, loading the kernel matrix can be time-consuming.
+%   IsError (name-value) - Whether to propagate input standard deviations.
+%       Uses squared kernel entries and assumes uncorrelated input errors.
+%       Default option: false.
 %
 % Output arguments
 %   Plm - Localised spherical harmonic coefficients
@@ -32,10 +34,10 @@
 %   KERNELCP_NEW
 %
 % Authored by
-%   2024/11/20, williameclee@arizona.edu (@williameclee)
+%   2024/11/20, En-Chi Lee (williameclee@arizona.edu)
 %
-% Last modified by
-%   2025/09/25, williameclee@arizona.edu (@williameclee)
+% Last modified
+%   2026/10/26, En-Chi Lee (williameclee@gmail.com)
 
 function [plm, K] = localise(plm, varargin)
     ip = inputParser;
@@ -65,9 +67,9 @@ function [plm, K] = localise(plm, varargin)
         nData = size(plm, 3);
     end
 
-    includesDO = size(plm, 2) == 4;
+    inclDO = size(plm, 2) == 4;
 
-    if includesDO
+    if inclDO
 
         if isempty(L)
             L = max(plm(:, 1));
@@ -136,7 +138,7 @@ function [plm, K] = localise(plm, varargin)
         plm(j2) = ofun;
     end
 
-    if includesDO
+    if inclDO
 
         [order, degree] = addmon(L);
 

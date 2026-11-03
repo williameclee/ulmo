@@ -1,0 +1,5 @@
+%% SOLVESLE - Returns the incoming forcing to test the fingerprint boundary.
+% Created by
+%   2026/10/25, En-Chi Lee (williameclee@gmail.com)
+function [p, s] = solvesle(p, s, varargin)
+end
