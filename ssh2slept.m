@@ -7,11 +7,14 @@
 %
 % Input arguments
 %   product - "NASASSHMonthly". Reads IFILES/SSH/NASASSHMonthly.mat.
-%   domain - Concentration and observation region. A GeoDomain, region name,
+%   domain - Concentration region. A GeoDomain, region name,
 %       GeoDomain argument cell, or polygon in the native longitude frame.
 %   L - Maximum spherical harmonic degree.
 %   timeRange - Optional inclusive pair of datetimes or datenums. Default: all.
 %   unit - Output height unit, "mm" (default) or "m".
+%   observationBuffer - Exterior observation width in degrees of surface arc.
+%       Default 90/L for positive L and zero for L=0. Set zero for a target-only
+%       fit. Valid SSH across all polygon boundaries can contribute.
 %   truncation - Optional retained mode count, with the defaults of xyzs2slep.
 %   GVN - Optional supplied basis {G,V,N}. A nonempty basis forces a fresh
 %       SSH fit and disables reading and writing the projection cache.
@@ -21,7 +24,7 @@
 % Output arguments
 %   sshSlept - Date-by-mode coefficients in the requested height unit.
 %   dates - Native monthly midpoints, as a datetime column.
-%   fit - One row per date: nObs, areaFraction (observed fraction of the
+%   fit - One row per date: nObs (all fitted cells), areaFraction (observed fraction of the
 %       target domain grid area), condNum, residualRms, and partialMonth.
 %       Residual RMS is in the requested height unit.
 %   GVN - Retained harmonic basis, eigenvalues, and full Shannon number.
@@ -31,7 +34,8 @@
 %   weights on the native regular grid. Empty months retain NaN coefficients.
 %   A wholly empty record or an underdetermined nonempty month raises an error.
 %   IFILES/SSH/SlepianExpansions holds one NetCDF-4 file per projection.
-%   Names follow ssh2slept-<product>-<domainId>-<L>-<J>-m.nc. For XY
+%   Positive widths add -exterior<degrees> after the domain ID in the filename.
+%   Zero-width names follow ssh2slept-<product>-<domainId>-<L>-<J>-m.nc. For XY
 %   polygons the domain ID is hash(domain, 'sha1'). J is the fitted mode count.
 %   The cache stores metres, independent of output unit and requested dates.
 %   Cache hits read the time coordinate and selected contiguous time slabs.
@@ -49,6 +53,7 @@ function [sshSlept, dates, fit, GVN] = ssh2slept(product, domain, L, timeRange, 
         L (1, 1) double {mustBeFinite, mustBeInteger, mustBeNonnegative}
         timeRange = []
         options.unit (1, 1) string {mustBeMember(options.unit, ["m", "mm"])} = "mm"
+        options.observationBuffer (1, 1) double {mustBeFinite, mustBeNonnegative, mustBeLessThanOrEqual(options.observationBuffer, 90)} = 90 * (L > 0) / max(L, 1)
         options.truncation double {mustBeScalarOrEmpty, mustBeFinite, mustBeInteger, mustBePositive} = []
         options.GVN cell = {}
         options.ForceNew (1, 1) logical = false
@@ -80,6 +85,9 @@ function [sshSlept, dates, fit, GVN] = ssh2slept(product, domain, L, timeRange, 
         else
             domainId = hash(domain, 'sha1');
         end
+        if options.observationBuffer > 0
+            domainId = sprintf('%s-exterior%.17g', domainId, options.observationBuffer);
+        end
         stem = fullfile(folder, sprintf('ssh2slept-%s-%s-%d', product, domainId, L));
         if ~options.ForceNew
             path = findCache(stem, L, options.truncation);
@@ -98,7 +106,7 @@ function [sshSlept, dates, fit, GVN] = ssh2slept(product, domain, L, timeRange, 
             % Publish only after every variable is complete.
             tmp = [tempname(folder), '.nc'];
             cleanup = onCleanup(@() removePartial(tmp));
-            writeCache(tmp, product, L, sshSlept, dates, fit, GVN);
+            writeCache(tmp, product, L, options.observationBuffer, sshSlept, dates, fit, GVN);
             movefile(tmp, sprintf('%s-%d-m.nc', stem, size(sshSlept, 2)), 'f');
         end
         rows = selectDates(dates, timeRange);
@@ -152,13 +160,19 @@ function [coeffs, dates, fit, basis] = fitRecord(source, domain, L, options)
         all(diff(lon) == 0.5) && all(diff(lat) == 0.5), ...
         'ULMO:ssh2slept:SourceGrid', 'Expected an ascending native 0.5-degree lon-by-lat grid.');
     mask = domainmask(domain, lon, lat, Format='ndgrid', SaveData=false, BeQuiet=true);
+    observationMask = mask;
+    if options.observationBuffer > 0
+        observationMask = domainmask(domain, lon, lat, Format='ndgrid', ...
+            exteriorBuffer=options.observationBuffer, SaveData=options.SaveData, ...
+            ForceNew=options.ForceNew, BeQuiet=true);
+    end
     [gridLon, gridLat] = ndgrid(lon, lat);
     weights = cosd(gridLat);
     totalArea = sum(weights(mask));
     values = reshape(data.sshs, [], nTime);
-    points = find(mask(:) & any(~isnan(values), 2));
+    points = find(observationMask(:) & any(~isnan(values), 2));
     assert(~isempty(points), 'ULMO:ssh2slept:EmptyRecord', ...
-        'No observed SSH cells in the target region over the source record.');
+        'No observed SSH cells in the observation region over the source record.');
     values = values(points, :);
     clear data
     gridLon = gridLon(points);
@@ -166,7 +180,9 @@ function [coeffs, dates, fit, basis] = fitRecord(source, domain, L, options)
     weights = weights(points);
     observed = ~isnan(values);
     nObs = sum(observed, 1).';
-    areaFraction = (weights.' * observed).' / totalArea;
+    target = mask(points);
+    assert(totalArea > 0, 'ULMO:ssh2slept:EmptyTarget', 'The target contains no grid cells.');
+    areaFraction = min(1, (weights(target).' * observed(target, :)).' / totalArea);
     months = find(nObs > 0);
     try
         [c, ~, ~, stats, design] = xyzs2slep(values(:, months), gridLon, gridLat, domain, L, ...
@@ -191,7 +207,7 @@ function [coeffs, dates, fit, basis] = fitRecord(source, domain, L, options)
     fit = table(nObs, areaFraction, condNum, residualRms, partialMonth);
 end
 
-function writeCache(path, product, L, coeffs, dates, fit, basis)
+function writeCache(path, product, L, observationBuffer, coeffs, dates, fit, basis)
     % NetCDF dimension order here follows MATLAB; time is the last coefficient axis.
     write2nc(path, 'coefficients', coeffs.', Dimensions={'mode','time'}, Attributes={'units','m'});
     write2nc(path, 'G', basis{1}, Dimensions={'harmonic','mode'});
@@ -209,6 +225,7 @@ function writeCache(path, product, L, coeffs, dates, fit, basis)
     ncwriteatt(path, 'residualRms', 'units', 'm');
     ncwriteatt(path, '/', 'product', char(product));
     ncwriteatt(path, '/', 'L', L);
+    ncwriteatt(path, '/', 'observationBufferDegrees', observationBuffer);
     ncwriteatt(path, '/', 'N', basis{3});
 end
 

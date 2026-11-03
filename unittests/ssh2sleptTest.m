@@ -38,9 +38,60 @@ classdef ssh2sleptTest < matlab.unittest.TestCase
         end
     end
     methods (Test)
+        function degreeDependentExteriorFit(t)
+            % A constant basis isolates which observed cells enter the fit.
+            G = zeros(61^2,1);
+            G(1) = 1;
+            args = {"NASASSHMonthly",t.Polygon,60};
+            [c,~,fit] = ssh2slept(args{:}, GVN={G,1,1}, unit="m", SaveData=false);
+            data = load(fullfile(t.Folder,'NASASSHMonthly.mat'));
+            % The first month only has SSH at 32.25, 32.75, 33.25 and 33.75 E.
+            t.verifyEqual(fit.nObs(1),3*numel(data.lat));
+            t.verifyEqual(fit.areaFraction(1),0);
+            t.verifyEqual(c(1),900,'AbsTol',1e-8);
+            explicit = ssh2slept(args{:},GVN={G,1,1},observationBuffer=1.5,unit="m");
+            t.verifyEqual(explicit,c,'AbsTol',1e-10);
+            t.verifyLessThanOrEqual(fit.areaFraction,ones(4,1)+eps);
+        end
+
+        function exteriorCacheAndTopology(t)
+            % A ring crossing the grid seam and a separate region with a hole.
+            xy = [0 -4;4 -4;4 4;0 4;0 -4;NaN NaN; ...
+                50 -7;65 -7;65 7;50 7;50 -7;NaN NaN; ...
+                53 -4;53 4;62 4;62 -4;53 -4];
+            lon = 0:359; lat = -9:9;
+            m = domainmask(xy,lon,lat,exteriorBuffer=1.5,BeQuiet=true);
+            at = @(x) m(lat==0,lon==x);
+            t.verifyTrue(at(359) && at(5) && at(54) && at(61));
+            t.verifyFalse(at(358) || at(6) || at(57) || at(30));
+            [cached,x,y] = domainmask(xy,lon,lat,exteriorBuffer=1.5,Format='ndgrid',BeQuiet=true);
+            t.verifyEqual(cached,m.');
+            [expectedX,expectedY] = ndgrid(lon,lat);
+            t.verifyEqual(x,expectedX);
+            t.verifyEqual(y,expectedY);
+            narrow = domainmask(xy,lon,lat,exteriorBuffer=0.4,BeQuiet=true);
+            t.verifyFalse(narrow(lat==0,lon==5));
+        end
+
+        function projectionCachesSeparateWidths(t)
+            args = {"NASASSHMonthly",t.Polygon,1};
+            target = ssh2slept(args{:},observationBuffer=0);
+            [wide,~,fit] = ssh2slept(args{:});
+            t.verifyGreaterThan(fit.nObs(1),0);
+            t.verifyTrue(isnan(target(1)) && isfinite(wide(1)));
+            folder = fullfile(t.Folder,'SlepianExpansions');
+            file = dir(fullfile(folder,'*-exterior90-*.nc'));
+            t.assertNumElements(file,1);
+            t.verifyEqual(ncreadatt(fullfile(folder,file.name),'/', ...
+                'observationBufferDegrees'),90);
+            delete(fullfile(t.Folder,'NASASSHMonthly.mat'));
+            t.verifyEqual(ssh2slept(args{:}),wide);
+            t.verifyEqual(ssh2slept(args{:},observationBuffer=0),target);
+        end
+
         function subsetBuildsWholeRecord(t)
             args = {"NASASSHMonthly",t.Polygon,1};
-            [c,d,fit,b] = ssh2slept(args{:},t.Dates([3 3]),truncation=4);
+            [c,d,fit,b] = ssh2slept(args{:},t.Dates([3 3]),observationBuffer=0, truncation=4);
             t.verifyEqual(c*b{1}.',[3 2 3 4]*1000,'AbsTol',1e-8);
             t.verifyEqual(d,t.Dates(3));
             t.verifySize(b{1},[4 4]);
@@ -55,7 +106,7 @@ classdef ssh2sleptTest < matlab.unittest.TestCase
             t.verifyEqual(ncreadatt(path,'coefficients','units'),'m');
             % Cache hits must work with no source cube, including a new unit.
             delete(fullfile(t.Folder,'NASASSHMonthly.mat'));
-            [allC,dates,allFit,b2] = ssh2slept(args{:},truncation=4,unit="m");
+            [allC,dates,allFit,b2] = ssh2slept(args{:},observationBuffer=0, truncation=4,unit="m");
             t.verifyEqual(dates,t.Dates);
             t.verifyTrue(all(isnan(allC(1,:))));
             t.verifyEqual(allC(2:4,:)*b2{1}.',[(2:4)',repmat([2 3 4],3,1)],'AbsTol',1e-10);
@@ -63,19 +114,19 @@ classdef ssh2sleptTest < matlab.unittest.TestCase
             t.verifyEqual(allFit.partialMonth,[true;false;false;true]);
             t.verifyEqual(allFit.areaFraction([1 4]),[0;1],'AbsTol',1e-12);
             t.verifyEqual(b2,b);
-            [none,when,emptyFit] = ssh2slept(args{:},datetime(2010,[1 2],1),truncation=4);
+            [none,when,emptyFit] = ssh2slept(args{:},datetime(2010,[1 2],1),observationBuffer=0, truncation=4);
             t.verifySize(none,[0 4]);
             t.verifyEmpty(when);
             t.verifyEqual(height(emptyFit),0);
             ncwriteatt(path, 'time', 'units', 'days since 2000-01-01');
-            t.verifyError(@() ssh2slept(args{:},truncation=4), 'ULMO:readshnc:InvalidTime');
+            t.verifyError(@() ssh2slept(args{:},observationBuffer=0, truncation=4), 'ULMO:readshnc:InvalidTime');
         end
         function repeatedMasksKeepMonthsAligned(t)
             % Months two and four share a mask but have different coefficients.
             data = matfile(fullfile(t.Folder, 'NASASSHMonthly.mat'), 'Writable', true);
             data.sshs(:,:,4) = data.sshs(:,:,2) + 2;
             [c, dates, fit] = ssh2slept("NASASSHMonthly", t.Polygon, 1, ...
-                GVN={eye(4), ones(4,1), 4}, unit="m");
+                observationBuffer=0, GVN={eye(4), ones(4,1), 4}, unit="m");
             t.verifyEqual(dates, t.Dates);
             t.verifyTrue(all(isnan([c(1,:), fit.condNum(1), fit.residualRms(1)])));
             t.verifyEqual(c(2:4,:), [(2:4)', repmat([2 3 4],3,1)], 'AbsTol', 1e-10);
@@ -111,40 +162,40 @@ classdef ssh2sleptTest < matlab.unittest.TestCase
             custom = {eye(4), ones(4,1), 4};
             expected = [4 2 3 4];
             folder = fullfile(t.Folder, 'SlepianExpansions');
-            [c, ~, ~, basis] = ssh2slept(args{:}, GVN=custom, unit="m");
+            [c, ~, ~, basis] = ssh2slept(args{:}, observationBuffer=0, GVN=custom, unit="m");
             t.verifyEqual(basis, custom);
             t.verifyEqual(c, expected, 'AbsTol', 1e-10);
             t.verifyFalse(isfolder(folder));
 
             % Make the source differ from its standard cache at the same L and J.
-            [cached, ~, ~, standard] = ssh2slept(args{:}, truncation=4, unit="m");
+            [cached, ~, ~, standard] = ssh2slept(args{:}, observationBuffer=0, truncation=4, unit="m");
             data = matfile(fullfile(t.Folder, 'NASASSHMonthly.mat'), 'Writable', true);
             data.sshs(:,:,4) = 2 * data.sshs(:,:,4);
-            fresh = ssh2slept(args{:}, GVN=standard, truncation=4, unit="m", ...
+            fresh = ssh2slept(args{:}, GVN=standard, observationBuffer=0, truncation=4, unit="m", ...
                 ForceNew=false, SaveData=true);
             t.verifyEqual(fresh, 2 * cached, 'AbsTol', 1e-10);
-            t.verifyEqual(ssh2slept(args{:}, truncation=4, unit="m"), cached);
+            t.verifyEqual(ssh2slept(args{:}, observationBuffer=0, truncation=4, unit="m"), cached);
             t.verifyNumElements(dir(fullfile(folder, '*.nc')), 1);
         end
 
         function separateTruncationsAndRebuild(t)
             args = {"NASASSHMonthly",t.Polygon,1};
-            original = ssh2slept(args{:},truncation=4);
+            original = ssh2slept(args{:},observationBuffer=0, truncation=4);
             % An explicit four-mode file cannot satisfy the one-mode default.
-            defaultC = ssh2slept(args{:});
+            defaultC = ssh2slept(args{:},observationBuffer=0);
             t.verifySize(defaultC,[4 1]);
-            t.verifyEqual(ssh2slept(args{:},truncation=1),defaultC);
+            t.verifyEqual(ssh2slept(args{:},observationBuffer=0, truncation=1),defaultC);
             t.verifyNumElements(dir(fullfile(t.Folder,'SlepianExpansions','*.nc')),2);
             data = matfile(fullfile(t.Folder,'NASASSHMonthly.mat'),'Writable',true);
             data.sshs(:,:,4) = 2*data.sshs(:,:,4);
-            rebuilt = ssh2slept(args{:},t.Dates([4 4]),truncation=4,ForceNew=true);
+            rebuilt = ssh2slept(args{:},t.Dates([4 4]),observationBuffer=0, truncation=4,ForceNew=true);
             t.verifyEqual(rebuilt,2*original(4,:),'AbsTol',1e-8);
             % A failed refresh preserves the complete previous cache.
             bad = nan(size(data,'sshs',1),size(data,'sshs',2));
             bad(1) = 1;
             data.sshs(:,:,4) = bad;
-            t.verifyError(@() ssh2slept(args{:},truncation=4,ForceNew=true),'ULMO:ssh2slept:FitFailed');
-            t.verifyEqual(ssh2slept(args{:},t.Dates([4 4]),truncation=4),rebuilt);
+            t.verifyError(@() ssh2slept(args{:},observationBuffer=0, truncation=4,ForceNew=true),'ULMO:ssh2slept:FitFailed');
+            t.verifyEqual(ssh2slept(args{:},t.Dates([4 4]),observationBuffer=0, truncation=4),rebuilt);
         end
     end
 end
