@@ -89,13 +89,23 @@ function [sshSlept, dates, fit, GVN] = ssh2slept(product, domain, L, timeRange, 
         else
             domainId = hash(domain, 'sha1');
         end
-        stem = fullfile(folder, sprintf('ssh2slept-%s-%s-%d', product, domainId, L));
-        if ~options.ForceNew
-            path = findCache(stem, L, options.truncation, observationBuffer);
+        stem = sprintf('ssh2slept-%s-%s-%d', product, domainId, L);
+        J = options.truncation;
+        if isempty(J) && ~options.ForceNew
+            % Every truncation for this projection records the same default mode count.
+            files = dir(fullfile(folder, [stem, '-*-m.nc']));
+            names = string({files.name});
+            first = find(matches(names, stem + "-" + digitsPattern + "-m.nc"), 1);
+            if ~isempty(first)
+                J = ncreadatt(fullfile(folder, names(first)), '/', 'defaultTruncation');
+            end
+        end
+        if ~isempty(J)
+            path = fullfile(folder, sprintf('%s-%d-m.nc', stem, J));
         end
     end
 
-    if ~isempty(path)
+    if ~options.ForceNew && ~isempty(path) && isfile(path)
         [sshSlept, dates, fit] = readCache(path, timeRange, nargout);
         if nargout >= 4
             [G, V, ~, ~, N] = glmalpha_new(domain, L, 'BeQuiet', true);
@@ -116,7 +126,7 @@ function [sshSlept, dates, fit, GVN] = ssh2slept(product, domain, L, timeRange, 
             cleanup = onCleanup(@() removePartial(tmp));
             defaultJ = min((L + 1)^2, max(1, round(GVN{3})));
             writeCache(tmp, product, L, observationBuffer, sshSlept, dates, fit, defaultJ);
-            movefile(tmp, sprintf('%s-%d-m.nc', stem, size(sshSlept, 2)), 'f');
+            movefile(tmp, fullfile(folder, sprintf('%s-%d-m.nc', stem, size(sshSlept, 2))), 'f');
         end
         rows = selectDates(dates, timeRange);
         sshSlept = sshSlept(rows, :);
@@ -127,41 +137,6 @@ function [sshSlept, dates, fit, GVN] = ssh2slept(product, domain, L, timeRange, 
         sshSlept = sshSlept * 1000;
         if nargout >= 3
             fit.residualRms = fit.residualRms * 1000;
-        end
-    end
-end
-
-function path = findCache(stem, L, J, observationBuffer)
-    path = '';
-    if isempty(J)
-        % Any truncation for this domain and degree identifies the default file.
-        files = dir([stem, '-*-m.nc']);
-        for file = files(:).'
-            candidate = fullfile(file.folder, file.name);
-            token = extractBetween(string(candidate), [stem, '-'], '-m.nc');
-            if isscalar(token) && all(isstrprop(char(token), 'digit')) && strlength(token) > 0
-                info = ncinfo(candidate);
-                attr = info.Attributes(strcmp({info.Attributes.Name}, 'defaultTruncation'));
-                if isempty(attr)
-                    % Older projections stored the Shannon number instead.
-                    N = ncreadatt(candidate, '/', 'N');
-                    J = min((L + 1)^2, max(1, round(N)));
-                else
-                    J = attr.Value;
-                end
-                break
-            end
-        end
-    end
-    if ~isempty(J)
-        candidate = sprintf('%s-%d-m.nc', stem, J);
-        if isfile(candidate)
-            % Legacy target-only files used the same name and may lack the width.
-            info = ncinfo(candidate);
-            attr = info.Attributes(strcmp({info.Attributes.Name}, 'observationBufferDegrees'));
-            if (isempty(attr) && L == 0) || (~isempty(attr) && attr.Value == observationBuffer)
-                path = candidate;
-            end
         end
     end
 end

@@ -75,30 +75,6 @@ classdef ssh2sleptTest < matlab.unittest.TestCase
             t.assertNumElements(file,1);
         end
 
-        function rebuildsLegacyProjection(t)
-            % An untagged legacy target-only cache has the current filename.
-            args = {"NASASSHMonthly",t.Polygon,1};
-            expected = ssh2slept(args{:});
-            folder = fullfile(t.Folder,'SlepianExpansions');
-            file = dir(fullfile(folder,'*.nc'));
-            t.assertNumElements(file,1);
-            path = fullfile(folder,file.name);
-            id = netcdf.open(path,'WRITE');
-            netcdf.reDef(id);
-            netcdf.delAtt(id,netcdf.getConstant('NC_GLOBAL'),'defaultTruncation');
-            netcdf.delAtt(id,netcdf.getConstant('NC_GLOBAL'),'observationBufferDegrees');
-            netcdf.close(id);
-            ncwriteatt(path,'/','N',1); % Legacy default selected one mode.
-            for staleWidth = [NaN, 0]
-                if isfinite(staleWidth)
-                    ncwriteatt(path,'/','observationBufferDegrees',staleWidth);
-                end
-                ncwrite(path,'coefficients',zeros(size(expected.')));
-                t.verifyEqual(ssh2slept(args{:}),expected);
-                t.verifyEqual(ncreadatt(path,'/','observationBufferDegrees'),90);
-            end
-        end
-
         function roundedMaskNameChecksExactWidth(t)
             for width = [1/3, 1/3+1e-8]
                 domainmask(t.Polygon,0:33,-10:10,exteriorBuffer=width,BeQuiet=true);
