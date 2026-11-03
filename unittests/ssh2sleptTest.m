@@ -70,6 +70,21 @@ classdef ssh2sleptTest < matlab.unittest.TestCase
             ncwriteatt(path, 'time', 'units', 'days since 2000-01-01');
             t.verifyError(@() ssh2slept(args{:},truncation=4), 'ULMO:readshnc:InvalidTime');
         end
+        function repeatedMasksKeepMonthsAligned(t)
+            % Months two and four share a mask but have different coefficients.
+            data = matfile(fullfile(t.Folder, 'NASASSHMonthly.mat'), 'Writable', true);
+            data.sshs(:,:,4) = data.sshs(:,:,2) + 2;
+            [c, dates, fit] = ssh2slept("NASASSHMonthly", t.Polygon, 1, ...
+                GVN={eye(4), ones(4,1), 4}, unit="m");
+            t.verifyEqual(dates, t.Dates);
+            t.verifyTrue(all(isnan([c(1,:), fit.condNum(1), fit.residualRms(1)])));
+            t.verifyEqual(c(2:4,:), [(2:4)', repmat([2 3 4],3,1)], 'AbsTol', 1e-10);
+            t.verifyEqual(fit.nObs, [0;60*44;64*36;60*44]);
+            t.verifyEqual(fit.areaFraction(2), fit.areaFraction(4));
+            t.verifyEqual(fit.condNum(2), fit.condNum(4));
+            t.verifyLessThan(fit.residualRms(2:4), 1e-10);
+        end
+
         function computedBasisAndNamedDomain(t)
             region = 'xyzs2slepregionfixture';
             [c, dates, fit, basis] = ssh2slept("NASASSHMonthly", region, 0, ...

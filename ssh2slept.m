@@ -164,32 +164,30 @@ function [coeffs, dates, fit, basis] = fitRecord(source, domain, L, options)
     gridLon = gridLon(points);
     gridLat = gridLat(points);
     weights = weights(points);
-    nObs = sum(~isnan(values), 1).';
-    areaFraction = zeros(nTime, 1);
+    observed = ~isnan(values);
+    nObs = sum(observed, 1).';
+    areaFraction = (weights.' * observed).' / totalArea;
+    months = find(nObs > 0);
+    try
+        [c, ~, ~, stats, design] = xyzs2slep(values(:, months), gridLon, gridLat, domain, L, ...
+            weight=weights, missingPolicy="omit", truncation=options.truncation, GVN=options.GVN);
+    catch cause
+        % Field numbers in solver errors index the nonempty months.
+        field = regexpi(cause.message, '\bfield (\d+)\b', 'tokens', 'once');
+        context = "NASASSHMonthly fit failed";
+        if ~isempty(field)
+            context = context + " for " + string(dates(months(str2double(field{1}))));
+        end
+        err = MException('ULMO:ssh2slept:FitFailed', '%s: %s', context, cause.message);
+        throwAsCaller(addCause(err, cause));
+    end
+    basis = design.GVN;
+    coeffs = nan(nTime, size(c, 1));
     condNum = nan(nTime, 1);
     residualRms = nan(nTime, 1);
-    design = [];
-    for iDate = find(nObs > 0).'
-        field = values(:, iDate);
-        try
-            if isempty(design)
-                [c, ~, ~, stats, design] = xyzs2slep(field, gridLon, gridLat, domain, L, ...
-                    weight=weights, missingPolicy="omit", truncation=options.truncation, GVN=options.GVN);
-                basis = design.GVN;
-                coeffs = nan(nTime, numel(c));
-            else
-                [c, ~, ~, stats] = xyzs2slep(field, design, weight=weights, missingPolicy="omit");
-            end
-        catch cause
-            err = MException('ULMO:ssh2slept:FitFailed', 'NASASSHMonthly fit failed for %s: %s', ...
-                string(dates(iDate)), cause.message);
-            throwAsCaller(addCause(err, cause));
-        end
-        coeffs(iDate, :) = c.';
-        condNum(iDate) = stats.condNum;
-        residualRms(iDate) = stats.residualRms;
-        areaFraction(iDate) = sum(weights(~isnan(field))) / totalArea;
-    end
+    coeffs(months, :) = c.';
+    condNum(months) = stats.condNum;
+    residualRms(months) = stats.residualRms;
     fit = table(nObs, areaFraction, condNum, residualRms, partialMonth);
 end
 
