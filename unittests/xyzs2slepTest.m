@@ -449,15 +449,55 @@ classdef xyzs2slepTest < matlab.unittest.TestCase
                 missingPolicy="omit"), 'ULMO:xyzs2slep:InvalidBasis');
         end
 
+        function samplingUsesOnlyRequiredRows(testCase)
+            % Record the evaluator's input coordinates, including across blocks.
+            tmp = testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture);
+            writelines(["function Y = ylm(~, ~, theta, phi, varargin)"
+                "writematrix(round(rad2deg(phi(:))), [mfilename('fullpath') '.txt'], 'WriteMode','append');"
+                "Y = [ones(1,numel(theta)); zeros(3,numel(theta))];"
+                "end"], fullfile(tmp.Folder, 'ylm.m'));
+            testCase.applyFixture(matlab.unittest.fixtures.PathFixture(tmp.Folder));
+            log = fullfile(tmp.Folder, 'ylm.txt');
+            lon = (1:7)';
+            lat = zeros(7, 1);
+            lat(7) = NaN;
+            % Row 2 never has data, row 4 has zero weight, and row 7 has no latitude.
+            data = [1 NaN; NaN NaN; 2 3; 8 9; NaN 4; 5 NaN; 7 3];
+            weights = [1; 1; 1; 0; 1; 1; 1];
+            args = {lon, lat, 60, 1, 'weight', weights, 'missingPolicy', 'omit', 'blockSize', 2};
+            % With four modes and insufficient points, no evaluator call is allowed.
+            testCase.verifyError(@() xyzs2slep(data, args{:}, GVN={eye(4),ones(4,1),4}), ...
+                'ULMO:xyzs2slep:InvalidTruncation');
+            testCase.verifyFalse(isfile(log));
+            basis = {[1;0;0;0], 1, 1};
+            [c, ~, ~, fit] = xyzs2slep(data, args{:}, GVN=basis);
+            testCase.verifyEqual(readmatrix(log), [1;3;5;6]);
+            [fullC, ~, ~, fullFit, design] = xyzs2slep(data, args{:}, GVN=basis);
+            testCase.verifyEqual(readmatrix(log), [1;3;5;6;(1:6)']);
+            testCase.verifySize(design.A, [7 1]);
+            testCase.verifyTrue(isnan(design.A(7)));
+            testCase.verifyEqual(fullC, c);
+            testCase.verifyEqual(fullFit, fit);
+            % Later data and weights activate both previously unused rows.
+            later = [NaN;2;NaN;4;NaN;NaN;NaN];
+            reused = xyzs2slep(later, design, missingPolicy="omit");
+            testCase.verifyEqual(reused, 3 / sqrt(4*pi), 'AbsTol', 1e-14);
+        end
+
         function batchUncertaintyMatchesSingleFields(testCase)
             values = reshape(cos(1:240),80,3);
             values(1,[1 3]) = NaN;
             values(2:3,2) = NaN;
+            values(7,:) = NaN; % Missing on every epoch, including in the compact solve.
             for model = {{'dataStd',(1:80)'}, {'dataCovariance',toeplitz(0.6.^(0:79))}, ...
                     {'estimateNoiseVariance',true}}
                 args = [model{1}, {'missingPolicy','omit'}];
                 [C,~,~,fit,design] = xyzs2slep(values,testCase.Lon,testCase.Lat, ...
                     testCase.Polygon,3,args{:},truncation=4,uncertaintyOutput="covariance");
+                [compactC,~,~,compactFit] = xyzs2slep(values,testCase.Lon,testCase.Lat, ...
+                    testCase.Polygon,3,args{:},truncation=4,uncertaintyOutput="covariance");
+                testCase.verifyEqual(compactC,C,'AbsTol',2e-12);
+                testCase.verifyEqual(compactFit.coeffCov,fit.coeffCov,'AbsTol',2e-12);
                 for iField = 1:3
                     [c,~,~,singleFit] = xyzs2slep(values(:,iField),design, ...
                         args{:},uncertaintyOutput="covariance");
