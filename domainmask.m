@@ -27,6 +27,8 @@
 %       - 'meshgrid' or 'ndgrid' for (lat, lon, t) or (lon, lat, t)
 %           ordering.
 %       The default format is 'meshgrid'.
+%   exteriorBuffer - Expand the finished polygon by this spherical arc in degrees
+%       using BUFFERM. Default 0. Positive widths have separate mask caches.
 %	ForceNew - Logical flag to force reprocess of the data
 %		The default option is false.
 %	SaveData - Logical flag to save the data
@@ -49,7 +51,7 @@
 %	2025/07/25, williameclee@arizona.edu (@williameclee)
 %
 % Last modified by
-%	2025/11/11, williameclee@arizona.edu (@williameclee)
+%	2026/11/03 (@williameclee)
 
 function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshsize, options)
 
@@ -61,6 +63,7 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
         latlim (1, 2) double {mustBeNumeric} = nan
         meshsize (1, 1) double {mustBeNumeric} = nan
         options.Format (1, :) char {mustBeMember(options.Format, {'meshgrid', 'ndgrid'})} = 'meshgrid'
+        options.exteriorBuffer (1, 1) double {mustBeFinite, mustBeNonnegative, mustBeLessThanOrEqual(options.exteriorBuffer, 90)} = 0
         options.Forcenew (1, 1) logical = false
         options.BeQuiet (1, 1) logical = false
         options.SaveData (1, 1) logical = true
@@ -113,12 +116,12 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
     end
 
     %% Check for existing data
-    dataPath = datapath(domain, meshsize, lonlim, latlim);
+    dataPath = datapath(domain, meshsize, lonlim, latlim, options.exteriorBuffer);
     vars = {'mask' 'lon' 'lat'};
 
     if ~forceNew && ~(isscalar(dataPath) && isnan(dataPath)) && ...
             exist(dataPath, 'file') && all(ismember(vars, who('-file', dataPath)))
-        data = load(dataPath, vars{:});
+        data = load(dataPath, 'mask');
 
         if ~beQuiet
             fprintf('[ULMO>%s] Loaded %s.\n', ...
@@ -126,8 +129,6 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
         end
 
         mask = data.mask;
-        lonn = data.lon;
-        latt = data.lat;
 
         if nargout > 0
 
@@ -158,6 +159,22 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
         domainPoly = domain;
     else
         error('Unsupported domain type: %s', class(domain));
+    end
+
+    if options.exteriorBuffer > 0
+        % Buffer the boundary as open arcs. This treats holes and separate
+        % components alike and preserves the original polygon interior.
+        origin = (min(lonn(:)) + max(lonn(:))) / 2;
+        [x, y] = boundary(domainPoly);
+        [y, x] = interpm(y, x-origin, 1);
+        edges = find(isfinite(x(1:end-1)) & isfinite(x(2:end)));
+        arcs = [edges, edges+1].';
+        arcLon = [x(arcs); nan(1,numel(edges))];
+        arcLat = [y(arcs); nan(1,numel(edges))];
+        [y, x] = bufferm(arcLat(:), arcLon(:), options.exteriorBuffer);
+        % Cut the spherical result back into the grid's longitude frame.
+        [y, x] = maptrimp(y, x, [-90 90], [-180 180]);
+        domainPoly = union(domainPoly, polyshape(x+origin, y));
     end
 
     if min(domainPoly.Vertices(:, 1)) > max(lon)
@@ -196,7 +213,14 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
     end
 
     if ischar(dataPath) && saveData
-        save(dataPath, vars{:}, '-v7.3');
+        folder = fileparts(dataPath);
+        if ~isfolder(folder)
+            mkdir(folder);
+        end
+        tmp = [tempname(folder), '.mat'];
+        cleanup = onCleanup(@() deletePartial(tmp));
+        save(tmp, vars{:}, '-v7.3');
+        movefile(tmp, dataPath, 'f');
 
         if ~beQuiet
             fprintf('[ULMO>%s] Saved %s.\n', ...
@@ -220,10 +244,9 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
 end
 
 %% Subfunctions
-function dataPath = datapath(domain, meshSize, lonLim, latLim)
+function dataPath = datapath(domain, meshSize, lonLim, latLim, exteriorBuffer)
 
-    if ~(isa(domain, 'GeoDomain') || isa(domain, 'char') || isa(domain, 'cell')) ...
-            || isnan(meshSize)
+    if isnan(meshSize)
         % Data cannot be saved if irregular
         dataPath = nan;
         return
@@ -231,20 +254,32 @@ function dataPath = datapath(domain, meshSize, lonLim, latLim)
 
     dataFolder = fullfile(getenv('IFILES'), 'DOMAINMASK');
 
-    if ~exist(dataFolder, 'dir')
-        mkdir(dataFolder);
-    end
-
     if isa(domain, 'GeoDomain')
         domainName = domain.Id;
     elseif iscell(domain)
         domainName = strjoin(string(domain), '_');
+    elseif ischar(domain)
+        domainName = domain;
+    elseif isnumeric(domain) && exteriorBuffer > 0
+        domainName = hash(domain, 'sha1');
+    else
+        dataPath = nan;
+        return
+    end
+    if exteriorBuffer > 0
+        domainName = sprintf('%s-exterior%.17g', domainName, exteriorBuffer);
     end
 
     dataFile = sprintf('DOMAINMASK-%s-H%s-Box%s_%s_%s_%s.mat', ...
         domainName, num2str(meshSize), ...
         num2str(lonLim(1)), num2str(lonLim(2)), num2str(latLim(1)), num2str(latLim(2)));
     dataPath = fullfile(dataFolder, dataFile);
+end
+
+function deletePartial(path)
+    if isfile(path)
+        delete(path);
+    end
 end
 
 function plotdomainmask(mask, lonn, latt)
