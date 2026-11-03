@@ -106,6 +106,27 @@ classdef xyzs2slepTest < matlab.unittest.TestCase
             testCase.verifyEqual(size(C,1), max(1, round(N)));
         end
 
+        function suppliedBasisTruncation(testCase)
+            args = {testCase.Lon, testCase.Lat, testCase.Polygon, 3};
+            data = cosd(testCase.Lat);
+            [V, order] = sort(testCase.Eigenvalues(:), 'descend');
+            G = testCase.Basis(:, order);
+            fullBasis = {G, V, testCase.ShannonNumber};
+            [expected, expectedV] = xyzs2slep(data, args{:});
+            [actual, actualV] = xyzs2slep(data, args{:}, GVN=fullBasis);
+            testCase.verifyEqual(actual, expected, 'AbsTol', 2e-12);
+            testCase.verifyEqual(actualV, expectedV);
+            % Explicit truncation can select all modes of the full basis.
+            allModes = xyzs2slep(data, args{:}, GVN=fullBasis, truncation=16);
+            testCase.verifySize(allModes, [16 1]);
+            % A subset retains its supplied order and count, even above round(N).
+            retained = {G(:, [3 1 2]), V([3 1 2]), testCase.ShannonNumber};
+            [~, subsetV] = xyzs2slep(data, args{:}, GVN=retained);
+            [~, firstV] = xyzs2slep(data, args{:}, GVN=retained, truncation=1);
+            testCase.verifyEqual(subsetV, retained{2});
+            testCase.verifyEqual(firstV, retained{2}(1));
+        end
+
         function missingAndInvalidInputs(testCase)
             data = ones(80, 1); data(3) = NaN;
             lon = testCase.Lon; lon(5) = NaN;

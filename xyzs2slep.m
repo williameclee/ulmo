@@ -17,8 +17,9 @@
 %       G has (L+1)^2 rows in ADDMOUT order. Columns retain their supplied
 %       order and signs. Supply an already-retained basis to fit exactly it.
 %   truncation (name-value) - Number of leading basis columns. Defaults to
-%       all supplied columns for GVN, otherwise max(1,round(N)), bounded
-%       by basis size. A reused design already fixes the truncation.
+%       max(1,round(N)), bounded by basis size, for a computed or supplied
+%       full basis. For a supplied subset, defaults to all its columns.
+%       A reused design already fixes the truncation.
 %   missingPolicy (name-value) - "error" (default) or "omit". Omit NaN
 %       values per field and NaN coordinates across fields. Inf is invalid.
 %   weight (name-value) - Finite nonnegative vector, one per grid point,
@@ -291,9 +292,6 @@ function design = sampleBasis(lon, lat, domain, L, options)
             error('ULMO:xyzs2slep:InvalidBasis', 'Supplied basis degree differs from L.');
         end
         order = 1:size(G, 2);
-        if isempty(J)
-            J = size(G, 2);
-        end
     else
         if isnumeric(domain) && isscalar(domain)
             validateattributes(domain, {'numeric'}, {'real', 'finite', '>', 0, '<=', 180});
@@ -306,8 +304,11 @@ function design = sampleBasis(lon, lat, domain, L, options)
             error('ULMO:xyzs2slep:InvalidDomain', 'Supply a region, polygon or cap radius.');
         end
         [V, order] = sort(V(:), 'descend');
-        if isempty(J)
-            J = min(numel(V), max(1, round(N)));
+    end
+    if isempty(J)
+        J = size(G, 2);
+        if J == (L+1)^2
+            J = min(J, max(1, round(N)));
         end
     end
     if J > size(G, 2)
