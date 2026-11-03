@@ -2,7 +2,8 @@
 %
 % Syntax
 %   [sshSlept, dates, fit, GVN] = ssh2slept("NASASSHMonthly", domain, L)
-%   [__] = ssh2slept(__, timeRange, unit="m", truncation=J, GVN=basis)
+%   [__] = ssh2slept(__, timeRange, unit="m", truncation=J)
+%   [__] = ssh2slept(__, GVN={G,V,N})
 %
 % Input arguments
 %   product - "NASASSHMonthly". Reads IFILES/SSH/NASASSHMonthly.mat.
@@ -11,7 +12,9 @@
 %   L - Maximum spherical harmonic degree.
 %   timeRange - Optional inclusive pair of datetimes or datenums. Default: all.
 %   unit - Output height unit, "mm" (default) or "m".
-%   truncation, GVN - Optional retained mode count and basis, as in xyzs2slep.
+%   truncation - Optional retained mode count, with the defaults of xyzs2slep.
+%   GVN - Optional supplied basis {G,V,N}. A nonempty basis forces a fresh
+%       SSH fit and disables reading and writing the projection cache.
 %   ForceNew - Rebuild after replacing the source product. Default false.
 %   SaveData - Write newly fitted coefficients to NetCDF. Default true.
 %
@@ -28,6 +31,8 @@
 %   weights on the native regular grid. Empty months retain NaN coefficients.
 %   A wholly empty record or an underdetermined nonempty month raises an error.
 %   IFILES/SSH/SlepianExpansions holds one NetCDF-4 file per projection.
+%   Names follow ssh2slept-<product>-<domainId>-<L>-<J>-m.nc. For XY
+%   polygons the domain ID is hash(domain, 'sha1'). J is the fitted mode count.
 %   The cache stores metres, independent of output unit and requested dates.
 %   Cache hits read the time coordinate and selected contiguous time slabs.
 %
@@ -68,14 +73,25 @@ function [sshSlept, dates, fit, GVN] = ssh2slept(product, domain, L, timeRange, 
     root = getenv('IFILES');
     assert(~isempty(root), 'ULMO:ssh2slept:MissingRoot', 'Set IFILES to the data directory.');
     folder = fullfile(root, 'SSH', 'SlepianExpansions');
-    path = fullfile(folder, cacheName(product, domain, L, options.truncation, options.GVN));
+    path = '';
+    if isempty(options.GVN)
+        if isa(domain, 'GeoDomain')
+            domainId = domain.Id;
+        else
+            domainId = hash(domain, 'sha1');
+        end
+        stem = fullfile(folder, sprintf('ssh2slept-%s-%s-%d', product, domainId, L));
+        if ~options.ForceNew
+            path = findCache(stem, L, options.truncation);
+        end
+    end
 
-    if isfile(path) && ~options.ForceNew
+    if ~isempty(path)
         [sshSlept, dates, fit, GVN] = readCache(path, timeRange, nargout);
     else
         source = fullfile(root, 'SSH', product + ".mat");
         [sshSlept, dates, fit, GVN] = fitRecord(source, domain, L, options);
-        if options.SaveData
+        if isempty(options.GVN) && options.SaveData
             if ~isfolder(folder)
                 mkdir(folder);
             end
@@ -83,7 +99,7 @@ function [sshSlept, dates, fit, GVN] = ssh2slept(product, domain, L, timeRange, 
             tmp = [tempname(folder), '.nc'];
             cleanup = onCleanup(@() removePartial(tmp));
             writeCache(tmp, product, L, sshSlept, dates, fit, GVN);
-            movefile(tmp, path, 'f');
+            movefile(tmp, sprintf('%s-%d-m.nc', stem, size(sshSlept, 2)), 'f');
         end
         rows = selectDates(dates, timeRange);
         sshSlept = sshSlept(rows, :);
@@ -98,25 +114,28 @@ function [sshSlept, dates, fit, GVN] = ssh2slept(product, domain, L, timeRange, 
     end
 end
 
-function name = cacheName(product, domain, L, truncation, basis)
-    % Include the actual supplied basis: signs and column order affect C.
-    digest = java.security.MessageDigest.getInstance('SHA-256');
-    digest.update(uint8(jsonencode(domain)));
-    for item = [{truncation}, reshape(basis, 1, [])]
-        value = item{1};
-        validateattributes(value, {'numeric'}, {'real'});
-        digest.update(typecast(uint64(size(value)), 'int8'));
-        if ~isempty(value)
-            bytes = typecast(double(value(:)), 'int8');
-            digest.update(bytes, 0, numel(bytes));
+function path = findCache(stem, L, J)
+    path = '';
+    if isempty(J)
+        % N is common to all standard truncations for this domain and L.
+        % Read the scalar attribute to resolve the default without loading G.
+        files = dir([stem, '-*-m.nc']);
+        for file = files(:).'
+            candidate = fullfile(file.folder, file.name);
+            token = extractBetween(string(candidate), [stem, '-'], '-m.nc');
+            if isscalar(token) && all(isstrprop(char(token), 'digit')) && strlength(token) > 0
+                N = ncreadatt(candidate, '/', 'N');
+                J = min((L + 1)^2, max(1, round(N)));
+                break
+            end
         end
     end
-    key = lower(reshape(dec2hex(typecast(digest.digest(), 'uint8'), 2).', 1, []));
-    region = 'polygon';
-    if isa(domain, 'GeoDomain')
-        region = domain.Id;
+    if ~isempty(J)
+        candidate = sprintf('%s-%d-m.nc', stem, J);
+        if isfile(candidate)
+            path = candidate;
+        end
     end
-    name = sprintf('SSH2SLEPT-%s-%s-L%d-%s.nc', product, region, L, key);
 end
 
 function [coeffs, dates, fit, basis] = fitRecord(source, domain, L, options)
@@ -155,7 +174,7 @@ function [coeffs, dates, fit, basis] = fitRecord(source, domain, L, options)
         try
             if isempty(design)
                 [c, ~, ~, stats, design] = xyzs2slep(field, gridLon, gridLat, domain, L, ...
-                    weight=weights, missingPolicy="omit", GVN=options.GVN, truncation=options.truncation);
+                    weight=weights, missingPolicy="omit", truncation=options.truncation, GVN=options.GVN);
                 basis = design.GVN;
                 coeffs = nan(nTime, numel(c));
             else
