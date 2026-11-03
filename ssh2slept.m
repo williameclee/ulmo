@@ -75,8 +75,6 @@ function [sshSlept, dates, fit, GVN] = ssh2slept(product, domain, L, timeRange, 
     assert((isa(domain, 'GeoDomain') && isscalar(domain)) || ...
         (isnumeric(domain) && ismatrix(domain) && size(domain, 2) == 2), ...
         'ULMO:ssh2slept:Domain', 'Supply a GeoDomain, region name, or polygon.');
-    root = getenv('IFILES');
-    assert(~isempty(root), 'ULMO:ssh2slept:MissingRoot', 'Set IFILES to the data directory.');
     if ~isempty(options.GVN)
         options.ForceNew = true;
         options.SaveData = false;
@@ -87,8 +85,7 @@ function [sshSlept, dates, fit, GVN] = ssh2slept(product, domain, L, timeRange, 
     end
     cacheHit = false;
     if ~options.ForceNew
-        path = getoutputfile(root, product, domain, L, options.truncation);
-        cacheHit = ~isempty(path) && isfile(path);
+        [path, tmp, cacheHit] = getoutputfile(product, domain, L, options.truncation, options.SaveData, false);
     end
 
     if cacheHit
@@ -101,20 +98,14 @@ function [sshSlept, dates, fit, GVN] = ssh2slept(product, domain, L, timeRange, 
             GVN = {G(:, order(1:J)), V(1:J), N};
         end
     else
-        source = fullfile(root, 'SSH', product + ".mat");
-        [sshSlept, dates, fit, GVN] = fitRecord(source, domain, L, observationBuffer, options);
+        [sshSlept, dates, fit, GVN] = fitRecord(product, domain, L, observationBuffer, options);
         if options.SaveData
-            path = getoutputfile(root, product, domain, L, size(sshSlept, 2));
-            folder = fileparts(path);
-            if ~isfolder(folder)
-                mkdir(folder);
+            % A forced fit skips lookup. A first default fit determines J here.
+            if options.ForceNew || isempty(path)
+                [path, tmp] = getoutputfile(product, domain, L, size(sshSlept, 2), true, true);
             end
-            % Publish only after every variable is complete.
-            tmp = [tempname(folder), '.nc'];
-            cleanup = onCleanup(@() removePartial(tmp));
             defaultJ = min((L + 1)^2, max(1, round(GVN{3})));
-            writeCache(tmp, product, L, observationBuffer, sshSlept, dates, fit, defaultJ);
-            movefile(tmp, path, 'f');
+            writeCache(path, tmp, product, L, observationBuffer, sshSlept, dates, fit, defaultJ);
         end
         rows = selectDates(dates, timeRange);
         sshSlept = sshSlept(rows, :);
@@ -129,7 +120,11 @@ function [sshSlept, dates, fit, GVN] = ssh2slept(product, domain, L, timeRange, 
     end
 end
 
-function path = getoutputfile(root, product, domain, L, J)
+function [path, tmp, cacheHit] = getoutputfile(product, domain, L, J, saveData, forceNew)
+    root = getenv('IFILES');
+    assert(isfolder(root), 'ULMO:ssh2slept:MissingRoot', 'Set IFILES to the data directory.');
+    cacheHit = false;
+    tmp = '';
     folder = fullfile(root, 'SSH', 'SlepianExpansions');
     if isa(domain, 'GeoDomain')
         domainId = domain.Id;
@@ -149,19 +144,25 @@ function path = getoutputfile(root, product, domain, L, J)
         J = ncreadatt(fullfile(folder, names(first)), '/', 'defaultTruncation');
     end
     path = fullfile(folder, sprintf('%s-%d-m.nc', stem, J));
+    cacheHit = ~forceNew && isfile(path);
+    if saveData && ~cacheHit
+        if ~isfolder(folder)
+            mkdir(folder);
+        end
+        tmp = [tempname(folder), '.nc'];
+    end
 end
 
-function [coeffs, dates, fit, basis] = fitRecord(source, domain, L, observationBuffer, options)
-    data = load(source, 'sshs', 'dates', 'lon', 'lat', 'partialMonths');
-    dates = data.dates(:);
-    partialMonth = logical(data.partialMonths(:));
-    lon = double(data.lon(:));
-    lat = double(data.lat(:));
+function [coeffs, dates, fit, basis] = fitRecord(product, domain, L, observationBuffer, options)
+    [values, ~, dates, lon, lat, partialMonth] = ssh2lonlatt(product, ...
+        OutputFormat='ndgrid', Unit='m', BeQuiet=true);
+    lon = double(lon(:));
+    lat = double(lat(:));
     nTime = numel(dates);
     assert(isdatetime(dates) && ~isempty(dates) && all(isfinite(dates)) && ...
         issorted(dates, 'strictascend') && numel(partialMonth) == nTime, ...
         'ULMO:ssh2slept:SourceDates', 'Invalid monthly dates or partial-month flags.');
-    assert(isequal(size(data.sshs, 1:3), [numel(lon), numel(lat), nTime]) && ...
+    assert(isequal(size(values, 1:3), [numel(lon), numel(lat), nTime]) && ...
         all(diff(lon) == 0.5) && all(diff(lat) == 0.5), ...
         'ULMO:ssh2slept:SourceGrid', 'Expected an ascending native 0.5-degree lon-by-lat grid.');
     mask = domainmask(domain, lon, lat, Format='ndgrid', SaveData=false, BeQuiet=true);
@@ -174,12 +175,11 @@ function [coeffs, dates, fit, basis] = fitRecord(source, domain, L, observationB
     [gridLon, gridLat] = ndgrid(lon, lat);
     weights = cosd(gridLat);
     totalArea = sum(weights(mask));
-    values = reshape(data.sshs, [], nTime);
+    values = reshape(values, [], nTime);
     points = find(observationMask(:) & any(~isnan(values), 2));
     assert(~isempty(points), 'ULMO:ssh2slept:EmptyRecord', ...
         'No observed SSH cells in the observation region over the source record.');
     values = values(points, :);
-    clear data
     gridLon = gridLon(points);
     gridLat = gridLat(points);
     weights = weights(points);
@@ -212,7 +212,9 @@ function [coeffs, dates, fit, basis] = fitRecord(source, domain, L, observationB
     fit = table(nObs, areaFraction, condNum, residualRms, partialMonth);
 end
 
-function writeCache(path, product, L, observationBuffer, coeffs, dates, fit, defaultJ)
+function writeCache(destination, path, product, L, observationBuffer, coeffs, dates, fit, defaultJ)
+    % Publish only after every variable is complete.
+    cleanup = onCleanup(@() removePartial(path));
     % NetCDF dimension order here follows MATLAB; time is the last coefficient axis.
     write2nc(path, 'coefficients', coeffs.', Dimensions={'mode','time'}, Attributes={'units','m'});
     writeVector(path, 'time', seconds(dates - datetime(2000,1,1)), 'time');
@@ -230,6 +232,7 @@ function writeCache(path, product, L, observationBuffer, coeffs, dates, fit, def
     ncwriteatt(path, '/', 'L', L);
     ncwriteatt(path, '/', 'observationBufferDegrees', observationBuffer);
     ncwriteatt(path, '/', 'defaultTruncation', defaultJ);
+    movefile(path, destination, 'f');
 end
 
 function writeVector(path, name, values, dimension)
