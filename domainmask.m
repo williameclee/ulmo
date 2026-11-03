@@ -117,11 +117,22 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
 
     %% Check for existing data
     dataPath = datapath(domain, meshsize, lonlim, latlim, options.exteriorBuffer);
-    vars = {'mask' 'lon' 'lat'};
+    exteriorBuffer = options.exteriorBuffer;
+    cacheVars = {'mask'};
+    if exteriorBuffer > 0
+        cacheVars{end+1} = 'exteriorBuffer';
+    end
+    vars = [cacheVars, {'lon', 'lat'}];
 
     if ~forceNew && ~(isscalar(dataPath) && isnan(dataPath)) && ...
             exist(dataPath, 'file') && all(ismember(vars, who('-file', dataPath)))
-        data = load(dataPath, 'mask');
+        data = load(dataPath, cacheVars{:});
+    else
+        data = [];
+    end
+
+    % Different exact widths can share the same num2str filename.
+    if ~isempty(data) && (exteriorBuffer == 0 || data.exteriorBuffer == exteriorBuffer)
 
         if ~beQuiet
             fprintf('[ULMO>%s] Loaded %s.\n', ...
@@ -267,7 +278,7 @@ function dataPath = datapath(domain, meshSize, lonLim, latLim, exteriorBuffer)
         return
     end
     if exteriorBuffer > 0
-        domainName = sprintf('%s-exterior%.17g', domainName, exteriorBuffer);
+        domainName = sprintf('%s-E%s', domainName, num2str(exteriorBuffer));
     end
 
     dataFile = sprintf('DOMAINMASK-%s-H%s-Box%s_%s_%s_%s.mat', ...
