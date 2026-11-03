@@ -165,6 +165,7 @@ classdef ssh2sleptTest < matlab.unittest.TestCase
             t.verifyEqual(basis, custom);
             t.verifyEqual(c, expected, 'AbsTol', 1e-10);
             t.verifyFalse(isfolder(folder));
+            t.verifyEmpty(dir(fullfile(getenv('IFILES'), 'DOMAINMASK', '*.mat')));
 
             % Make the source differ from its standard cache at the same L and J.
             [cached, ~, ~, standard] = ssh2slept(args{:}, truncation=4, unit="m");

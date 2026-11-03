@@ -77,35 +77,21 @@ function [sshSlept, dates, fit, GVN] = ssh2slept(product, domain, L, timeRange, 
         'ULMO:ssh2slept:Domain', 'Supply a GeoDomain, region name, or polygon.');
     root = getenv('IFILES');
     assert(~isempty(root), 'ULMO:ssh2slept:MissingRoot', 'Set IFILES to the data directory.');
-    folder = fullfile(root, 'SSH', 'SlepianExpansions');
+    if ~isempty(options.GVN)
+        options.ForceNew = true;
+        options.SaveData = false;
+    end
     observationBuffer = 0;
     if L > 0
         observationBuffer = 90/L;
     end
-    path = '';
-    if isempty(options.GVN)
-        if isa(domain, 'GeoDomain')
-            domainId = domain.Id;
-        else
-            domainId = hash(domain, 'sha1');
-        end
-        stem = sprintf('ssh2slept-%s-%s-%d', product, domainId, L);
-        J = options.truncation;
-        if isempty(J) && ~options.ForceNew
-            % Every truncation for this projection records the same default mode count.
-            files = dir(fullfile(folder, [stem, '-*-m.nc']));
-            names = string({files.name});
-            first = find(matches(names, stem + "-" + digitsPattern + "-m.nc"), 1);
-            if ~isempty(first)
-                J = ncreadatt(fullfile(folder, names(first)), '/', 'defaultTruncation');
-            end
-        end
-        if ~isempty(J)
-            path = fullfile(folder, sprintf('%s-%d-m.nc', stem, J));
-        end
+    cacheHit = false;
+    if ~options.ForceNew
+        path = getoutputfile(root, product, domain, L, options.truncation);
+        cacheHit = ~isempty(path) && isfile(path);
     end
 
-    if ~options.ForceNew && ~isempty(path) && isfile(path)
+    if cacheHit
         [sshSlept, dates, fit] = readCache(path, timeRange, nargout);
         if nargout >= 4
             [G, V, ~, ~, N] = glmalpha_new(domain, L, 'BeQuiet', true);
@@ -117,7 +103,9 @@ function [sshSlept, dates, fit, GVN] = ssh2slept(product, domain, L, timeRange, 
     else
         source = fullfile(root, 'SSH', product + ".mat");
         [sshSlept, dates, fit, GVN] = fitRecord(source, domain, L, observationBuffer, options);
-        if isempty(options.GVN) && options.SaveData
+        if options.SaveData
+            path = getoutputfile(root, product, domain, L, size(sshSlept, 2));
+            folder = fileparts(path);
             if ~isfolder(folder)
                 mkdir(folder);
             end
@@ -126,7 +114,7 @@ function [sshSlept, dates, fit, GVN] = ssh2slept(product, domain, L, timeRange, 
             cleanup = onCleanup(@() removePartial(tmp));
             defaultJ = min((L + 1)^2, max(1, round(GVN{3})));
             writeCache(tmp, product, L, observationBuffer, sshSlept, dates, fit, defaultJ);
-            movefile(tmp, fullfile(folder, sprintf('%s-%d-m.nc', stem, size(sshSlept, 2))), 'f');
+            movefile(tmp, path, 'f');
         end
         rows = selectDates(dates, timeRange);
         sshSlept = sshSlept(rows, :);
@@ -139,6 +127,28 @@ function [sshSlept, dates, fit, GVN] = ssh2slept(product, domain, L, timeRange, 
             fit.residualRms = fit.residualRms * 1000;
         end
     end
+end
+
+function path = getoutputfile(root, product, domain, L, J)
+    folder = fullfile(root, 'SSH', 'SlepianExpansions');
+    if isa(domain, 'GeoDomain')
+        domainId = domain.Id;
+    else
+        domainId = hash(domain, 'sha1');
+    end
+    stem = sprintf('ssh2slept-%s-%s-%d', product, domainId, L);
+    if isempty(J)
+        % Every truncation for this projection records the same default mode count.
+        files = dir(fullfile(folder, [stem, '-*-m.nc']));
+        names = string({files.name});
+        first = find(matches(names, stem + "-" + digitsPattern + "-m.nc"), 1);
+        if isempty(first)
+            path = '';
+            return
+        end
+        J = ncreadatt(fullfile(folder, names(first)), '/', 'defaultTruncation');
+    end
+    path = fullfile(folder, sprintf('%s-%d-m.nc', stem, J));
 end
 
 function [coeffs, dates, fit, basis] = fitRecord(source, domain, L, observationBuffer, options)
