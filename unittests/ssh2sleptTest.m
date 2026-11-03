@@ -38,6 +38,18 @@ classdef ssh2sleptTest < matlab.unittest.TestCase
         end
     end
     methods (Test)
+        function readerReturnsNativeMonthlyFlags(t)
+            % Subsetting by time must keep flags aligned with the native grid.
+            limits = t.Dates([3 4]);
+            [ssh, sigma, dates, lon, lat, partial] = ssh2lonlatt("NASASSHMonthly", ...
+                [], [], limits, OutputFormat='ndgrid', BeQuiet=true);
+            t.verifySize(ssh,[numel(lon), numel(lat), 2]);
+            t.verifyEmpty(sigma);
+            t.verifyEqual(dates,limits);
+            t.verifyEqual(partial,[false;true]);
+            t.verifyNumElements(dir(fullfile(t.Folder,'*.mat')),1);
+        end
+
         function degreeDependentExteriorFit(t)
             % A constant basis isolates which observed cells enter the fit.
             G = zeros(61^2,1);
