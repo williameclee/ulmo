@@ -144,8 +144,9 @@ classdef ssh2sleptTest < matlab.unittest.TestCase
             t.verifySize(c, [3 1]);
             t.verifySize(basis{1}, [1 1]);
             t.verifyGreaterThan(fit.nObs, 0);
+            % ForceNew must also save the first cache when the folder is absent.
             fromObject = ssh2slept("NASASSHMonthly", GeoDomain(region), 0, ...
-                t.Dates([2 4]), unit="m");
+                t.Dates([2 4]), ForceNew=true, unit="m");
             t.verifyEqual(fromObject, c, 'AbsTol', 1e-12);
             geo = GeoDomain(region);
             file = dir(fullfile(t.Folder,'SlepianExpansions','*.nc'));
