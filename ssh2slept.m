@@ -36,12 +36,16 @@
 %   polygons the domain ID is hash(domain, 'sha1'). J is the fitted mode count.
 %   The cache stores metres, independent of output unit and requested dates.
 %   Cache hits read the time coordinate and selected contiguous time slabs.
+%   Requesting GVN on a cache hit loads the domain basis through glmalpha_new.
 %
 % See also
-%   XYZS2SLEP, SSH2LONLATT, DOMAINMASK, READSHNCTIME
+%   XYZS2SLEP, SSH2LONLATT, DOMAINMASK, READSHNCTIME, GLMALPHA_NEW
 %
 % Created by
 %   2026/11/03
+%
+% Last modified
+%   2026/11/04
 
 function [sshSlept, dates, fit, GVN] = ssh2slept(product, domain, L, timeRange, options)
     arguments (Input)
@@ -92,7 +96,14 @@ function [sshSlept, dates, fit, GVN] = ssh2slept(product, domain, L, timeRange, 
     end
 
     if ~isempty(path)
-        [sshSlept, dates, fit, GVN] = readCache(path, timeRange, nargout);
+        [sshSlept, dates, fit] = readCache(path, timeRange, nargout);
+        if nargout >= 4
+            [G, V, ~, ~, N] = glmalpha_new(domain, L, 'BeQuiet', true);
+            % Match the eigenvalue order and retained columns used by xyzs2slep.
+            [V, order] = sort(V(:), 'descend');
+            J = size(sshSlept, 2);
+            GVN = {G(:, order(1:J)), V(1:J), N};
+        end
     else
         source = fullfile(root, 'SSH', product + ".mat");
         [sshSlept, dates, fit, GVN] = fitRecord(source, domain, L, observationBuffer, options);
@@ -103,7 +114,8 @@ function [sshSlept, dates, fit, GVN] = ssh2slept(product, domain, L, timeRange, 
             % Publish only after every variable is complete.
             tmp = [tempname(folder), '.nc'];
             cleanup = onCleanup(@() removePartial(tmp));
-            writeCache(tmp, product, L, observationBuffer, sshSlept, dates, fit, GVN);
+            defaultJ = min((L + 1)^2, max(1, round(GVN{3})));
+            writeCache(tmp, product, L, observationBuffer, sshSlept, dates, fit, defaultJ);
             movefile(tmp, sprintf('%s-%d-m.nc', stem, size(sshSlept, 2)), 'f');
         end
         rows = selectDates(dates, timeRange);
@@ -122,15 +134,21 @@ end
 function path = findCache(stem, L, J, observationBuffer)
     path = '';
     if isempty(J)
-        % N is common to all standard truncations for this domain and L.
-        % Read the scalar attribute to resolve the default without loading G.
+        % Any truncation for this domain and degree identifies the default file.
         files = dir([stem, '-*-m.nc']);
         for file = files(:).'
             candidate = fullfile(file.folder, file.name);
             token = extractBetween(string(candidate), [stem, '-'], '-m.nc');
             if isscalar(token) && all(isstrprop(char(token), 'digit')) && strlength(token) > 0
-                N = ncreadatt(candidate, '/', 'N');
-                J = min((L + 1)^2, max(1, round(N)));
+                info = ncinfo(candidate);
+                attr = info.Attributes(strcmp({info.Attributes.Name}, 'defaultTruncation'));
+                if isempty(attr)
+                    % Older projections stored the Shannon number instead.
+                    N = ncreadatt(candidate, '/', 'N');
+                    J = min((L + 1)^2, max(1, round(N)));
+                else
+                    J = attr.Value;
+                end
                 break
             end
         end
@@ -209,11 +227,9 @@ function [coeffs, dates, fit, basis] = fitRecord(source, domain, L, observationB
     fit = table(nObs, areaFraction, condNum, residualRms, partialMonth);
 end
 
-function writeCache(path, product, L, observationBuffer, coeffs, dates, fit, basis)
+function writeCache(path, product, L, observationBuffer, coeffs, dates, fit, defaultJ)
     % NetCDF dimension order here follows MATLAB; time is the last coefficient axis.
     write2nc(path, 'coefficients', coeffs.', Dimensions={'mode','time'}, Attributes={'units','m'});
-    write2nc(path, 'G', basis{1}, Dimensions={'harmonic','mode'});
-    writeVector(path, 'V', basis{2}, 'mode');
     writeVector(path, 'time', seconds(dates - datetime(2000,1,1)), 'time');
     ncwriteatt(path, 'time', 'units', 'seconds since 2000-01-01 00:00:00');
     ncwriteatt(path, 'time', 'calendar', 'proleptic_gregorian');
@@ -228,7 +244,7 @@ function writeCache(path, product, L, observationBuffer, coeffs, dates, fit, bas
     ncwriteatt(path, '/', 'product', char(product));
     ncwriteatt(path, '/', 'L', L);
     ncwriteatt(path, '/', 'observationBufferDegrees', observationBuffer);
-    ncwriteatt(path, '/', 'N', basis{3});
+    ncwriteatt(path, '/', 'defaultTruncation', defaultJ);
 end
 
 function writeVector(path, name, values, dimension)
@@ -236,7 +252,7 @@ function writeVector(path, name, values, dimension)
     ncwrite(path, name, values);
 end
 
-function [coeffs, dates, fit, basis] = readCache(path, timeRange, outputCount)
+function [coeffs, dates, fit] = readCache(path, timeRange, outputCount)
     dates = readshnctime(path);
     rows = find(selectDates(dates, timeRange));
     dates = dates(rows);
@@ -259,10 +275,6 @@ function [coeffs, dates, fit, basis] = readCache(path, timeRange, outputCount)
             end
             fit.(name) = values;
         end
-    end
-    basis = {};
-    if outputCount >= 4
-        basis = {ncread(path, 'G'), ncread(path, 'V'), ncreadatt(path, '/', 'N')};
     end
 end
 

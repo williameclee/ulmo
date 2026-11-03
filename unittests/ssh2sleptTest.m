@@ -85,8 +85,10 @@ classdef ssh2sleptTest < matlab.unittest.TestCase
             path = fullfile(folder,file.name);
             id = netcdf.open(path,'WRITE');
             netcdf.reDef(id);
+            netcdf.delAtt(id,netcdf.getConstant('NC_GLOBAL'),'defaultTruncation');
             netcdf.delAtt(id,netcdf.getConstant('NC_GLOBAL'),'observationBufferDegrees');
             netcdf.close(id);
+            ncwriteatt(path,'/','N',1); % Legacy default selected one mode.
             for staleWidth = [NaN, 0]
                 if isfinite(staleWidth)
                     ncwriteatt(path,'/','observationBufferDegrees',staleWidth);
@@ -120,6 +122,9 @@ classdef ssh2sleptTest < matlab.unittest.TestCase
             expectedName = sprintf('ssh2slept-NASASSHMonthly-%s-1-4-m.nc',hash(t.Polygon,'sha1'));
             t.verifyEqual(file.name,expectedName);
             path = fullfile(file.folder,file.name);
+            info = ncinfo(path);
+            t.verifyEmpty(intersect({info.Variables.Name}, {'G','V','N'}));
+            t.verifyEmpty(intersect({info.Attributes.Name}, {'G','V','N'}));
             t.verifySize(ncread(path,'coefficients'),[4 4]);
             t.verifyEqual(ncreadatt(path,'coefficients','units'),'m');
             % Cache hits must work with no source cube, including a new unit.
@@ -200,7 +205,10 @@ classdef ssh2sleptTest < matlab.unittest.TestCase
             args = {"NASASSHMonthly",t.Polygon,1};
             original = ssh2slept(args{:},truncation=4);
             % An explicit four-mode file cannot satisfy the one-mode default.
-            defaultC = ssh2slept(args{:});
+            [defaultC,~,~,expectedBasis] = ssh2slept(args{:});
+            [~,~,~,cachedBasis] = ssh2slept(args{:});
+            t.verifyEqual(cachedBasis,expectedBasis);
+            t.verifySize(cachedBasis{1},[4 1]);
             t.verifySize(defaultC,[4 1]);
             t.verifyEqual(ssh2slept(args{:},truncation=1),defaultC);
             t.verifyNumElements(dir(fullfile(t.Folder,'SlepianExpansions','*.nc')),2);
