@@ -39,6 +39,7 @@
 %       are steric, thermosteric, halosteric, nonThermosteric and
 %       nonHalosteric. Supported shallow/deep names prefix and capitalise
 %       the component, e.g. shallowHalostericGmsl. Original variables remain.
+%   gmslCreationDate - Scalar datetime recording when the means were processed.
 %
 % Notes
 %   All applicable means are calculated together, then only one is returned.
@@ -112,6 +113,7 @@ function [gmsl, dates] = steric2gmsl(product, options)
         means = calculatemeans(inputPath, gridNames, available, cacheNames, supported, ...
             numel(dates), weights, keepLon, transposeGrid, precision);
         if options.SaveData
+            means.gmslCreationDate = datetime('now');
             save(inputPath, '-struct', 'means', '-append');
             if options.BeQuiet < 1
                 fprintf('[ULMO>steric2gmsl] Saved native means for %s.\n', char(product));

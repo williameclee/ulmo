@@ -141,6 +141,8 @@ appends individual metre-valued vectors to the native MAT file resolved through
 `shallowHalostericGmsl`. Unsupported combinations have no cached vector and raise
 an error when requested. All vectors align with native `dates`; existing grids
 are preserved. GMSL variables are distinct from gridded `*stericSl` variables.
+The scalar datetime `gmslCreationDate` records the processing time when means
+are saved; it is not currently used for cache validation.
 
 The fixed support reference is full halosteric, otherwise full total, otherwise
 full thermosteric. Cells need at least 80% finite and 80% finite nonzero reference
