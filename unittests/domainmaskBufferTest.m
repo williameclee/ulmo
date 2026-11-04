@@ -20,7 +20,7 @@ classdef domainmaskBufferTest < matlab.unittest.TestCase
     end
     methods (Test)
         function highLatitudeBufferAccuracy(t)
-            % Track issue #91 without failing the suite for its known limitation.
+            % Spherical endpoint distances include the high-latitude case in #91.
             xy = [-4 73; 4 73; 4 77; -4 77; -4 73];
             lon = -180:180;
             lat = -90:90;
@@ -31,10 +31,87 @@ classdef domainmaskBufferTest < matlab.unittest.TestCase
             % This point is within the buffer because a vertex is only 8.895 deg away.
             vertexDistance = distance(85, 32, 77, 4);
             t.assertLessThan(vertexDistance, bufferWidth);
-            % Filter only the known exclusion; computation errors still fail.
-            % Replace this assumption with a verification when issue #91 is fixed.
-            t.assumeTrue(mask(lat == 85, lon == 32), ...
-                'Known buffer-accuracy limitation: https://github.com/williameclee/ulmo/issues/91');
+            t.verifyTrue(mask(lat == 85, lon == 32));
+        end
+
+        function fullLongitudeBand(t)
+            % Longitude cuts must not disrupt the global band's exterior buffer.
+            polygon = [0 -66;360 -66;360 66;0 66;0 -66];
+            lon = 0.25:0.5:359.75;
+            lat = (-70:0.5:70)+0.25;
+            actual = domainmask(polygon, lon, lat, exteriorBuffer=1.5, ...
+                SaveData=false, BeQuiet=true);
+            expected = repmat(abs(lat(:)) < 67.5, 1, numel(lon));
+            t.verifyEqual(actual, expected);
+        end
+
+        function segmentInteriorAndEndpoints(t)
+            % Include an interior perpendicular foot and exclude the line extension.
+            polygon = [-1 -1;1 -1;1 1;-1 1;-1 -1];
+            lon = [-2, -1, -0.5, 0, 0.5, 1, 2];
+            lat = [-2, -1.2, -1, 0, 1, 1.2, 2];
+            mask = domainmask(polygon, lon, lat, exteriorBuffer=0.25, ...
+                SaveData=false, BeQuiet=true);
+            % At half a degree between densified vertices, endpoints are too far.
+            t.verifyGreaterThan(distance(1.2, 0.5, 1, 0), 0.25);
+            t.verifyTrue(mask(lat == 1.2, lon == 0.5));
+            t.verifyFalse(mask(lat == 2, lon == 0.5));
+            t.verifyFalse(mask(lat == 1.2, lon == 2));
+            t.verifyTrue(mask(lat == 0, lon == 0));
+        end
+
+        function hemisphereWidth(t)
+            % A 90-degree buffer includes poles but not antipodal line extensions.
+            polygon = [-1 -1;1 -1;1 1;-1 1;-1 -1];
+            lon = -180:180;
+            lat = -90:90;
+            mask = domainmask(polygon, lon, lat, exteriorBuffer=90, ...
+                SaveData=false, BeQuiet=true);
+            t.verifyTrue(all(mask(abs(lat) == 90, :), 'all'));
+            t.verifyTrue(mask(lat == 0, lon == 90));
+            t.verifyFalse(mask(lat == 0, lon == 92));
+            t.verifyFalse(mask(lat == 0, lon == 180));
+        end
+
+        function matchesMeridianDistances(t, longitudeOrigin)
+            % Analytic cross-track distances give an independent segment reference.
+            polygon = [0 -20;20 -20;20 20;0 20;0 -20];
+            polygon(:, 1) = polygon(:, 1) + longitudeOrigin;
+            lon = (-15:0.5:-1) + longitudeOrigin;
+            lat = -10:0.5:10;
+            [x, y] = meshgrid(lon-longitudeOrigin, lat);
+            % Include the exact cutoff despite inverse-trigonometric roundoff.
+            expected = asind(abs(cosd(y).*sind(x))) <= 7+1e-12;
+            mask = domainmask(polygon, lon, lat, exteriorBuffer=7, ...
+                SaveData=false, BeQuiet=true);
+            t.verifyEqual(mask, expected);
+
+            % Beyond the northern end, use vertex distance, not the infinite meridian.
+            lat = 30:0.5:40;
+            [x, y] = meshgrid(lon-longitudeOrigin, lat);
+            expected = distance(y, x, 20*ones(size(y)), zeros(size(x))) <= 15+1e-12;
+            mask = domainmask(polygon, lon, lat, exteriorBuffer=15, ...
+                SaveData=false, BeQuiet=true);
+            t.verifyEqual(mask, expected);
+        end
+
+        function repeatedPolarVertices(t)
+            % Distinct longitudes at a pole represent zero-length spherical edges.
+            polygon = [-30 89;30 89;30 90;-30 90;-30 89];
+            mask = domainmask(polygon, -180:180, [88, 89, 89.5, 90], ...
+                exteriorBuffer=0.6, SaveData=false, BeQuiet=true);
+            t.verifyTrue(all(mask(4, :)));
+            t.verifyTrue(all(mask(3, :)));
+            t.verifyFalse(any(mask(1, :)));
+        end
+
+        function bufferBeyondGridLongitudeBounds(t)
+            % The target may lie outside the grid while its exterior crosses into it.
+            polygon = [0 -1;1 -1;1 1;0 1;0 -1];
+            mask = domainmask(polygon, 358:359, -1:1, exteriorBuffer=1.5, ...
+                SaveData=false, BeQuiet=true);
+            t.verifyFalse(mask(2, 1));
+            t.verifyTrue(mask(2, 2));
         end
 
         function bufferTouchesPole(t, hemisphere, longitudeOrigin)
