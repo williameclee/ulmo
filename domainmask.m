@@ -1,59 +1,73 @@
-%% DOMAINMASK
-% Computes the mask for a given domain defined by a polygon over a grid.
+%% DOMAINMASK - Compute a geographic domain mask on a longitude-latitude grid.
 %
 % Syntax
 %   [mask, lonn, latt] = DOMAINMASK(domain, lon, lat)
-%   [mask, lonn, latt] = DOMAINMASK(domain, lonlim, latlim, meshsize)
-%   [mask, lonn, latt] = DOMAINMASK(__, "Name", Value)
+%   [mask, lonn, latt] = DOMAINMASK(domain, [], [], lonlim, latlim, meshsize)
+%   [mask, lonn, latt] = DOMAINMASK(__, "Name", value)
 %
-%Input arguments
-%   domain - Geographic domain to compute the mask for
-%       - GeoDomain object
-%       - Nx2 numeric array of (lon, lat) vertices
-%       - String function name that returns a Nx2 numeric array of
-%           (lon, lat) vertices
-%       - Cell array with first element as string function name and
-%           subsequent elements as additional arguments to the function
-%       - PolyShape object
-%       See mustBeGeographicDomain and KERNELCP for more details
-%       Arctic and Antarctic masks use geographic coordinates. Their cache
-%       names include -rotb to distinguish masks made in rotated coordinates.
-%   lon - Vector or 2D array of longitudes (degrees East)
-%   lat - Vector or 2D array of latitudes (degrees North)
-%   lonlim - 1x2 array specifying the longitude limits [minLon, maxLon]
-%       (degrees East)
-%   latlim - 1x2 array specifying the latitude limits [minLat, maxLat]
-%       (degrees North)
-%   meshsize - Scalar specifying the grid spacing (degrees)
-%   Format - Format of the output mesh
-%       - 'meshgrid' or 'ndgrid' for (lat, lon, t) or (lon, lat, t)
-%           ordering.
-%       The default format is 'meshgrid'.
-%   exteriorBuffer - Expand the finished polygon by this spherical arc in degrees
-%       using BUFFERM. Default 0. Positive widths have separate mask caches.
-%	ForceNew - Logical flag to force reprocess of the data
-%		The default option is false.
-%	SaveData - Logical flag to save the data
-%		The default option is true.
-%	BeQuiet - Logical flag to print messages
-%		- true: Suppress all messages.
-%		- false: Print all messages (usually for debugging).
-%		The default option is 'soft true', only printing important
-%       messages.
+% Input arguments
+%   domain - Geographic domain to compute the mask for.
+%       Accepts a GeoDomain object, an (n, 2) numeric array of longitude and
+%       latitude vertices, a character vector naming a boundary function,
+%       or a polyshape object. Arctic and Antarctic GeoDomain objects and
+%       function names use geographic coordinates; their mask cache names
+%       include -rotb to distinguish them from rotated masks.
+%   lon - Longitude coordinates, or [] when specifying limits and spacing.
+%       Unit: degrees east.
+%   lat - Latitude coordinates, or [] when specifying limits and spacing.
+%       Unit: degrees north.
+%   lonlim (optional) - Longitude limits [minimum, maximum].
+%       Used with meshsize to construct the grid.
+%       Size: (1, 2).
+%       Unit: degrees east.
+%       Default limits: [NaN, NaN]; inferred from regular coordinate vectors.
+%   latlim (optional) - Latitude limits [minimum, maximum].
+%       Used with meshsize to construct the grid.
+%       Size: (1, 2).
+%       Unit: degrees north.
+%       Default limits: [NaN, NaN]; inferred from regular coordinate vectors.
+%   meshsize (optional) - Grid spacing in both longitude and latitude.
+%       Supply both lonlim and latlim when setting this argument.
+%       Unit: degrees.
+%       Default spacing: NaN; inferred from regular coordinate vectors.
+%   Format (name-value) - Output array layout.
+%       'meshgrid' uses (latitude, longitude) ordering; 'ndgrid' uses
+%       (longitude, latitude) ordering.
+%       Default format: 'meshgrid'.
+%   exteriorBuffer (name-value) - Spherical buffer around the finished polygon.
+%       Uses BUFFERM to expand the polygon into its exterior and holes.
+%       Must be between 0 and 90. Positive widths use separate mask caches.
+%       Unit: degrees of spherical arc.
+%       Default width: 0.
+%   Forcenew (name-value) - Whether to recompute an existing mask.
+%       Default value: false.
+%   SaveData (name-value) - Whether to save a cache for a regular grid.
+%       Named domains are cacheable; numeric polygons are cacheable when
+%       exteriorBuffer is positive. Polyshape inputs are not cached.
+%       Default value: true.
+%   BeQuiet (name-value) - Whether to suppress progress messages.
+%       Default value: false.
+%   CallChain (name-value) - Calling function names for progress messages.
+%       Default value: {}.
 %
 % Output arguments
-%   mask - Logical array where true indicates points inside the domain
-%   lonn - 2D array of longitudes corresponding to the mask
-%   latt - 2D array of latitudes corresponding to the mask
+%   mask - Logical array identifying points in the buffered domain.
+%       Size: (nLat, nLon) for 'meshgrid', or (nLon, nLat) for 'ndgrid'.
+%   lonn - Longitude coordinates corresponding to the mask.
+%       Size: same as mask.
+%       Unit: degrees east.
+%   latt - Latitude coordinates corresponding to the mask.
+%       Size: same as mask.
+%       Unit: degrees north.
 %
 % See also
-%   SSH2LONLATT, STERIC2LONLATT
+%   GEODOMAIN, SSH2LONLATT, STERIC2LONLATT
 %
-% Authored by
-%	2025/07/25, williameclee@arizona.edu (@williameclee)
+% Created by
+%   2025/07/25, En-Chi Lee (williameclee@arizona.edu)
 %
-% Last modified by
-%	2026/11/04 (@williameclee)
+% Last modified
+%   2026/11/04, En-Chi Lee (williameclee@arizona.edu)
 
 function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshsize, options)
 
