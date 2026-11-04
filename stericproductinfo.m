@@ -28,6 +28,8 @@ function info = stericproductinfo(product)
     if ~isfile(info.path)
         error('ULMO:LoadData:FileNotFound', 'Missing steric input: %s', info.path);
     end
+    % Inspect variable names and sizes without loading the large grid arrays.
+    % Numerical geometry, support and layer closure are checked by steric2gmsl.
     metadata = whos('-file', info.path);
     info.fields = {metadata.name}';
     nonempty = {metadata(arrayfun(@(x) all(x.size > 0), metadata)).name};
@@ -39,6 +41,9 @@ function info = stericproductinfo(product)
              "thermostericSl", "shallowThermostericSl", "deepThermostericSl"; ...
              "halostericSl", "shallowHalostericSl", "deepHalostericSl"];
     available = ismember(names, nonempty);
+    % Product names do not determine depth coverage. Explicit partial splits
+    % are malformed; an absent optional halo component can still describe raw
+    % total coverage, leaving the caller to decide whether correction is needed.
     split = any(available(:, 2:3), 2);
     if any(split & ~all(available, 2)) || ...
             (available(3, 1) && split(1) ~= split(3))

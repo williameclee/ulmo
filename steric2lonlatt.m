@@ -220,6 +220,8 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
     iDepth = find(depths == string(options.Depth));
     stericVar = char(gridNames(min(iType, 3), iDepth));
     baseStericVar = char(gridNames(1, iDepth));
+    % Residual types select total minus a supplied component at the same depth.
+    % They are not aliases for the other named physical component.
     if iType > 3
         stericVar = char(gridNames(iType - 2, iDepth));
         vars = {stericVar, baseStericVar};
@@ -230,6 +232,9 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
     useMean = ~isempty(timestep) && (ischar(timestep) || isstring(timestep) || strcmpi(intpMthd, 'mean'));
     spatialIntpMthd = intpMthd;
     if strcmpi(spatialIntpMthd, 'mean'), spatialIntpMthd = 'linear'; end
+    % Epoch caches carry the selected expression in their filename. Keeping
+    % the raw-total suffix distinct from the old corrected suffix prevents a
+    % legacy corrected epoch field from being interpreted as raw total.
     component = '';
     if useMean
         component = sprintf('-%s-%s', options.Depth, options.Type);
@@ -238,6 +243,8 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
         options.TruncationBeforeInterpolation, timelim, component);
     nativePath = stericfilepath(product);
     coordVars = {'lon', 'lat', 'dates'};
+    % Ordinary raw-only reads stay lazy. An explicit rebuild refreshes means
+    % even when the caller does not request the diagnostic output.
     needMeans = nargout >= 6 || options.ForceNew;
     halostericGmsl = zeros(0, 1);
 
@@ -262,6 +269,8 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
         end
         metadata = whos('-file', inputPath);
         available = gridavailability(metadata, gridNames);
+        % A fresh derived cache stores every supported source component, not
+        % only the selected output. Explicit names exclude cached GMSL vectors.
         dataVars = cellstr(gridNames(available));
     end
     if options.BeQuiet == 0 || (cacheHit && options.BeQuiet <= 1)
@@ -272,13 +281,18 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
     if isnumeric(coord.dates), coord.dates = datetime(coord.dates, 'ConvertFrom', 'datenum'); end
     coord.dates = coord.dates(:);
     data = load(inputPath, dataVars{:});
+    % Without early truncation, cache the full processed record and apply
+    % timelim only to returned values. Both grids and means use this range.
     epochRange = [];
     if options.TruncationBeforeInterpolation, epochRange = timelim; end
 
     if ~cacheHit
         if useMean
             [data, coord] = preparegrid(data, coord, meshsize, lonOrigin, spatialIntpMthd, options.BeQuiet, callChain);
-            % Preserve paired native support for residual field expressions.
+            % Preserve paired native support for residual field expressions:
+            % mean(total - halo) can differ from mean(total) - mean(halo)
+            % when their finite cells differ. This is component selection,
+            % separate from the caller's later global-mean subtraction.
             data.steric = selectsteric(data, stericVar, baseStericVar, options.Type);
         end
         [data, coord.dates] = processtime(data, coord.dates, timestep, intpMthd, epochRange);
@@ -300,13 +314,17 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
                 'Product %s has no halosteric GMSL at Depth=%s.', char(product), options.Depth);
         end
         names = cellstr(meanNames(supported));
+        % Derived diagnostics can be reused as a complete set. Native-file
+        % reuse still goes through steric2gmsl, which owns its cache checks.
         meansHit = cacheHit && ~strcmp(outputPath, nativePath) && ...
             validmeans(outputPath, names, coord.dates);
         if meansHit
             means = load(outputPath, names{:});
         else
             % The first saved forced call refreshes the complete native set.
-            % Unsaved calls may repeat calculation; the native API stays unchanged.
+            % Subsequent saved calls reuse that complete set. With saving
+            % disabled, every forced call must bypass old native means; repeated
+            % calculation is intentional and keeps the native API unchanged.
             firstMean = true;
             for iMean = find(supported(:))'
                 [meanType, meanDepth] = ind2sub(size(supported), iMean);
@@ -314,6 +332,8 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
                 [values, nativeDates] = steric2gmsl(product, Type=types(meanType), ...
                     Depth=depths(meanDepth), ForceNew=forceMean, SaveData=saveData, ...
                     BeQuiet=double(options.BeQuiet)/2);
+                % Temporal helpers expect time on axis three. This temporary
+                % shape does not make the scalar series a spatial grid.
                 means.(meanNames(iMean)) = reshape(values, 1, 1, []);
                 firstMean = false;
             end
@@ -323,6 +343,9 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
             for iMean = 1:numel(names)
                 means.(names{iMean}) = reshape(means.(names{iMean}), [], 1);
             end
+            % Nonlinear interpolation need not commute with layer addition.
+            % Define the processed full mean from the processed layers so the
+            % returned depths remain additive under methods such as pchip.
             for iMeanType = 1:numel(types)
                 if all(supported(iMeanType, :))
                     means.(meanNames(iMeanType, 1)) = ...
@@ -331,6 +354,8 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
             end
             saveMeans = true;
         end
+        % Keep cached diagnostics in metres on the entire processed date axis.
+        % Only the selected public vector is filtered and converted to mm.
         if nargout >= 6
             halostericGmsl = means.(meanNames(3, iDepth));
             if ~isempty(timelim)
@@ -341,6 +366,8 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
         end
     end
 
+    % steric2gmsl alone appends native means; never overwrite the native grids
+    % with processed data. A raw-cache hit lacking means needs only an append.
     if saveData && ~strcmp(outputPath, nativePath)
         if ~cacheHit
             stored = data;
@@ -385,6 +412,8 @@ end
 
 %% Subfunctions
 function [grids, means, types, depths] = fieldnamesmap()
+    % Rows follow the public component order; columns are full/shallow/deep.
+    % The two extra mean rows correspond to expressions, not native grids.
     grids = ["stericSl", "shallowStericSl", "deepStericSl"; ...
              "thermostericSl", "shallowThermostericSl", "deepThermostericSl"; ...
              "halostericSl", "shallowHalostericSl", "deepHalostericSl"];
@@ -398,6 +427,9 @@ function [grids, means, types, depths] = fieldnamesmap()
 end
 
 function available = gridavailability(metadata, names)
+    % Empty fields declare unavailable coverage. A nonempty shallow or deep
+    % field declares a split and therefore requires both layers and the full
+    % field. Missing optional components are not replaced by observed zeros.
     available = false(size(names));
     for iName = 1:numel(names)
         item = metadata(strcmp({metadata.name}, names(iName)));
@@ -424,6 +456,8 @@ function valid = supportedfields(path, names)
 end
 
 function valid = validmeans(path, names, dates)
+    % Validate storage completeness, not source freshness. NaN is a valid
+    % no-observation result; Inf and malformed vectors require recalculation.
     metadata = whos('-file', path);
     for iName = 1:numel(names)
         item = metadata(strcmp({metadata.name}, names{iName}));
@@ -438,6 +472,9 @@ function valid = validmeans(path, names, dates)
 end
 
 function [data, dates] = processtime(data, dates, timestep, method, limits)
+    % Grids and means enter separately but share temporal conventions. Epoch
+    % averaging uses each array's own finite observations; it deliberately does
+    % not match a GMSL estimate to each individual cell's temporal support.
     if isempty(timestep), dates = dates(:); return; end
     names = fieldnames(data);
     useMean = ischar(timestep) || isstring(timestep) || strcmpi(method, 'mean');
