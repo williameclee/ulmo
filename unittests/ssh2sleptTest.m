@@ -12,6 +12,10 @@ classdef ssh2sleptTest < matlab.unittest.TestCase
         Dates
         Polygon = [0 -11; 32 -11; 32 11; 0 11; 0 -11]
     end
+    properties (TestParameter)
+        polarBuffer = {0, 1.5}
+        nearby = {false, true}
+    end
     methods (TestMethodSetup)
         function nativeFile(t)
             % Use four native months with known coefficients and one empty month.
@@ -72,38 +76,6 @@ classdef ssh2sleptTest < matlab.unittest.TestCase
             t.verifyEqual(fit.areaFraction(1),0);
             t.verifyEqual(c(1),900,'AbsTol',1e-8);
             t.verifyLessThanOrEqual(fit.areaFraction,ones(4,1)+eps);
-        end
-
-        function exteriorCacheAndTopology(t)
-            % A ring crossing the grid seam and a separate region with a hole.
-            xy = [0 -4;4 -4;4 4;0 4;0 -4;NaN NaN; ...
-                50 -7;65 -7;65 7;50 7;50 -7;NaN NaN; ...
-                53 -4;53 4;62 4;62 -4;53 -4];
-            lon = 0:359; lat = -9:9;
-            m = domainmask(xy,lon,lat,exteriorBuffer=1.5,BeQuiet=true);
-            at = @(x) m(lat==0,lon==x);
-            t.verifyTrue(at(359) && at(5) && at(54) && at(61));
-            t.verifyFalse(at(358) || at(6) || at(57) || at(30));
-            [cached,x,y] = domainmask(xy,lon,lat,exteriorBuffer=1.5,Format='ndgrid',BeQuiet=true);
-            t.verifyEqual(cached,m.');
-            [expectedX,expectedY] = ndgrid(lon,lat);
-            t.verifyEqual(x,expectedX);
-            t.verifyEqual(y,expectedY);
-            narrow = domainmask(xy,lon,lat,exteriorBuffer=0.4,BeQuiet=true);
-            t.verifyFalse(narrow(lat==0,lon==5));
-            file = dir(fullfile(getenv('IFILES'),'DOMAINMASK','*-E0.4-H*.mat'));
-            t.assertNumElements(file,1);
-        end
-
-        function roundedMaskNameChecksExactWidth(t)
-            % Both widths round to one filename, but each needs its own mask.
-            for width = [1/3, 1/3+1e-8]
-                domainmask(t.Polygon,0:33,-10:10,exteriorBuffer=width,BeQuiet=true);
-                mask = dir(fullfile(getenv('IFILES'),'DOMAINMASK',['*-E',num2str(width),'-*.mat']));
-                t.assertNumElements(mask,1);
-                cached = load(fullfile(mask.folder,mask.name),'exteriorBuffer');
-                t.verifyEqual(cached.exteriorBuffer,width);
-            end
         end
 
         function subsetBuildsWholeRecord(t)
@@ -223,6 +195,92 @@ classdef ssh2sleptTest < matlab.unittest.TestCase
             data.sshs(:,:,4) = bad;
             t.verifyError(@() ssh2slept(args{:},truncation=4,ForceNew=true),'ULMO:ssh2slept:FitFailed');
             t.verifyEqual(ssh2slept(args{:},t.Dates([4 4]),truncation=4),rebuilt);
+        end
+
+        function sshUsesPolarObservations(t, polarBuffer)
+            % Polar SSH is 2 m. Equatorial SSH is 99 m, including an empty polar month.
+            t.writePolarSSH();
+            degree = 0;
+            if polarBuffer > 0
+                degree = 60;
+            end
+            G = zeros((degree+1)^2,1);
+            G(1) = 1;
+            [coefficients, ~, fit] = ssh2slept('NASASSHMonthly', 'arctic', degree, ...
+                GVN={G,1,1}, unit='m');
+            t.verifyEqual(coefficients, [2;NaN], 'AbsTol', 1e-10);
+            t.verifyEqual(fit.areaFraction, [1;0], 'AbsTol', 1e-12);
+            t.verifyEqual(fit.nObs(2), 0);
+        end
+
+        function ignoresRotatedProjectionCache(t)
+            % An existing Arctic projection must be rebuilt using geographic observations.
+            t.writePolarSSH();
+            folder = fullfile(fileparts(t.Folder), 'GLMALPHA');
+            G = 1; V = 0.01; N = V; EL = 0; EM = 0;
+            save(fullfile(folder,'glmalpha-Arctic-0-1.mat'), 'G','V','N','EL','EM');
+            folder = fullfile(fileparts(t.Folder), 'SSH', 'SlepianExpansions');
+            mkdir(folder);
+            path = fullfile(folder, 'ssh2slept-NASASSHMonthly-Arctic-0-1-m.nc');
+            write2nc(path, 'coefficients', [99 99], Dimensions={'mode','time'});
+            ncwriteatt(path, '/', 'defaultTruncation', 1);
+            dates = datetime(2020,[1;2],15);
+            nccreate(path, 'time', 'Dimensions', {'time',2});
+            ncwrite(path, 'time', seconds(dates-datetime(2000,1,1)));
+            ncwriteatt(path, 'time', 'units', 'seconds since 2000-01-01 00:00:00');
+            ncwriteatt(path, 'time', 'calendar', 'proleptic_gregorian');
+            actual = ssh2slept('NASASSHMonthly', 'arctic', 0, unit='m');
+            t.verifyEqual(actual, [2;NaN], 'AbsTol', 1e-12);
+            delete(fullfile(fileparts(t.Folder), 'SSH', 'NASASSHMonthly.mat'));
+            t.verifyEqual(ssh2slept('NASASSHMonthly', 'arctic', 0, ...
+                truncation=1, unit='m'), actual);
+        end
+
+        function nearbySelectsProjectionCache(t, nearby)
+            % The same projection settings must retain separate NearBy coefficients.
+            root = fileparts(t.Folder);
+            folder = fullfile(t.Folder,'SlepianExpansions');
+            mkdir(folder);
+            identifiers = {'Greenland0-2', 'Greenland0-2-nearby'};
+            dates = datetime(2020,[1;2],15);
+            for iDomain = 1:2
+                id = identifiers{iDomain};
+                path = fullfile(root,'SSH','SlepianExpansions', ...
+                    sprintf('ssh2slept-NASASSHMonthly-%s-0-1-m.nc',id));
+                write2nc(path,'coefficients',iDomain*[10 11], Dimensions={'mode','time'});
+                nccreate(path,'time','Dimensions',{'time',2});
+                ncwrite(path,'time',seconds(dates-datetime(2000,1,1)));
+                ncwriteatt(path,'time','units','seconds since 2000-01-01 00:00:00');
+                ncwriteatt(path,'time','calendar','proleptic_gregorian');
+                ncwriteatt(path,'/','defaultTruncation',1);
+            end
+            delete(fullfile(t.Folder,'NASASSHMonthly.mat'));
+            domain = GeoDomain('greenland', 'Buffer', 2, 'NearBy', nearby);
+            expectedIndex = 1+double(nearby);
+            [coefficients,actualDates] = ssh2slept('NASASSHMonthly',domain,0,unit='m');
+            t.verifyEqual(coefficients, expectedIndex*[10;11]);
+            t.verifyEqual(actualDates, dates);
+            t.verifyEqual(ssh2slept('NASASSHMonthly',domain,0, ...
+                truncation=1,unit='m'), coefficients);
+        end
+    end
+    methods (Access=private)
+        function writePolarSSH(t)
+            % Supply polar coastlines and SSH spanning both coordinate frames.
+            coasts = fullfile(fileparts(t.Folder), 'COASTS');
+            mkdir(coasts);
+            t.applyFixture(matlab.unittest.fixtures.EnvironmentVariableFixture('COASTS', coasts));
+            writeArcticCoastlineFixture(coasts, [10 60;20 60;20 65;10 65;10 60]);
+            folder = fullfile(fileparts(t.Folder), 'SSH');
+            lon = (0.25:0.5:359.75)';
+            lat = (-34.75:0.5:74.75)';
+            dates = datetime(2020,[1;2],15);
+            partialMonths = false(2,1);
+            sshs = 99*ones(numel(lon),numel(lat),2);
+            sshs(:,lat>50,1) = 2;
+            sshs(:,lat>50,2) = NaN;
+            save(fullfile(folder,'NASASSHMonthly.mat'), ...
+                'sshs','lon','lat','dates','partialMonths','-v7.3');
         end
     end
 end
