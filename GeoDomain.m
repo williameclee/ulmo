@@ -19,13 +19,14 @@
 %       The additional buffers are specified as a cell array of domain names
 %       and buffer values.
 %       The default value is an empty cell array.
-%   NearBy - A flag to indicate whether the domain is near another domain
+%   NearBy - Whether to subtract nearby islands from Greenland
 %       The default value is false.
 %       The option is only supported for Greenland.
 %
 % Methods
 %   Id - The identifier for the domain
 %       It is useful for finding domain-specific files.
+%       NearBy=true appends -nearby to the identifier.
 %   DisplayName - The display name of the domain
 %       The display name is the name of the domain in a human-readable form.
 %   Lonlat - The longitude and latitude coordinates of the domain
@@ -45,7 +46,7 @@
 %   SPHAREA
 %
 % Last modified by
-%   2026/09/25, williameclee@arizona.edu (@williameclee)
+%   2026/11/04, williameclee@arizona.edu (@williameclee)
 
 classdef GeoDomain
 
@@ -111,6 +112,9 @@ classdef GeoDomain
                 [capitalise(char(obj.Domain)), dataattrchar( ...
                  "Upscale", obj.Upscale, "Buffer", obj.Buffer, ...
                  "Latlim", obj.Latlim, "MoreBuffers", obj.MoreBuffers)];
+            if obj.NearBy
+                id = [id, '-nearby'];
+            end
         end
 
         % Display name
