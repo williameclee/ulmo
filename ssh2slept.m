@@ -40,6 +40,7 @@
 %   IFILES/SSH/SlepianExpansions holds one NetCDF-4 file per projection.
 %   Names follow ssh2slept-<product>-<domainId>-<L>-<J>-m.nc. For XY
 %   polygons the domain ID is hash(domain, 'sha1'). J is the fitted mode count.
+%   Arctic and Antarctic IDs include -rotb for geographic observation masks.
 %   The cache stores metres, independent of output unit and requested dates.
 %   Cache hits read the time coordinate and selected contiguous time slabs.
 %   Requesting GVN on a cache hit loads the domain basis through glmalpha_new.
@@ -134,6 +135,10 @@ function [path, tmp, cacheHit] = getoutputfile(product, domain, L, J, saveData, 
     folder = fullfile(root, 'SSH', 'SlepianExpansions');
     if isa(domain, 'GeoDomain')
         domainId = domain.Id;
+        % Earlier polar projections selected observations in rotated coordinates.
+        if ismember(domain.Domain, ["arctic", "antarctica"])
+            domainId = [domainId, '-rotb'];
+        end
     else
         domainId = hash(domain, 'sha1');
     end

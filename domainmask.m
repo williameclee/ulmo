@@ -16,6 +16,8 @@
 %           subsequent elements as additional arguments to the function
 %       - PolyShape object
 %       See mustBeGeographicDomain and KERNELCP for more details
+%       Arctic and Antarctic masks use geographic coordinates. Their cache
+%       names include -rotb to distinguish masks made in rotated coordinates.
 %   lon - Vector or 2D array of longitudes (degrees East)
 %   lat - Vector or 2D array of latitudes (degrees North)
 %   lonlim - 1x2 array specifying the longitude limits [minLon, maxLon]
@@ -51,7 +53,7 @@
 %	2025/07/25, williameclee@arizona.edu (@williameclee)
 %
 % Last modified by
-%	2026/11/03 (@williameclee)
+%	2026/11/04 (@williameclee)
 
 function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshsize, options)
 
@@ -81,6 +83,13 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
     beQuiet = options.BeQuiet;
     saveData = options.SaveData;
     callChain = [options.CallChain, {mfilename}];
+
+    if (ischar(domain) || isstring(domain)) && ...
+            ismember(lower(string(domain)), ["arctic", "antarctica"])
+        domain = GeoDomain(domain);
+    end
+    rotateBack = isa(domain, 'GeoDomain') && ...
+        ismember(domain.Domain, ["arctic", "antarctica"]);
 
     if ~isnan(meshsize)
 
@@ -158,8 +167,10 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
 
     %% Main
     if isa(domain, 'GeoDomain')
+        % Native grids require geographic coordinates for rotated polar domains.
         domainPoly = ...
-            domain.Lonlat(round(mean(lonlim) / 180) * 180, "OutputFormat", 'polyshape');
+            domain.Lonlat(round(mean(lonlim) / 180) * 180, ...
+                "RotateBack", rotateBack, "OutputFormat", 'polyshape');
     elseif ismatrix(domain) && isnumeric(domain) && size(domain, 2) == 2
         domainPoly = polyshape(domain);
     elseif ischar(domain)
@@ -267,6 +278,9 @@ function dataPath = datapath(domain, meshSize, lonLim, latLim, exteriorBuffer)
 
     if isa(domain, 'GeoDomain')
         domainName = domain.Id;
+        if ismember(domain.Domain, ["arctic", "antarctica"])
+            domainName = [domainName, '-rotb'];
+        end
     elseif iscell(domain)
         domainName = strjoin(string(domain), '_');
     elseif ischar(domain)
