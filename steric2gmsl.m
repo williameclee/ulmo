@@ -68,8 +68,8 @@ function [gmsl, dates] = steric2gmsl(product, options)
         options.Type (1, 1) string {mustBeMember(options.Type, ...
             ["total", "thermosteric", "halosteric", "non-thermosteric", "non-halosteric"])}
         options.Depth (1, 1) string {mustBeMember(options.Depth, ["full", "shallow", "deep"])} = "full"
-        options.Unit (1, 1) string {mustBeMember(options.Unit, ["m", "mm"])} = "m"
-        options.TimeFormat (1, 1) string {mustBeMember(options.TimeFormat, ["datetime", "datenum"])} = "datetime"
+        options.Unit {mustBeTextScalar, mustBeMember(options.Unit, ["m", "mm"])} = "m"
+        options.TimeFormat {mustBeTextScalar, mustBeMember(options.TimeFormat, ["datetime", "datenum"])} = "datetime"
         options.SaveData (1, 1) logical = true
         options.ForceNew (1, 1) logical = false
         options.BeQuiet (1, 1) double {mustBeMember(options.BeQuiet, [0, 0.5, 1])} = 0.5
@@ -119,10 +119,10 @@ function [gmsl, dates] = steric2gmsl(product, options)
         end
     end
     gmsl = double(means.(cacheNames(iType, iDepth)));
-    if options.Unit == "mm"
+    if strcmp(options.Unit, 'mm')
         gmsl = 1e3 * gmsl;
     end
-    if options.TimeFormat == "datenum"
+    if strcmp(options.TimeFormat, 'datenum')
         dates = datenum(dates); %#ok<DATNM>
     end
 end

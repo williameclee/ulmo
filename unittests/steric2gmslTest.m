@@ -141,6 +141,12 @@ classdef steric2gmslTest < matlab.unittest.TestCase
             testCase.verifySize(actual, [5,1]);
             testCase.verifyEqual(actual, 1000*(4.5+1.5*(0:4)'), AbsTol=1e-9);
             testCase.verifyEqual(dates, datenum(testCase.data.dates)); %#ok<DATNM>
+            [charValues, charDates] = steric2gmsl('EN4c14', Type="halosteric", Unit='mm', TimeFormat='datenum', BeQuiet=true);
+            testCase.verifyEqual(charValues, actual);
+            testCase.verifyEqual(charDates, dates);
+            [metres, nativeDates] = steric2gmsl('EN4c14', Type="halosteric", Unit='m', TimeFormat='datetime', BeQuiet=true);
+            testCase.verifyEqual(metres, actual/1000, AbsTol=1e-12);
+            testCase.verifyEqual(nativeDates, testCase.data.dates);
             stored = load(testCase.nativePath, 'halostericGmsl', 'dates');
             testCase.verifyEqual(stored.halostericGmsl, actual/1000, AbsTol=1e-12);
             testCase.verifyClass(stored.dates, 'datetime');
