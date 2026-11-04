@@ -1,27 +1,41 @@
-%% GEODOMAIN
-% Is a class that stores the information of a geographical domain.
+%% GEODOMAIN - Store the parameters of a geographic domain.
 %
-% Properties
+% Syntax
+%   domain = GEODOMAIN(name)
+%   domain = GEODOMAIN(name, upscale, buffer, latlim, moreBuffers, nearBy)
+%   domain = GEODOMAIN(name, "Name", value)
+%
+% Input arguments
+%   The optional positional arguments can also be supplied by name.
+%   Domain through NearBy are stored as properties on the resulting object.
 %   Domain - The name of the domain
 %       The domain name should be the name of a function that returns the
 %       coordinates of the domain boundary.
-%   Upscale - The resolution of the domain
+%   Upscale (optional) - The resolution of the domain
 %       The upscale value is the number of times the domain boundary is
 %       upscaled.
-%       The default value is 0.
-%   Buffer - The buffer from the domain boundary
+%       Default value: 0.
+%   Buffer (optional) - The buffer from the domain boundary
 %       The buffer is the distance from the domain boundary to the coastlines.
-%       The default value is 0.
-%   Latlim - The latitudes of the domain
+%       Unit: degrees of spherical arc.
+%       Default value: 0.
+%   Latlim (optional) - The latitudes of the domain
 %       The latitudes are specified as a 1-by-2 vector.
-%       The default value is [-90, 90].
-%   MoreBuffers - Additional buffers to apply to the coastlines
+%       Size: (1, 2).
+%       Unit: degrees north.
+%       Default limits: [-90, 90].
+%   MoreBuffers (optional) - Additional buffers to apply to the coastlines
 %       The additional buffers are specified as a cell array of domain names
 %       and buffer values.
-%       The default value is an empty cell array.
-%   NearBy - Whether to subtract nearby islands from Greenland
-%       The default value is false.
+%       Default value: {}.
+%   NearBy (optional) - Whether to subtract nearby islands from Greenland
+%       Default value: false.
 %       The option is only supported for Greenland.
+%   DefaultParams (name-value) - Whether to apply domain-specific defaults.
+%       For 'spacific', 'satlantic' and 'indian', the default latitude
+%       limits are [-60, 60]. For 'oceans', 'npacific' and 'indian', the
+%       default additional buffers are {'earthquakes', 10}.
+%       Default value: false.
 %
 % Methods
 %   Id - The identifier for the domain
@@ -45,8 +59,8 @@
 % See also
 %   SPHAREA
 %
-% Last modified by
-%   2026/11/04, williameclee@arizona.edu (@williameclee)
+% Last modified
+%   2026/11/04, En-Chi Lee (williameclee@arizona.edu)
 
 classdef GeoDomain
 

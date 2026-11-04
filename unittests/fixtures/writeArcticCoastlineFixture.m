@@ -1,9 +1,20 @@
 %% WRITEARCTICCOASTLINEFIXTURE - Save a synthetic Arctic boundary in both frames.
 %
+% Syntax
+%   WRITEARCTICCOASTLINEFIXTURE(coasts, polygon)
+%
 % Input arguments
 %   coasts - Temporary coastline directory.
-%   polygon - Geographic longitude and latitude vertices, in degrees.
+%   polygon - Geographic longitude and latitude vertices.
 %       Size: (n, 2).
+%       Unit: degrees.
+%
+% Output file content
+%   XY - Closed boundary vertices in Arctic-rotb.mat and Arctic.mat.
+%       The files use geographic and rotated coordinates, respectively.
+%       Size: (n, 2).
+%       Unit: degrees.
+%   p - Polyshape boundary in the same coordinate frame as XY.
 %
 % Created by
 %   2026/11/04, En-Chi Lee
