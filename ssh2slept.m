@@ -258,6 +258,9 @@ function writeCache(destination, path, product, L, observationBuffer, coeffs, da
     ncwriteatt(path, '/', 'L', L);
     ncwriteatt(path, '/', 'observationBufferDegrees', observationBuffer);
     ncwriteatt(path, '/', 'defaultTruncation', defaultJ);
+    nccreate(path, 'creationDate', 'Datatype', 'double');
+    ncwrite(path, 'creationDate', posixtime(datetime('now', 'TimeZone', 'UTC')));
+    ncwriteatt(path, 'creationDate', 'units', 'seconds since 1970-01-01 00:00:00 UTC');
     movefile(path, destination, 'f');
 end
 
