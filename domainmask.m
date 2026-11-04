@@ -208,8 +208,8 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
         arcLon = [x(arcs); nan(1,numel(edges))];
         arcLat = [y(arcs); nan(1,numel(edges))];
         [y, x] = bufferm(arcLat(:), arcLon(:), options.exteriorBuffer);
-        % Cut the spherical result back into the grid's longitude frame.
-        [y, x] = maptrimp(y, x, [-90 90], [-180 180]);
+        % BUFFERM already clips to [-180, 180] longitude and [-90, 90] latitude.
+        % Re-clipping can reject valid polar vertices; only shift longitude back.
         domainPoly = union(domainPoly, polyshape(x+origin, y));
     end
 
