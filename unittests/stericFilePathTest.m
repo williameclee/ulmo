@@ -1,5 +1,13 @@
 %% STERICFILEPATHTEST - Preserve existing native and derived cache filenames.
 %
+% Syntax
+%   results = runtests('unittests/stericFilePathTest.m')
+%
+% Notes
+%   Checks exact native, temporal, spatial, component and truncated-time
+%   filenames. A temporary IFILES root is used, without creating product
+%   directories or reading native data.
+%
 % Created by
 %   2026/11/04, En-Chi Lee (williameclee@gmail.com)
 

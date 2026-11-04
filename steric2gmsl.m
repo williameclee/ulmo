@@ -6,42 +6,72 @@
 %   [gmsl, dates] = STERIC2GMSL(__, SaveData=false, ForceNew=true)
 %
 % Input arguments
-%   product - Prepared StericProduct identifier; required.
-%   Type (name-value) - Required field: total, thermosteric, halosteric,
-%       non-thermosteric (total minus thermosteric), or non-halosteric
-%       (total minus halosteric). No correction is applied.
-%   Depth (name-value) - full, shallow, or deep. Default depth: full.
-%   Unit (name-value) - m or mm. Default unit: m.
-%   TimeFormat (name-value) - datetime or datenum. Default format: datetime.
+%   product - Prepared product: SIO, EN4c14, CMEMS, NOAA, or ORAS5.
+%       The native MAT file must already exist at STERICFILEPATH(product).
+%   Type (name-value, required) - Selected component.
+%       total, thermosteric, halosteric, non-thermosteric (total minus
+%       thermosteric), or non-halosteric (total minus halosteric).
+%       No correction is applied. There is no default selection.
+%   Depth (name-value) - full, shallow, or deep, as supplied by the product.
+%       Unsupported component/depth combinations raise an error.
+%       Default depth: full.
+%   Unit (name-value) - m or mm, for the returned series only.
+%       Default unit: m.
+%   TimeFormat (name-value) - datetime or datenum, for returned dates only.
+%       Default format: datetime.
 %   SaveData (name-value) - Whether to append all calculated means to the
-%       native MAT file. Default flag: true.
+%       native MAT file. Existing complete caches can still be read if false.
+%       Default flag: true.
 %   ForceNew (name-value) - Whether to recalculate all applicable means.
-%       Default flag: false. With SaveData=false, no file is changed.
-%   BeQuiet (name-value) - Whether to suppress messages. Default flag: 0.5,
-%       which prints calculation/save messages; true suppresses all messages.
+%       With SaveData=false, no file is changed.
+%       Default flag: false.
+%   BeQuiet (name-value) - Whether to suppress messages.
+%       0 and 0.5 print calculation/save messages; 1 suppresses all messages.
+%       Default level: 0.5.
 %
 % Input file content
 %   lon - Regular longitude coordinate vector spanning one complete cycle.
-%   lat - Strictly monotone latitude vector; spacing may be nonuniform.
-%       Both coordinate vectors are in degrees.
+%       A duplicated cyclic endpoint is permitted.
+%       Size: vector with nLon elements.
+%       Unit: degrees east.
+%   lat - Strictly monotone latitude coordinate vector in [-90, 90].
+%       Spacing may be uniform or nonuniform.
+%       Size: vector with nLat elements.
+%       Unit: degrees north.
 %   dates - Native datetime or datenum vector, strictly increasing.
-%   stericSl, thermostericSl, halostericSl - Available native grids in metres,
-%       (lat, lon, time) or (lon, lat, time). Square spatial grids are
+%       Size: vector with N elements.
+%       Unit: days for datenum values.
+%   stericSl, thermostericSl, halostericSl - Available native component grids.
+%       All grids must share an orientation. Square spatial grids are
 %       interpreted as (lat, lon, time), as in the native aggregate format.
-%       Supported depth splits supply both shallow<Component>Sl and
-%       deep<Component>Sl alongside the full grid; missing layers are errors.
 %       Missing or empty components are unavailable, not zero observations.
+%       Size: (nLat, nLon, N) or (nLon, nLat, N).
+%       Unit: m.
+%   shallow<Component>Sl, deep<Component>Sl - Supplied depth-layer grids.
+%       Component is Steric, Thermosteric, or Halosteric. Each split requires
+%       full, shallow and deep grids. Total and halosteric splits must agree
+%       when both components are present; missing layers are errors.
+%       Size: same as the corresponding full grid.
+%       Unit: m.
 %
 % Output arguments
-%   gmsl - Selected uncorrected global mean. Size: (N, 1). Unit: Unit.
-%   dates - Native timestamps. Size: (N, 1). Format: TimeFormat.
+%   gmsl - Selected uncorrected global mean on common observed support.
+%       Size: (N, 1).
+%       Unit: Unit.
+%   dates - Native timestamps in the selected TimeFormat.
+%       Size: (N, 1).
+%       Unit: days for datenum output.
 %
 % Output file content
-%   <component>Gmsl - Individual numeric (N, 1) vectors in metres. Components
-%       are steric, thermosteric, halosteric, nonThermosteric and
+%   <component>Gmsl - Individual cached mean vectors.
+%       Components are steric, thermosteric, halosteric, nonThermosteric and
 %       nonHalosteric. Supported shallow/deep names prefix and capitalise
 %       the component, e.g. shallowHalostericGmsl. Original variables remain.
-%   gmslCreationDate - Scalar datetime recording when the means were processed.
+%       Size: (N, 1).
+%       Unit: m.
+%   gmslCreationDate - Datetime when newly calculated means were saved.
+%       Size: (1, 1).
+%       Reusing a cache or setting SaveData=false leaves this value unchanged.
 %
 % Notes
 %   All applicable means are calculated together, then only one is returned.
@@ -52,13 +82,14 @@
 %   weights. Nonuniform grids use spherical band areas between arithmetic
 %   latitude midpoints: abs(diff(sind(boundaries))). Outer boundaries extend
 %   half the adjacent spacing, clipped to [-90, 90]. Spacing differences
-%   within 2e-5 degrees are treated as coordinate rounding. A duplicated
+%   within 3e-5 degrees are treated as coordinate rounding. A duplicated
 %   longitude endpoint is excluded. No supported area gives NaN. Valid zero
 %   layers remain in the denominator. Residuals are differences on this
 %   common support; total need not equal thermosteric plus halosteric.
 %   Supplied layers are averaged directly; full means are their sum and
 %   checked against the full grid with tolerance 32*eps(source precision)
 %   times max(1, the weighted mean absolute full/shallow/deep values).
+%   Source precision is single if any supplied grid is single, else double.
 %   Complete caches bypass grid reads. Source/convention changes require
 %   explicit ForceNew=true and manual rebuilding of affected downstream
 %   caches. This function does not interpolate, remove drift or rebuild grids.
@@ -180,7 +211,7 @@ function [dates, weights, keepLon, transposeGrid] = coordinates(coord, metadata,
         error('ULMO:steric2gmsl:InvalidGrid', 'Expected finite longitude/latitude coordinate vectors.');
     end
     steps = [lon(2) - lon(1), lat(2) - lat(1)];
-    tolerance = 2e-5; % Allows single-precision coordinate rounding, in degrees.
+    tolerance = 3e-5; % Allows single-precision coordinate rounding, in degrees.
     latitudeSteps = diff(lat);
     if steps(1) == 0 || any(abs(diff(lon) - steps(1)) > tolerance) || ...
             ~(all(latitudeSteps > 0) || all(latitudeSteps < 0))

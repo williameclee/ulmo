@@ -1,5 +1,15 @@
 %% STERIC2GMSLTEST - Native mean, schema and cache tests using temporary files.
 %
+% Syntax
+%   results = runtests('unittests/steric2gmslTest.m')
+%
+% Notes
+%   Exercises component/layer means on uniform and nonuniform latitude grids,
+%   finite support, native schemas, output formats and cache reuse/rebuilding.
+%   Latitude cases include descending order and clipped polar boundaries.
+%   Each test uses a temporary IFILES folder; production files are not read
+%   or changed.
+%
 % Created by
 %   2026/11/04, En-Chi Lee (williameclee@gmail.com)
 
@@ -205,6 +215,20 @@ classdef steric2gmslTest < matlab.unittest.TestCase
             testCase.data.stericSl = testCase.data.stericSl(:,:,1:4);
             testCase.writeNative;
             testCase.verifyError(@() steric2gmsl('EN4c14', Type="total"), 'ULMO:steric2gmsl:InvalidSchema');
+        end
+
+        function fractionalSingleLongitudeCoordinates(testCase)
+            % Single-precision rounding on a regular 1/12-degree grid must
+            % not reject equivalent negative, zero or positive origins.
+            dates = testCase.data.dates;
+            for lonOrigin = [-180, 0, 20]
+                testCase.data = struct('lon', single(lonOrigin + (0:4319)/12), ...
+                    'lat', [-1; 1], 'dates', dates, ...
+                    'thermostericSl', ones(2, 4320, numel(dates), 'single'));
+                testCase.writeNative;
+                actual = steric2gmsl('EN4c14', Type="thermosteric", SaveData=false, BeQuiet=true);
+                testCase.verifyEqual(actual, ones(numel(dates), 1), AbsTol=1e-12);
+            end
         end
 
         function nonuniformLatitudeMidpointAreas(testCase)

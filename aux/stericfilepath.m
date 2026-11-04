@@ -1,23 +1,42 @@
 %% STERICFILEPATH - Generate native and interpolated steric product paths.
 %
 % Syntax
-%   nativePath = STERICFILEPATH(product)
-%   outputPath = STERICFILEPATH(product, timeStep, meshSize, lonOrigin, ...
+%   outPath = STERICFILEPATH(product)
+%   outPath = STERICFILEPATH(product, timeStep, meshSize, lonOrigin, ...
 %       intpMthd, truncBeforeIntp, timelim, component)
 %
 % Input arguments
-%   product - Prepared StericProduct identifier.
-%   timeStep, meshSize, lonOrigin, intpMthd (optional) - Temporal and spatial
-%       cache selectors, as in STERIC2LONLATT. Default selectors: empty.
+%   product - Prepared product: SIO, EN4c14, CMEMS, NOAA, or ORAS5.
+%   timeStep (optional) - Temporal cache selector.
+%       Positive numeric scalar or duration, 'midmonth', or 'GRACE'.
+%       Numeric values are encoded as integers; durations retain their units.
+%       Unit: days for numeric values.
+%       Default selector: [] (native timestamps).
+%   meshSize (optional) - Spatial grid spacing encoded in the filename.
+%       Unit: degrees.
+%       Default spacing: [] (no spacing suffix).
+%   lonOrigin (optional) - Longitude centre encoded in the filename.
+%       Unit: degrees east.
+%       Default centre: [] (no origin suffix).
+%   intpMthd (optional) - Interpolation method encoded in the filename.
+%       Used only when a temporal or spatial selector is supplied.
+%       Default method: "" (empty text).
 %   truncBeforeIntp (optional) - Whether to include timelim in the filename.
 %       Default flag: false.
-%   timelim (optional) - Datetime or datenum limits. Default limits: empty.
+%   timelim (optional) - Datetime or datenum limits.
+%       Size: (1, 2) or (2, 1), or empty.
+%       Unit: days for datenum values.
+%       Default limits: [] (no time-range suffix).
 %   component (optional) - Component suffix, including its leading hyphen.
-%       Default suffix: empty.
+%       Default suffix: '' (empty text).
 %
 % Output arguments
 %   outPath - MAT filename under the IFILES/STERIC/product directory.
-%       The function does not create directories or read/write data.
+%
+% Notes
+%   This function only constructs a path; it does not create directories or
+%   read or write data. It preserves STERIC2LONLATT cache naming, including
+%   the extra '-interp' suffix for duration steps with linear interpolation.
 %
 % See also
 %   steric2lonlatt, steric2gmsl
