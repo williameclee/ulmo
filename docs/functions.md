@@ -80,7 +80,8 @@ The ultimate goal is to drop the `_new` suffixes and replace the original functi
 | Function name | Description | Package dependencies | Data dependencies |
 | :--- | :--- | :--- | :--- |
 | `ssh2lonlatt` | Reads and converts altimetric SSH data from different missions to gridded data. | | |
-| `steric2lonlatt` | Reads and interpolates prepared steric sea level grids. | | |
+| `steric2lonlatt` | Returns raw steric grids and optional requested-depth halosteric GMSL on the same dates; callers apply correction. | | |
+| `stericproductinfo` | Inspects explicit native depth support without selecting correction policy. | | |
 | `steric2gmsl` | Returns one native global mean steric sea level series for a selected component and depth; caches all supported means. | | |
 
 #### Data Pre-Processing
@@ -123,3 +124,35 @@ The ultimate goal is to drop the `_new` suffixes and replace the original functi
 ---
 
 Last modified: 2026/11/04, [@williameclee](mailto:williameclee@gmail.com)
+
+### Raw steric grids and global means
+
+`[raw, sigma, dates, lon, lat, halo] = steric2lonlatt(...)` returns raw total
+steric by default (`Type="total"`). `Depth` selects explicitly supplied layers.
+The old `Type="default"` and `Type="no halosteric drift"` values are removed.
+The sixth output is an N-by-1 estimated halosteric global mean in the returned
+units, independently resampled to the returned dates; it is never applied by
+the loader. For total steric, a caller choosing the correction can subtract
+`reshape(halo, 1, 1, [])` from the grid. Other component types do not imply that
+this subtraction is appropriate.
+
+Native means are obtained through `steric2gmsl` without changing its estimator.
+All applicable GMSL vectors are temporally processed and saved individually in
+metres alongside derived raw grids. They never enter spatial interpolation.
+For split components, processed full means are sums of the processed layers.
+Epoch residual fields retain paired native samples before averaging; global
+mean subtraction is a separate caller operation after independent averaging.
+
+`ForceNew=true` rebuilds every supported grid and all native/processed means
+for the requested configuration, even with fewer than six outputs. It does
+not regenerate native source grids or other configurations. For example,
+`steric2lonlatt(product, 'midmonth', meshsize, [], ForceNew=true)` refreshes
+that monthly grid configuration. Repeat for other affected derived and figure
+caches after source/convention changes. `SaveData=false` permits reads and
+complete in-memory recalculation but writes no files. Separate uncached native
+mean requests may repeat calculations in this mode.
+
+Raw epoch requests use their uncorrected component paths; corrected legacy
+epoch caches are not reused. Compatible raw field caches missing diagnostics
+can be augmented with temporally processed means. No automatic freshness or
+version invalidation is performed.
