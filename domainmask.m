@@ -245,7 +245,8 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
         end
         tmp = [tempname(folder), '.mat'];
         cleanup = onCleanup(@() deletePartial(tmp));
-        save(tmp, vars{:}, '-v7.3');
+        creationDate = datetime('now', 'TimeZone', 'UTC');
+        save(tmp, vars{:}, 'creationDate', '-v7.3');
         movefile(tmp, dataPath, 'f');
 
         if ~beQuiet
