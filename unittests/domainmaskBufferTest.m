@@ -19,6 +19,24 @@ classdef domainmaskBufferTest < matlab.unittest.TestCase
         end
     end
     methods (Test)
+        function highLatitudeBufferAccuracy(t)
+            % Track issue #91 without failing the suite for its known limitation.
+            xy = [-4 73; 4 73; 4 77; -4 77; -4 73];
+            lon = -180:180;
+            lat = -90:90;
+            bufferWidth = 10;
+            mask = domainmask(xy, lon, lat, exteriorBuffer=bufferWidth, ...
+                Forcenew=true, SaveData=false, BeQuiet=true);
+
+            % This point is within the buffer because a vertex is only 8.895 deg away.
+            vertexDistance = distance(85, 32, 77, 4);
+            t.assertLessThan(vertexDistance, bufferWidth);
+            % Filter only the known exclusion; computation errors still fail.
+            % Replace this assumption with a verification when issue #91 is fixed.
+            t.assumeTrue(mask(lat == 85, lon == 32), ...
+                'Known buffer-accuracy limitation: https://github.com/williameclee/ulmo/issues/91');
+        end
+
         function bufferTouchesPole(t, hemisphere, longitudeOrigin)
             % A buffer touching either pole must survive in both longitude frames.
             xy = [-4 87.5; 4 87.5; 4 88.5; -4 88.5; -4 87.5];
