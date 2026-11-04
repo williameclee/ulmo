@@ -19,6 +19,12 @@
 %   ForceNew - Rebuild after replacing the source product. Default false.
 %   SaveData - Write newly fitted coefficients to NetCDF. Default true.
 %
+% Input file content
+%   sshs - Native SSH anomalies in metres, ordered by longitude, latitude and date.
+%   lon, lat - Ascending native grid coordinates in degrees at 0.5-degree spacing.
+%   dates - Native monthly midpoints in ascending order, as datetimes.
+%   partialMonths - One logical flag per date, true for a partial month.
+%
 % Output arguments
 %   sshSlept - Date-by-mode coefficients in the requested height unit.
 %   dates - Native monthly midpoints, as a datetime column.

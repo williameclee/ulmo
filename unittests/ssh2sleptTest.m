@@ -1,5 +1,12 @@
+%% SSH2SLEPTTEST - Check monthly SSH fits, observation masks and projection caches.
+%
+% Created by
+%   2026/11/03, En-Chi Lee
+%
+% Last modified
+%   2026/11/04, En-Chi Lee
+
 classdef ssh2sleptTest < matlab.unittest.TestCase
-    % Verify native grid ordering and full-record NetCDF cache behavior.
     properties
         Folder
         Dates
@@ -7,6 +14,7 @@ classdef ssh2sleptTest < matlab.unittest.TestCase
     end
     methods (TestMethodSetup)
         function nativeFile(t)
+            % Use four native months with known coefficients and one empty month.
             tmp = t.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture);
             t.Folder = fullfile(tmp.Folder, 'SSH');
             mkdir(t.Folder);
@@ -88,6 +96,7 @@ classdef ssh2sleptTest < matlab.unittest.TestCase
         end
 
         function roundedMaskNameChecksExactWidth(t)
+            % Both widths round to one filename, but each needs its own mask.
             for width = [1/3, 1/3+1e-8]
                 domainmask(t.Polygon,0:33,-10:10,exteriorBuffer=width,BeQuiet=true);
                 mask = dir(fullfile(getenv('IFILES'),'DOMAINMASK',['*-E',num2str(width),'-*.mat']));
@@ -98,6 +107,7 @@ classdef ssh2sleptTest < matlab.unittest.TestCase
         end
 
         function subsetBuildsWholeRecord(t)
+            % A single-date request must cache coefficients and diagnostics for all dates.
             args = {"NASASSHMonthly",t.Polygon,1};
             [c,d,fit,b] = ssh2slept(args{:},t.Dates([3 3]),truncation=4);
             t.verifyEqual(c*b{1}.',[3 2 3 4]*1000,'AbsTol',1e-8);
@@ -148,6 +158,7 @@ classdef ssh2sleptTest < matlab.unittest.TestCase
         end
 
         function computedBasisAndNamedDomain(t)
+            % The region name and its GeoDomain must give the same projection.
             region = 'xyzs2slepregionfixture';
             [c, dates, fit, basis] = ssh2slept("NASASSHMonthly", region, 0, ...
                 t.Dates([2 4]), SaveData=false, unit="m");
