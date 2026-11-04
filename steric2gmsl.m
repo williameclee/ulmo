@@ -21,7 +21,9 @@
 %       which prints calculation/save messages; true suppresses all messages.
 %
 % Input file content
-%   lon, lat - Regular longitude/latitude coordinate vectors in degrees.
+%   lon - Regular longitude coordinate vector spanning one complete cycle.
+%   lat - Strictly monotone latitude vector; spacing may be nonuniform.
+%       Both coordinate vectors are in degrees.
 %   dates - Native datetime or datenum vector, strictly increasing.
 %   stericSl, thermostericSl, halostericSl - Available native grids in metres,
 %       (lat, lon, time) or (lon, lat, time). Square spatial grids are
@@ -46,7 +48,11 @@
 %   The fixed support reference is full halosteric, otherwise full total,
 %   otherwise full thermosteric. Cells need >=80% finite and >=80% finite
 %   nonzero reference samples. Each date uses common finite support across
-%   all supplied components/layers and cosine-latitude weights. A duplicated
+%   all supplied components/layers. Uniform latitude grids use cosine-latitude
+%   weights. Nonuniform grids use spherical band areas between arithmetic
+%   latitude midpoints: abs(diff(sind(boundaries))). Outer boundaries extend
+%   half the adjacent spacing, clipped to [-90, 90]. Spacing differences
+%   within 2e-5 degrees are treated as coordinate rounding. A duplicated
 %   longitude endpoint is excluded. No supported area gives NaN. Valid zero
 %   layers remain in the denominator. Residuals are differences on this
 %   common support; total need not equal thermosteric plus halosteric.
@@ -171,13 +177,15 @@ function [dates, weights, keepLon, transposeGrid] = coordinates(coord, metadata,
             ~isvector(coord.lon) || ~isvector(coord.lat) || ...
             ~isreal(lon) || ~isreal(lat) || any(~isfinite([lon; lat])) || ...
             numel(lon) < 2 || numel(lat) < 2 || any(abs(lat) > 90)
-        error('ULMO:steric2gmsl:InvalidGrid', 'Expected finite longitude/latitude vectors on a regular grid.');
+        error('ULMO:steric2gmsl:InvalidGrid', 'Expected finite longitude/latitude coordinate vectors.');
     end
     steps = [lon(2) - lon(1), lat(2) - lat(1)];
-    tolerance = 1e-5; % Allows single-precision coordinate rounding, in degrees.
-    if any(steps == 0) || any(abs(diff(lon) - steps(1)) > tolerance) || ...
-            any(abs(diff(lat) - steps(2)) > tolerance)
-        error('ULMO:steric2gmsl:InvalidGrid', 'Coordinates must be monotone and regularly spaced.');
+    tolerance = 2e-5; % Allows single-precision coordinate rounding, in degrees.
+    latitudeSteps = diff(lat);
+    if steps(1) == 0 || any(abs(diff(lon) - steps(1)) > tolerance) || ...
+            ~(all(latitudeSteps > 0) || all(latitudeSteps < 0))
+        error('ULMO:steric2gmsl:InvalidGrid', ...
+            'Longitude must be regularly spaced and latitude must be strictly monotone.');
     end
     keepLon = 1:numel(lon);
     if abs(abs(lon(end) - lon(1)) - 360) <= tolerance
@@ -211,7 +219,16 @@ function [dates, weights, keepLon, transposeGrid] = coordinates(coord, metadata,
         end
         transposeGrid = thisTranspose;
     end
-    weights = repmat(cosd(lat), 1, numel(keepLon));
+    if all(abs(latitudeSteps - steps(2)) <= tolerance)
+        latitudeWeights = cosd(lat);
+    else
+        boundaries = [lat(1) - latitudeSteps(1) / 2; ...
+                      (lat(1:end - 1) + lat(2:end)) / 2; ...
+                      lat(end) + latitudeSteps(end) / 2];
+        boundaries = max(-90, min(90, boundaries));
+        latitudeWeights = abs(diff(sind(boundaries)));
+    end
+    weights = repmat(latitudeWeights, 1, numel(keepLon));
 end
 
 function valid = validcache(metadata, names, nDates)

@@ -207,6 +207,62 @@ classdef steric2gmslTest < matlab.unittest.TestCase
             testCase.verifyError(@() steric2gmsl('EN4c14', Type="total"), 'ULMO:steric2gmsl:InvalidSchema');
         end
 
+        function nonuniformLatitudeMidpointAreas(testCase)
+            % Explicit boundaries cover polar clipping and limited coverage;
+            % neither irregular spacing nor descending order needs regridding.
+            latitudes = {[-80; -20; 30; 85], [-40; -10; 10; 35]};
+            boundaries = {[-90; -50; 5; 57.5; 90], [-55; -25; 0; 22.5; 47.5]};
+            rowValues = [1; 4; 9; 16];
+            dates = testCase.data.dates;
+            for iGrid = 1:numel(latitudes)
+                area = diff(sind(boundaries{iGrid}));
+                expected = sum(area .* rowValues) / sum(area) + (0:4)';
+                field = repmat(rowValues, 1, 3, 5) + reshape(0:4, 1, 1, []);
+                for descending = [false, true]
+                    latitude = latitudes{iGrid};
+                    grid = field;
+                    if descending
+                        latitude = flip(latitude);
+                        grid = flip(grid, 1);
+                    end
+                    testCase.data = struct('lon', [0, 120, 240], 'lat', latitude, ...
+                        'dates', dates, 'stericSl', grid, ...
+                        'shallowStericSl', 0.25 * grid, 'deepStericSl', 0.75 * grid);
+                    testCase.writeNative;
+                    full = steric2gmsl('EN4c14', Type="total", BeQuiet=true);
+                    shallow = steric2gmsl('EN4c14', Type="total", Depth="shallow", BeQuiet=true);
+                    deep = steric2gmsl('EN4c14', Type="total", Depth="deep", BeQuiet=true);
+                    testCase.verifyEqual(full, expected, AbsTol=1e-12);
+                    testCase.verifyEqual(shallow, 0.25 * expected, AbsTol=1e-12);
+                    testCase.verifyEqual(deep, 0.75 * expected, AbsTol=1e-12);
+                    testCase.verifyEqual(full, shallow + deep);
+                end
+            end
+        end
+
+        function nearlyUniformLatitudeRetainsCosineWeights(testCase)
+            % Coordinate rounding below the spacing tolerance retains the
+            % existing uniform-grid convention, including at the outer rows.
+            latitude = [-60; 0; 60 + 1e-5];
+            rowValues = [1; 5; 13];
+            testCase.data = struct('lon', [0, 90, 180, 270], 'lat', latitude, ...
+                'dates', testCase.data.dates, 'stericSl', repmat(rowValues, 1, 4, 5));
+            testCase.writeNative;
+            actual = steric2gmsl('EN4c14', Type="total", SaveData=false, BeQuiet=true);
+            expected = sum(cosd(latitude) .* rowValues) / sum(cosd(latitude));
+            testCase.verifyEqual(actual, repmat(expected, 5, 1), AbsTol=1e-12);
+        end
+
+        function latitudeMustBeStrictlyMonotone(testCase)
+            testCase.data = struct('lon', [0, 90, 180, 270], 'lat', [0; 60; 30], ...
+                'dates', testCase.data.dates, 'stericSl', ones(3, 4, 5));
+            testCase.writeNative;
+            testCase.verifyError(@() steric2gmsl('EN4c14', Type="total"), 'ULMO:steric2gmsl:InvalidGrid');
+            testCase.data.lat = [0; 30; 30];
+            testCase.writeNative;
+            testCase.verifyError(@() steric2gmsl('EN4c14', Type="total"), 'ULMO:steric2gmsl:InvalidGrid');
+        end
+
         function numericAndInvalidDates(testCase)
             expected = testCase.data.dates;
             testCase.data.dates = datenum(expected); %#ok<DATNM>
