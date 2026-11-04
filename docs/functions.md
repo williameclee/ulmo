@@ -81,7 +81,6 @@ The ultimate goal is to drop the `_new` suffixes and replace the original functi
 | :--- | :--- | :--- | :--- |
 | `ssh2lonlatt` | Reads and converts altimetric SSH data from different missions to gridded data. | | |
 | `steric2lonlatt` | Returns steric component grids and optional requested-depth halosteric GMSL on the same dates. | | |
-| `stericproductinfo` | Inspects explicit native depth support without selecting correction policy. | | |
 | `steric2gmsl` | Returns one native global mean steric sea level series for a selected component and depth; caches all supported means. | | |
 
 #### Data Pre-Processing
