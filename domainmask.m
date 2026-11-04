@@ -35,7 +35,9 @@
 %       (longitude, latitude) ordering.
 %       Default format: 'meshgrid'.
 %   exteriorBuffer (name-value) - Spherical buffer around the finished polygon.
-%       Uses BUFFERM to expand the polygon into its exterior and holes.
+%       Includes grid points within this angular distance of the boundary.
+%       Boundary edges are densified linearly at 1-degree spacing, then treated
+%       as minor great-circle segments. Distances include segment endpoints.
 %       Must be between 0 and 90. Positive widths use separate mask caches.
 %       Unit: degrees of spherical arc.
 %       Default width: 0.
@@ -61,7 +63,7 @@
 %       Unit: degrees north.
 %
 % See also
-%   GEODOMAIN, SSH2LONLATT, STERIC2LONLATT
+%   GEODOMAIN, BUFFERGRIDMASK, SSH2LONLATT, STERIC2LONLATT
 %
 % Created by
 %   2025/07/25, En-Chi Lee (williameclee@arizona.edu)
@@ -197,27 +199,11 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
         error('Unsupported domain type: %s', class(domain));
     end
 
-    if options.exteriorBuffer > 0
-        % Buffer the boundary as open arcs. This treats holes and separate
-        % components alike and preserves the original polygon interior.
-        origin = (min(lonn(:)) + max(lonn(:))) / 2;
-        [x, y] = boundary(domainPoly);
-        [y, x] = interpm(y, x-origin, 1);
-        edges = find(isfinite(x(1:end-1)) & isfinite(x(2:end)));
-        arcs = [edges, edges+1].';
-        arcLon = [x(arcs); nan(1,numel(edges))];
-        arcLat = [y(arcs); nan(1,numel(edges))];
-        [y, x] = bufferm(arcLat(:), arcLon(:), options.exteriorBuffer);
-        % BUFFERM already clips to [-180, 180] longitude and [-90, 90] latitude.
-        % Re-clipping can reject valid polar vertices; only shift longitude back.
-        domainPoly = union(domainPoly, polyshape(x+origin, y));
-    end
-
-    if min(domainPoly.Vertices(:, 1)) > max(lon)
+    if exteriorBuffer == 0 && min(domainPoly.Vertices(:, 1)) > max(lon)
         error('ULMO:domainmask:InvalidInput', ...
             'Domain longitude range (min: %f) is outside the provided LON range (max: %f).', ...
             min(domainPoly.Vertices(:, 1)), max(lon));
-    elseif max(domainPoly.Vertices(:, 1)) < min(lon)
+    elseif exteriorBuffer == 0 && max(domainPoly.Vertices(:, 1)) < min(lon)
         error('ULMO:domainmask:InvalidInput', ...
             'Domain longitude range (max: %f) is outside the provided LON range (min: %f).', ...
             max(domainPoly.Vertices(:, 1)), min(lon));
@@ -246,6 +232,10 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
             fprintf('took %.1f seconds.\n', toc(t));
         end
 
+    end
+
+    if exteriorBuffer > 0
+        mask = buffergridmask(domainPoly, lonn, latt, mask, exteriorBuffer);
     end
 
     if ischar(dataPath) && saveData
