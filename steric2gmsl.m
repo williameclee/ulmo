@@ -55,7 +55,7 @@
 %       Unit: m.
 %
 % Output arguments
-%   gmsl - Selected uncorrected global mean on common observed support.
+%   gmsl - Selected component global mean on common observed support.
 %       Size: (N, 1).
 %       Unit: Unit.
 %   dates - Native timestamps in the selected TimeFormat.

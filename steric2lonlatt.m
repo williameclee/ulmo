@@ -48,12 +48,12 @@
 %   Depth (name-value) - full, shallow, or deep, as prepared by the product.
 %       Unsupported layers are not reconstructed or aliased to full.
 %       Default depth: full.
-%   Type (name-value) - Selected raw steric component.
+%   Type (name-value) - Selected steric component.
 %       total, thermosteric, halosteric, non-thermosteric (total minus
 %       thermosteric), or non-halosteric (total minus halosteric).
 %       Default type: total. The former 'default' and 'no halosteric drift'
 %       values are no longer accepted. Callers apply correction explicitly.
-%   ForceNew (name-value) - Whether to reprocess every supported raw grid and
+%   ForceNew (name-value) - Whether to reprocess every supported component grid and
 %       recalculate every native and processed GMSL, even without output six.
 %       Does not regenerate native grids or other cache configurations.
 %       Default flag: false.
@@ -82,7 +82,7 @@
 %       also require the corresponding total steric grid.
 %       Size: (nLat, nLon, N) or (nLon, nLat, N).
 %       Unit: m.
-%   steric - Selected raw component in an explicitly named epoch cache.
+%   steric - Selected component in an explicitly named epoch cache.
 %       Size: (nLat, nLon, N) or (nLon, nLat, N).
 %       Unit: m.
 %
@@ -104,17 +104,17 @@
 %       Unit: degrees north.
 %
 %   halostericGmsl - Native global halosteric mean for the requested depth,
-%       independently resampled to the returned dates. Never subtracted here.
+%       independently resampled to the returned dates.
 %       Size: (N, 1).
 %       Unit: Unit.
 %
 % Output file content
 %   lon, lat, dates - Processed coordinates and timestamps.
 %       Same conventions as the input file; saved before output formatting.
-%   <component>Sl - All supported raw grids for interpolation/epoch caches.
+%   <component>Sl - All supported component grids for interpolation/epoch caches.
 %       Size: as in the input file, with processed spatial/time dimensions.
 %       Unit: m.
-%   steric - Selected raw component for epoch-mean caches. Residuals retain
+%   steric - Selected component for epoch-mean caches. Residuals retain
 %       paired native samples before averaging.
 %       Size: as in the input file, with processed spatial/time dimensions.
 %       Unit: m.
@@ -126,15 +126,15 @@
 %
 % Notes
 %   Files are resolved through STERICFILEPATH under IFILES/STERIC/product.
-%   Ordinary raw-only requests do not calculate means. GMSL requests reuse
+%   Ordinary grid-only requests do not calculate means. GMSL requests reuse
 %   STERIC2GMSL caches and process all applicable series separately from grids.
 %   Full means of split components are sums of the processed layer means.
-%   Independent epoch averaging followed by caller subtraction can differ
-%   from averaging corrected cells when observations are missing.
+%   Grids and GMSL use their own finite samples during epoch averaging.
+%   They share output dates, not necessarily per-cell temporal support.
 %   ForceNew=true explicitly rebuilds the requested configuration and all
 %   native means. SaveData=false keeps this calculation entirely in memory.
 %   Rebuild other derived/figure caches manually after convention changes.
-%   Corrected legacy epoch paths are never used for raw output.
+%   Legacy epoch caches containing halosteric subtraction are incompatible.
 %   Calling without outputs attempts to plot the returned global mean.
 %
 % See also
@@ -214,7 +214,7 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
         timestep = days(timestep);
     end
 
-    % 'default' and 'no halosteric drift' are deprecated; callers own correction.
+    % 'default' and 'no halosteric drift' are deprecated Type values.
     [gridNames, meanNames, types, depths] = fieldnamesmap();
     iType = find(types == string(options.Type));
     iDepth = find(depths == string(options.Depth));
@@ -233,8 +233,8 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
     spatialIntpMthd = intpMthd;
     if strcmpi(spatialIntpMthd, 'mean'), spatialIntpMthd = 'linear'; end
     % Epoch caches carry the selected expression in their filename. Keeping
-    % the raw-total suffix distinct from the old corrected suffix prevents a
-    % legacy corrected epoch field from being interpreted as raw total.
+    % the total-component suffix excludes legacy files that already contain
+    % a global-mean subtraction.
     component = '';
     if useMean
         component = sprintf('-%s-%s', options.Depth, options.Type);
@@ -243,12 +243,12 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
         options.TruncationBeforeInterpolation, timelim, component);
     nativePath = stericfilepath(product);
     coordVars = {'lon', 'lat', 'dates'};
-    % Ordinary raw-only reads stay lazy. An explicit rebuild refreshes means
+    % Ordinary grid-only reads stay lazy. An explicit rebuild refreshes means
     % even when the caller does not request the diagnostic output.
     needMeans = nargout >= 6 || options.ForceNew;
     halostericGmsl = zeros(0, 1);
 
-    % A selected epoch field is safe only on this explicit raw-component path.
+    % Interpret a selected epoch field only on its explicit component path.
     cacheHit = ~options.ForceNew && isfile(outputPath) && ...
         supportedfields(outputPath, coordVars);
     selectedCache = cacheHit && useMean && supportedfields(outputPath, {'steric'});
@@ -367,7 +367,7 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
     end
 
     % steric2gmsl alone appends native means; never overwrite the native grids
-    % with processed data. A raw-cache hit lacking means needs only an append.
+    % with processed data. A grid-cache hit lacking means needs only an append.
     if saveData && ~strcmp(outputPath, nativePath)
         if ~cacheHit
             stored = data;
@@ -474,7 +474,7 @@ end
 function [data, dates] = processtime(data, dates, timestep, method, limits)
     % Grids and means enter separately but share temporal conventions. Epoch
     % averaging uses each array's own finite observations; it deliberately does
-    % not match a GMSL estimate to each individual cell's temporal support.
+    % not match a GMSL to each individual cell's temporal support.
     if isempty(timestep), dates = dates(:); return; end
     names = fieldnames(data);
     useMean = ischar(timestep) || isstring(timestep) || strcmpi(method, 'mean');

@@ -42,8 +42,8 @@ function info = stericproductinfo(product)
              "halostericSl", "shallowHalostericSl", "deepHalostericSl"];
     available = ismember(names, nonempty);
     % Product names do not determine depth coverage. Explicit partial splits
-    % are malformed; an absent optional halo component can still describe raw
-    % total coverage, leaving the caller to decide whether correction is needed.
+    % are malformed; total coverage can still be described when an optional
+    % halo component is absent. Application policy remains with the caller.
     split = any(available(:, 2:3), 2);
     if any(split & ~all(available, 2)) || ...
             (available(3, 1) && split(1) ~= split(3))
