@@ -81,6 +81,7 @@ The ultimate goal is to drop the `_new` suffixes and replace the original functi
 | :--- | :--- | :--- | :--- |
 | `ssh2lonlatt` | Reads and converts altimetric SSH data from different missions to gridded data. | | |
 | `steric2lonlatt` | Reads and pre-processed steric sea level data from different datasets to gridded data. | | |
+| `steric2gmsl` | Returns one explicitly selected native steric global mean and caches all supported component/depth means. | | |
 
 #### Data Pre-Processing
 
@@ -122,3 +123,37 @@ The ultimate goal is to drop the `_new` suffixes and replace the original functi
 ---
 
 Last modified: 2026/09/25, [@williameclee](mailto:williameclee@arizona.edu)
+
+### Native steric global means
+
+`[gmsl, dates] = steric2gmsl(product, Type="halosteric", Depth="shallow")`
+returns one native-time column vector. `Type` is required: `total`,
+`thermosteric`, `halosteric`, `non-thermosteric` (total minus thermosteric), or
+`non-halosteric` (total minus halosteric). `Depth` defaults to `full`.
+`Unit` defaults to `m` and `TimeFormat` to `datetime`; `mm` and `datenum`
+convert only the returned vectors. No interpolation or drift removal is performed.
+
+The first request calculates all supported means and, unless `SaveData=false`,
+appends individual metre-valued vectors to the native MAT file resolved through
+`IFILES` by `stericfilepath`. Full-depth names are `stericGmsl`,
+`thermostericGmsl`, `halostericGmsl`, `nonThermostericGmsl`, and
+`nonHalostericGmsl`; shallow/deep names prefix and capitalise these, for example
+`shallowHalostericGmsl`. Unsupported combinations have no cached vector and raise
+an error when requested. All vectors align with native `dates`; existing grids
+are preserved. GMSL variables are distinct from gridded `*stericSl` variables.
+
+The fixed support reference is full halosteric, otherwise full total, otherwise
+full thermosteric. Cells need at least 80% finite and 80% finite nonzero reference
+samples. Each date uses common finite support across all supplied components and
+layers, with cosine-latitude weights on a regular global longitude grid. A repeated
+longitude endpoint is counted once. Missing supported area yields NaN; observed
+zero layers remain valid. Explicit layers must sum to their supplied full field
+in the weighted mean within the precision-scaled tolerance documented in the
+function help. Total steric need not equal thermosteric plus halosteric.
+
+A complete cache bypasses grid reads. An incomplete/malformed cache is recomputed
+as a complete set. Use `ForceNew=true` to regenerate all applicable native means
+after a source/convention change; rebuild downstream caches separately. With
+`SaveData=false`, including with `ForceNew=true`, no file is changed. Cache
+freshness is not inferred automatically. This API does not change
+`steric2lonlatt` defaults or correction behavior.

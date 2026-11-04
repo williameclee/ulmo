@@ -96,7 +96,7 @@
 %	2025/07/22, En-Chi Lee (williameclee@arizona.edu)
 %
 % Last modified
-%	2026/11/01, En-Chi Lee (williameclee@gmail.com)
+%	2026/11/04, En-Chi Lee (williameclee@gmail.com)
 
 function [steric, stericSigma, dates, lon, lat] = steric2lonlatt( ...
         product, timestep, meshsize, timelim, options)
@@ -214,7 +214,7 @@ function [steric, stericSigma, dates, lon, lat] = steric2lonlatt( ...
         comp = sprintf('-%s-%s', options.Depth, strrep(options.Type, ' ', '-'));
     end
 
-    outputPath = outputpath(product, timestep, meshsize, lonOrigin, intpMthd, ...
+    outputPath = stericfilepath(product, timestep, meshsize, lonOrigin, intpMthd, ...
         options.TruncationBeforeInterpolation, timelim, comp);
 
     baseStericVar = stericVar;
@@ -239,7 +239,7 @@ function [steric, stericSigma, dates, lon, lat] = steric2lonlatt( ...
         inputPath = outputPath;
         dataVars = cacheVars;
     else
-        inputPath = outputpath(product);
+        inputPath = stericfilepath(product);
 
         if ~isfile(inputPath)
             error('ULMO:LoadData:FileNotFound', 'Input file %s not found.', inputPath);
@@ -518,82 +518,4 @@ function [steric, stericSigma, dates, lon, lat] = formatoutput( ...
     % Currently no sigma data available
     stericSigma = zeros(size(steric), 'like', steric);
 
-end
-
-% Find output path
-function outPath = outputpath( ...
-        product, timeStep, meshSize, lonOrigin, intpMthd, truncBeforeIntp, timelim, component)
-
-    arguments (Input)
-        product StericProduct {mustBeScalarOrEmpty}
-        timeStep {mustBeTimeStep} = []
-        meshSize {mustBePositive} = []
-        lonOrigin {mustBeFinite, mustBeReal} = []
-        intpMthd {mustBeTextScalar} = ""
-        truncBeforeIntp (1, 1) {mustBeNumericOrLogical} = false
-        timelim {mustBeTimeRange} = []
-        component (1, :) char = ''
-    end
-
-    outputFolder = fullfile(getenv("IFILES"), 'STERIC', char(product));
-
-    timeStepStr = '';
-
-    if ~isempty(timeStep)
-
-        if ischar(timeStep) || isstring(timeStep)
-            timeStepStr = sprintf('-T%s', lower(timeStep));
-        elseif isduration(timeStep)
-            timeStepStr = sprintf('-T%s', erase(sprintf('%s', timeStep), ' '));
-        elseif isnumeric(timeStep)
-            timeStepStr = sprintf('-T%d', timeStep);
-        else
-            error(sprintf('ULMO:%s:InvalidTimeStep', upper(mfilename)), ...
-                'Unrecognised time step input for saving: %s', class(timeStep));
-        end
-
-        % Earlier linear fixed-step caches could contain bin averages.
-        if isduration(timeStep) && strcmpi(intpMthd, 'linear')
-            timeStepStr = [timeStepStr, '-interp'];
-        end
-
-    end
-
-    spaceIntpStr = '';
-
-    if ~isempty(meshSize) && ~isempty(lonOrigin)
-        spaceIntpStr = ['-H', num2str(meshSize), 'O', num2str(lonOrigin)];
-    elseif ~isempty(meshSize)
-        spaceIntpStr = ['-H', num2str(meshSize)];
-    elseif ~isempty(lonOrigin)
-        spaceIntpStr = ['-O', num2str(lonOrigin)];
-    end
-
-    intpMethodStr = '';
-
-    if ~(isempty(timeStepStr) && isempty(spaceIntpStr))
-        intpMethodStr = sprintf('-%s', lower(intpMthd));
-    end
-
-    timelimStr = '';
-
-    if truncBeforeIntp && ~isempty(timelim)
-
-        if isnumeric(timelim)
-            timelim = datetime(timelim, 'ConvertFrom', 'datenum');
-        end
-
-        timeFmt = 'yyyyMMdd';
-
-        if any(timeofday(timelim) ~= 0)
-            timeFmt = 'yyyyMMdd''T''HHmmssSSSSSSSSS';
-        end
-
-        timelimStr = sprintf('-%s_%s', string(timelim(1), timeFmt), string(timelim(2), timeFmt));
-    end
-
-    outputFile = sprintf('%s-StericSeaLevel%s%s%s%s%s.mat', ...
-        product, timeStepStr, spaceIntpStr, intpMethodStr, timelimStr, component);
-
-    outPath = fullfile(outputFolder, outputFile);
 end
