@@ -6,7 +6,7 @@
 %   [gmsl, dates] = STERIC2GMSL(__, SaveData=false, ForceNew=true)
 %
 % Input arguments
-%   product - Prepared product: SIO, EN4c14, CMEMS, NOAA, or ORAS5.
+%   product - Prepared product identifier accepted by StericProduct.
 %       The native MAT file must already exist at STERICFILEPATH(product).
 %   Type (name-value, required) - Selected component.
 %       total, thermosteric, halosteric, non-thermosteric (total minus

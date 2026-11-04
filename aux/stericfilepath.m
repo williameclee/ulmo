@@ -6,7 +6,7 @@
 %       intpMthd, truncBeforeIntp, timelim, component)
 %
 % Input arguments
-%   product - Prepared product: SIO, EN4c14, CMEMS, NOAA, or ORAS5.
+%   product - Prepared product identifier accepted by StericProduct.
 %   timeStep (optional) - Temporal cache selector.
 %       Positive numeric scalar or duration, 'midmonth', or 'GRACE'.
 %       Numeric values are encoded as integers; durations retain their units.
