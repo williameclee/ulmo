@@ -15,6 +15,7 @@ classdef ssh2sleptTest < matlab.unittest.TestCase
     properties (TestParameter)
         polarBuffer = {0, 1.5}
         nearby = {false, true}
+        forceNew = {false, true}
     end
     methods (TestMethodSetup)
         function nativeFile(t)
@@ -114,6 +115,66 @@ classdef ssh2sleptTest < matlab.unittest.TestCase
             ncwriteatt(path, 'time', 'units', 'days since 2000-01-01');
             t.verifyError(@() ssh2slept(args{:},truncation=4), 'ULMO:readshnc:InvalidTime');
         end
+        function partialMonthSelectionPreservesCache(t, forceNew)
+            % Fresh fits save every month; filtering changes only returned rows.
+            args = {"NASASSHMonthly", t.Polygon, 1};
+            [selected, dates, fit, basis] = ssh2slept(args{:}, truncation=4, ...
+                unit="m", dropPartialMonths=true, ForceNew=forceNew);
+            t.verifyEqual(dates, t.Dates(2:3));
+            t.verifyEqual(fit.partialMonth, false(2, 1));
+            t.verifyEqual(selected*basis{1}.', [(2:3)', repmat([2 3 4], 2, 1)], ...
+                'AbsTol', 1e-10);
+            file = dir(fullfile(t.Folder, 'SlepianExpansions', '*.nc'));
+            t.assertNumElements(file, 1);
+            path = fullfile(file.folder, file.name);
+            t.verifySize(ncread(path, 'coefficients'), [4 4]);
+            t.verifyEqual(logical(ncread(path, 'partialMonth')), [true;false;false;true]);
+            originalBytes = readbinary(path);
+
+            % All output counts must filter correctly without the source cube.
+            delete(fullfile(t.Folder, 'NASASSHMonthly.mat'));
+            oneOutput = ssh2slept(args{:}, truncation=4, unit="m", dropPartialMonths=true);
+            t.verifyEqual(oneOutput, selected);
+            [twoOutputs, dates] = ssh2slept(args{:}, truncation=4, dropPartialMonths=true);
+            t.verifyEqual(twoOutputs, selected*1000);
+            t.verifyEqual(dates, t.Dates(2:3));
+            [allC, allDates, allFit, allBasis] = ssh2slept(args{:}, truncation=4, unit="m");
+            t.verifyEqual(allDates, t.Dates);
+            t.verifyEqual(allC(2:3, :), selected);
+            t.verifyEqual(allFit(2:3, :), fit);
+            t.verifyEqual(allBasis, basis);
+            [subset, dates, subsetFit, subsetBasis] = ssh2slept(args{:}, ...
+                t.Dates([3 4]), truncation=4, unit="m", dropPartialMonths=true);
+            t.verifyEqual(subset, selected(2, :));
+            t.verifyEqual(dates, t.Dates(3));
+            t.verifyEqual(subsetFit, fit(2, :));
+            t.verifyEqual(subsetBasis, basis);
+            [none, dates, emptyFit] = ssh2slept(args{:}, t.Dates([4 4]), ...
+                truncation=4, dropPartialMonths=true);
+            t.verifySize(none, [0 4]);
+            t.verifyEmpty(dates);
+            t.verifyEqual(height(emptyFit), 0);
+            t.verifyEqual(readbinary(path), originalBytes);
+            t.verifyNumElements(dir(fullfile(t.Folder, 'SlepianExpansions', '*.nc')), 1);
+        end
+
+        function partialMonthSelectionWithoutCache(t)
+            % Custom-basis fits filter partial months and allow an empty result.
+            args = {"NASASSHMonthly", t.Polygon, 1};
+            basis = {eye(4), ones(4, 1), 4};
+            [selected, dates, fit] = ssh2slept(args{:}, GVN=basis, unit="m", ...
+                dropPartialMonths=true);
+            t.verifyEqual(selected, [(2:3)', repmat([2 3 4], 2, 1)], 'AbsTol', 1e-10);
+            t.verifyEqual(dates, t.Dates(2:3));
+            t.verifyEqual(fit.partialMonth, false(2, 1));
+            [none, dates, fit] = ssh2slept(args{:}, t.Dates([4 4]), ...
+                GVN=basis, dropPartialMonths=true);
+            t.verifySize(none, [0 4]);
+            t.verifyEmpty(dates);
+            t.verifyEqual(height(fit), 0);
+            t.verifyFalse(isfolder(fullfile(t.Folder, 'SlepianExpansions')));
+        end
+
         function repeatedMasksKeepMonthsAligned(t)
             % Months two and four share a mask but have different coefficients.
             data = matfile(fullfile(t.Folder, 'NASASSHMonthly.mat'), 'Writable', true);
@@ -283,4 +344,10 @@ classdef ssh2sleptTest < matlab.unittest.TestCase
                 'sshs','lon','lat','dates','partialMonths','-v7.3');
         end
     end
+end
+
+function bytes = readbinary(path)
+    file = fopen(path, 'rb');
+    cleanup = onCleanup(@() fclose(file));
+    bytes = fread(file, Inf, '*uint8');
 end

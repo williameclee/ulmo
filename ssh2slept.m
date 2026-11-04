@@ -4,6 +4,7 @@
 %   [sshSlept, dates, fit, GVN] = ssh2slept("NASASSHMonthly", domain, L)
 %   [__] = ssh2slept(__, timeRange, unit="m", truncation=J)
 %   [__] = ssh2slept(__, GVN={G,V,N})
+%   [__] = ssh2slept(__, dropPartialMonths=true)
 %
 % Input arguments
 %   product - "NASASSHMonthly". Reads IFILES/SSH/NASASSHMonthly.mat.
@@ -18,6 +19,9 @@
 %       SSH fit and disables reading and writing the projection cache.
 %   ForceNew - Rebuild after replacing the source product. Default false.
 %   SaveData - Write newly fitted coefficients to NetCDF. Default true.
+%   dropPartialMonths - Whether to omit partial months from returned outputs.
+%       Applies after fitting or reading the cache; saved data retain all months.
+%       Default value: false.
 %
 % Input file content
 %   sshs - Native SSH anomalies in metres, ordered by longitude, latitude and date.
@@ -65,6 +69,7 @@ function [sshSlept, dates, fit, GVN] = ssh2slept(product, domain, L, timeRange, 
         options.GVN cell = {}
         options.ForceNew (1, 1) logical = false
         options.SaveData (1, 1) logical = true
+        options.dropPartialMonths (1, 1) logical = false
     end
     if ~isempty(timeRange)
         if isnumeric(timeRange)
@@ -96,7 +101,9 @@ function [sshSlept, dates, fit, GVN] = ssh2slept(product, domain, L, timeRange, 
     end
 
     if cacheHit
-        [sshSlept, dates, fit] = readCache(path, timeRange, nargout);
+        % Filtering needs the flags even when diagnostics are not requested.
+        outputCount = max(nargout, 3 * options.dropPartialMonths);
+        [sshSlept, dates, fit] = readCache(path, timeRange, outputCount);
         if nargout >= 4
             [G, V, ~, ~, N] = glmalpha_new(domain, L, 'BeQuiet', true);
             % Match the eigenvalue order and retained columns used by xyzs2slep.
@@ -118,6 +125,12 @@ function [sshSlept, dates, fit, GVN] = ssh2slept(product, domain, L, timeRange, 
         sshSlept = sshSlept(rows, :);
         fit = fit(rows, :);
         dates = dates(rows);
+    end
+    if options.dropPartialMonths
+        rows = ~fit.partialMonth;
+        sshSlept = sshSlept(rows, :);
+        dates = dates(rows);
+        fit = fit(rows, :);
     end
     if options.unit == "mm"
         sshSlept = sshSlept * 1000;
