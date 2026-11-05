@@ -235,7 +235,9 @@ function path = findCache(stem, J)
     path = '';
     if isempty(J)
         files = dir([stem, '-*-m.nc']);
-        [~, name] = fileparts(stem);
+        % The extensionless stem can contain decimal points in the domain ID.
+        [~, name, extension] = fileparts(stem);
+        name = [name, extension];
         names = string({files.name});
         first = find(matches(names, name + "-" + digitsPattern + "-m.nc"), 1);
         if isempty(first), return; end
