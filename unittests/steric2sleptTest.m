@@ -58,6 +58,24 @@ classdef steric2sleptTest < matlab.unittest.TestCase
         end
     end
     methods (Test)
+        function decimalDomainCacheReadsWithoutNativeInput(t)
+            % Decimal IDs must remain intact during automatic cache discovery.
+            domain = GeoDomain('satlantic', Buffer=.5, DefaultParams=true, Latlim=[-60, 60]);
+            t.assertTrue(contains(domain.Id, '0.5'));
+            expected = steric2slept('EN4c14', domain, 0, BeQuiet=1);
+            path = t.cachePath;
+            original = readbinary(path);
+            delete(t.NativePath);
+            % Both explicit and inferred truncation must read the existing file.
+            explicit = steric2slept('EN4c14', domain, 0, truncation=1, SaveData=false, BeQuiet=1);
+            t.verifyEqual(explicit, expected);
+            [actual, dates] = steric2slept('EN4c14', domain, 0, SaveData=false, BeQuiet=1);
+            t.verifyEqual(actual, expected);
+            t.verifyEqual(dates, t.Data.dates);
+            t.verifyEqual(readbinary(path), original);
+            t.verifyNumElements(dir(fullfile(fileparts(path), '*.nc')), 1);
+        end
+
         function agreesWithLoaderThenFit(t, temporal)
             % Epoch residuals must use paired native samples before averaging.
             t.Data.thermostericSl(2, 2, 1:9) = NaN;
