@@ -64,8 +64,9 @@
 %   dates - Returned timestamps in TimeFormat.
 %       Size: (nTime, 1).
 %   fit - Table of nObs, areaFraction, condNum and residualRms, one row per
-%       returned epoch. Counts include exterior-buffer cells; areaFraction
-%       measures observed area inside the target. Residual RMS uses Unit.
+%       returned epoch. Counts include exterior-buffer cells and zero-filled
+%       deep cells; areaFraction measures fitted area inside the target.
+%       Residual RMS uses Unit.
 %   GVN - Retained harmonic basis, eigenvalues and full Shannon number.
 %   halostericGmsl - Selected depth's independently processed halosteric GMSL.
 %       Size: (nTime, 1) for timefirst; (1, nTime) for traditional.
@@ -91,8 +92,14 @@
 %   rebuilding. Basis caches and projection caches must remain consistent.
 %   The bulk path shares STERIC2LONLATT's temporal operations and native mean
 %   reader; it processes all fields once without intermediate grid caches.
-%   Each field/epoch uses all its finite observations. Full coefficients are
-%   fitted independently and need not equal the sum of fitted depth layers.
+%   Full and shallow fields retain their finite observations. Supplied deep
+%   grids use paired finite full/shallow support: missing deep values there
+%   are zero contributions, and deep values outside that support are omitted.
+%   This absent-layer convention is applied before temporal processing and
+%   residual construction, in memory only. It assumes missing deep values on
+%   observed upper columns mean an absent deep contribution, not lost data.
+%   Native GMSL estimation is unchanged. Source layer inconsistencies and
+%   nonlinear temporal interpolation can still prevent exact depth closure.
 %   Raw grids and GMSL use independent finite samples during epoch averaging.
 %   For timefirst, caller correction is c - h*constantSlept.'; traditional
 %   uses c - constantSlept*h. This is harmonic C00 subtraction, not refitting
@@ -272,6 +279,7 @@ function [fields, means, dates, lon, lat] = prepareRecord(product, timestep, opt
     lon = double(data.lon(:));
     lat = double(data.lat(:));
     data = rmfield(data, {'lon', 'lat'});
+    data = prepareDeepSupport(data, schema);
     useMean = ~isempty(timestep) && (isstring(timestep) || options.Interpolation == "mean");
     if useMean, data = addResiduals(data, schema); end
     [data, dates] = processsterictime(data, nativeDates, timestep, options.Interpolation, []);
@@ -297,6 +305,22 @@ function [fields, means, dates, lon, lat] = prepareRecord(product, timestep, opt
             means.(schema.meanNames(iType, 1)) = ...
                 means.(schema.meanNames(iType, 2)) + means.(schema.meanNames(iType, 3));
         end
+    end
+end
+
+function data = prepareDeepSupport(data, schema)
+    % A missing supplied deep layer contributes zero on an observed upper
+    % column. Never infer an unsupported depth or reconstruct full-shallow.
+    % Apply this before averaging: mean([NaN,d]) differs from mean([0,d]).
+    for iType = find(schema.split).'
+        full = data.(schema.gridNames(iType, 1));
+        shallow = data.(schema.gridNames(iType, 2));
+        deep = data.(schema.gridNames(iType, 3));
+        support = isfinite(full) & isfinite(shallow);
+        deep(~support) = NaN;
+        deep(support & isnan(deep)) = 0;
+        % Inf on fitted support remains invalid and is rejected by the fitter.
+        data.(schema.gridNames(iType, 3)) = deep;
     end
 end
 
@@ -422,6 +446,8 @@ function writeCache(destination, coefficients, means, dates, fits, constant, pro
     ncwriteatt(path, '/', 'defaultTruncation', defaultJ);
     ncwriteatt(path, '/', 'observationBufferDegrees', buffer);
     ncwriteatt(path, '/', 'weighting', weighting);
+    ncwriteatt(path, '/', 'deepSupport', ...
+        'Paired finite native full/shallow support; missing deep values are zero before temporal processing');
     nccreate(path, 'creationDate', 'Datatype', 'double');
     ncwrite(path, 'creationDate', posixtime(datetime('now', 'TimeZone', 'UTC')));
     ncwriteatt(path, 'creationDate', 'units', 'seconds since 1970-01-01 00:00:00 UTC');
