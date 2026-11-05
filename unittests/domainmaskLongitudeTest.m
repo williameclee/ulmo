@@ -136,34 +136,53 @@ classdef domainmaskLongitudeTest < matlab.unittest.TestCase
             t.verifyEqual(returnedY, y);
         end
 
-        function maskCacheConventionAndOrder(t)
-            % Reject old semantics and coordinate orders even if filenames match.
+        function maskCacheReadAndCreationDate(t)
+            % Trust existing masks and timestamp only saved computations.
             polygon = [-1 -1;1 -1;1 1;-1 1];
             lon = -3:3;
             lat = (-3:3).';
+            beforeSave = datetime('now', 'TimeZone', 'UTC');
             expected = domainmask(polygon, lon, lat, exteriorBuffer=0.5, BeQuiet=true);
+            afterSave = datetime('now', 'TimeZone', 'UTC');
             files = dir(fullfile(getenv('IFILES'), 'DOMAINMASK', '*.mat'));
             t.assertNumElements(files, 1);
             path = fullfile(files.folder, files.name);
             data = load(path);
-            t.verifyEqual(data.maskVersion, 1);
-            old = rmfield(data, 'maskVersion');
-            old.mask = ~expected;
-            save(path, '-struct', 'old');
-            t.verifyEqual(domainmask(polygon, lon, lat, exteriorBuffer=0.5, ...
-                SaveData=false, BeQuiet=true), expected);
-            t.verifyFalse(ismember('maskVersion', who('-file', path)));
-            % Saving replaces the obsolete entry; a current sentinel is reused.
-            domainmask(polygon, lon, lat, exteriorBuffer=0.5, BeQuiet=true);
-            data = load(path);
+            t.verifyGreaterThanOrEqual(data.creationDate, beforeSave);
+            t.verifyLessThanOrEqual(data.creationDate, afterSave);
+            t.verifyFalse(isfield(data, 'maskVersion'));
+            % An old timestamp and sentinel distinguish reads from rebuilds.
+            savedDate = datetime(2000, 1, 1, 'TimeZone', 'UTC');
+            data.creationDate = savedDate;
             data.mask = ~expected;
             save(path, '-struct', 'data');
             t.verifyEqual(domainmask(polygon, lon, lat, exteriorBuffer=0.5, ...
                 BeQuiet=true), ~expected);
+            cached = load(path);
+            t.verifyEqual(cached.creationDate, savedDate);
+            % Reordered vectors bypass the bounds-based cache entirely.
             t.verifyEqual(domainmask(polygon, fliplr(lon), lat, exteriorBuffer=0.5, ...
                 SaveData=false, BeQuiet=true), fliplr(expected));
             t.verifyEqual(domainmask(polygon, lon, lat, exteriorBuffer=0.5, ...
                 Forcenew=true, SaveData=false, BeQuiet=true), expected);
+            cached = load(path);
+            t.verifyEqual(cached.creationDate, savedDate);
+            t.verifyEqual(cached.mask, ~expected);
+            beforeSave = datetime('now', 'TimeZone', 'UTC');
+            domainmask(polygon, lon, lat, exteriorBuffer=0.5, ...
+                Forcenew=true, BeQuiet=true);
+            afterSave = datetime('now', 'TimeZone', 'UTC');
+            saved = load(path);
+            t.verifyEqual(saved.mask, expected);
+            t.verifyGreaterThanOrEqual(saved.creationDate, beforeSave);
+            t.verifyLessThanOrEqual(saved.creationDate, afterSave);
+            % Older files without a creation timestamp remain readable.
+            saved = rmfield(saved, 'creationDate');
+            saved.mask = ~expected;
+            save(path, '-struct', 'saved');
+            t.verifyEqual(domainmask(polygon, lon, lat, exteriorBuffer=0.5, ...
+                SaveData=false, BeQuiet=true), ~expected);
+            t.verifyFalse(ismember('creationDate', who('-file', path)));
         end
     end
 end

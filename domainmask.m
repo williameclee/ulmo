@@ -45,6 +45,7 @@
 %   Forcenew (name-value) - Whether to recompute an existing mask.
 %       Default value: false.
 %   SaveData (name-value) - Whether to save a cache for a regular grid.
+%       Supplied coordinate vectors must be increasing to use a grid cache.
 %       Named domains are cacheable; numeric polygons are cacheable when
 %       exteriorBuffer is positive. Polyshape inputs are not cached.
 %       Default value: true.
@@ -71,8 +72,10 @@
 %   repeated cyclic endpoint only once.
 %   Supplied polygon rings retain their planar topology and are split at the
 %   longitude seam, rather than wrapping their vertices independently.
-%   Mask caches written before this longitude convention are ignored. Cached
-%   projections or regional means derived from old masks need separate rebuilds.
+%   Existing cache files are assumed valid. Delete obsolete mask caches and
+%   separately rebuild projections or regional means derived from old masks.
+%   New mask files include creationDate, the UTC datetime at the time of saving.
+%   Reading a cache does not change its creationDate.
 %
 % See also
 %   GEODOMAIN, BUFFERGRIDMASK, SSH2LONLATT, STERIC2LONLATT
@@ -133,7 +136,8 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
         lat = latlim(1):meshsize:latlim(2);
     elseif isempty(lon) || isempty(lat)
         error('Both LON and LAT must be provided');
-    elseif isvector(lon) && isvector(lat)
+    elseif isvector(lon) && isvector(lat) && ...
+            all(diff(lon(:)) > 0) && all(diff(lat(:)) > 0)
         if isscalar(unique([diff(unique(lon(:))); diff(unique(lat(:)))]))
             meshsize = abs(unique([diff(unique(lon(:))); diff(unique(lat(:)))]));
             lonlim = [min(lon(:)), max(lon(:))];
@@ -156,25 +160,21 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
     %% Check for existing data
     dataPath = datapath(domain, meshsize, lonlim, latlim, options.exteriorBuffer);
     exteriorBuffer = options.exteriorBuffer;
-    maskVersion = 1;
-    cacheVars = {'mask', 'maskVersion', 'lon', 'lat'};
+    cacheVars = {'mask'};
     if exteriorBuffer > 0
         cacheVars{end+1} = 'exteriorBuffer';
     end
-    vars = cacheVars;
+    vars = [cacheVars, {'lon', 'lat'}];
 
     if ~forceNew && ~(isscalar(dataPath) && isnan(dataPath)) && ...
-            exist(dataPath, 'file') && all(ismember(vars, who('-file', dataPath)))
+            exist(dataPath, 'file')
         data = load(dataPath, cacheVars{:});
     else
         data = [];
     end
 
     % Different exact widths can share the same num2str filename.
-    if ~isempty(data) && isequal(data.maskVersion, maskVersion) && ...
-            isequal(data.lon, lon) && isequal(data.lat, lat) && ...
-            isequal(size(data.mask), size(lonn)) && ...
-            (exteriorBuffer == 0 || data.exteriorBuffer == exteriorBuffer)
+    if ~isempty(data) && (exteriorBuffer == 0 || data.exteriorBuffer == exteriorBuffer)
 
         if ~beQuiet
             fprintf('[ULMO>%s] Loaded %s.\n', ...
