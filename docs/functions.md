@@ -42,7 +42,7 @@ The ultimate goal is to drop the `_new` suffixes and replace the original functi
 | `plm2avgp` | Computes the integral of spherical harmonics over a domain in parallel. | [slepian_delta](https://github.com/csdms-contrib/slepian_delta.git) | none | Replacement for `plm2avgp` in [slepian_delta](https://github.com/csdms-contrib/slepian_delta.git). |
 | `plm2xyz` | Projects spherical harmonics onto latitude-longitude grids/points. | [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git) | none | Replacement for `plm2xyz` in [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git). |
 | `slep2plm_new` | Projects Slepian functions back to spherical harmonics. | [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git) | none | Replacement for `slep2plm` in [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git), with support for `GeoDomain` objects. |
-| `xyzs2slep` | Fits scattered scalar observations to a regional Slepian basis, with optional weighted fitting and uncertainty propagation. | [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git) | | |
+| `xyzs2slep` | Fits one or more scalar fields on shared coordinates to a regional Slepian basis, with per-field masks, optional geometric weights or observation uncertainty, and sampled basis reuse. | [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git) | | |
 | `slep2xyz` | Projects Slepian functions onto latitude-longitude grids/points. | [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git) | none | WIP |
 | `slept2resid_new` | Fits a time series | [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git) | none | Replacement for `slept2resid` in [slepian_delta](https://github.com/csdms-contrib/slepian_delta.git), with support for `GeoDomain` objects. |
 | `sphgaussfilt` | Apply Gaussian filter to spherical harmonics | none | none | |
@@ -79,6 +79,7 @@ The ultimate goal is to drop the `_new` suffixes and replace the original functi
 
 | Function name | Description | Package dependencies | Data dependencies |
 | :--- | :--- | :--- | :--- |
+| `ssh2slept` | Fits NASA monthly sea surface height anomalies to a regional Slepian basis and caches the full time series in NetCDF. | | |
 | `ssh2lonlatt` | Reads and converts altimetric SSH data from different missions to gridded data. | | |
 | `steric2lonlatt` | Returns steric component grids and optional requested-depth halosteric GMSL on the same dates. | | |
 | `steric2gmsl` | Returns one native global mean steric sea level series for a selected component and depth; caches all supported means. | | |

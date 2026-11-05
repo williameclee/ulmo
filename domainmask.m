@@ -1,55 +1,75 @@
-%% DOMAINMASK
-% Computes the mask for a given domain defined by a polygon over a grid.
+%% DOMAINMASK - Compute a geographic domain mask on a longitude-latitude grid.
 %
 % Syntax
 %   [mask, lonn, latt] = DOMAINMASK(domain, lon, lat)
-%   [mask, lonn, latt] = DOMAINMASK(domain, lonlim, latlim, meshsize)
-%   [mask, lonn, latt] = DOMAINMASK(__, "Name", Value)
+%   [mask, lonn, latt] = DOMAINMASK(domain, [], [], lonlim, latlim, meshsize)
+%   [mask, lonn, latt] = DOMAINMASK(__, "Name", value)
 %
-%Input arguments
-%   domain - Geographic domain to compute the mask for
-%       - GeoDomain object
-%       - Nx2 numeric array of (lon, lat) vertices
-%       - String function name that returns a Nx2 numeric array of
-%           (lon, lat) vertices
-%       - Cell array with first element as string function name and
-%           subsequent elements as additional arguments to the function
-%       - PolyShape object
-%       See mustBeGeographicDomain and KERNELCP for more details
-%   lon - Vector or 2D array of longitudes (degrees East)
-%   lat - Vector or 2D array of latitudes (degrees North)
-%   lonlim - 1x2 array specifying the longitude limits [minLon, maxLon]
-%       (degrees East)
-%   latlim - 1x2 array specifying the latitude limits [minLat, maxLat]
-%       (degrees North)
-%   meshsize - Scalar specifying the grid spacing (degrees)
-%   Format - Format of the output mesh
-%       - 'meshgrid' or 'ndgrid' for (lat, lon, t) or (lon, lat, t)
-%           ordering.
-%       The default format is 'meshgrid'.
-%	ForceNew - Logical flag to force reprocess of the data
-%		The default option is false.
-%	SaveData - Logical flag to save the data
-%		The default option is true.
-%	BeQuiet - Logical flag to print messages
-%		- true: Suppress all messages.
-%		- false: Print all messages (usually for debugging).
-%		The default option is 'soft true', only printing important
-%       messages.
+% Input arguments
+%   domain - Geographic domain to compute the mask for.
+%       Accepts a GeoDomain object, an (n, 2) numeric array of longitude and
+%       latitude vertices, a character vector naming a boundary function,
+%       or a polyshape object. Arctic and Antarctic GeoDomain objects and
+%       function names use geographic coordinates; their mask cache names
+%       include -rotb to distinguish them from rotated masks.
+%   lon - Longitude coordinates, or [] when specifying limits and spacing.
+%       Unit: degrees east.
+%   lat - Latitude coordinates, or [] when specifying limits and spacing.
+%       Unit: degrees north.
+%   lonlim (optional) - Longitude limits [minimum, maximum].
+%       Used with meshsize to construct the grid.
+%       Size: (1, 2).
+%       Unit: degrees east.
+%       Default limits: [NaN, NaN]; inferred from regular coordinate vectors.
+%   latlim (optional) - Latitude limits [minimum, maximum].
+%       Used with meshsize to construct the grid.
+%       Size: (1, 2).
+%       Unit: degrees north.
+%       Default limits: [NaN, NaN]; inferred from regular coordinate vectors.
+%   meshsize (optional) - Grid spacing in both longitude and latitude.
+%       Supply both lonlim and latlim when setting this argument.
+%       Unit: degrees.
+%       Default spacing: NaN; inferred from regular coordinate vectors.
+%   Format (name-value) - Output array layout.
+%       'meshgrid' uses (latitude, longitude) ordering; 'ndgrid' uses
+%       (longitude, latitude) ordering.
+%       Default format: 'meshgrid'.
+%   exteriorBuffer (name-value) - Spherical buffer around the finished polygon.
+%       Includes grid points within this angular distance of the boundary.
+%       Boundary edges are densified linearly at 1-degree spacing, then treated
+%       as minor great-circle segments. Distances include segment endpoints.
+%       Must be between 0 and 90. Positive widths use separate mask caches.
+%       Unit: degrees of spherical arc.
+%       Default width: 0.
+%   Forcenew (name-value) - Whether to recompute an existing mask.
+%       Default value: false.
+%   SaveData (name-value) - Whether to save a cache for a regular grid.
+%       Named domains are cacheable; numeric polygons are cacheable when
+%       exteriorBuffer is positive. Polyshape inputs are not cached.
+%       Default value: true.
+%   BeQuiet (name-value) - Whether to suppress progress messages.
+%       Default value: false.
+%   CallChain (name-value) - Calling function names for progress messages.
+%       Default value: {}.
 %
 % Output arguments
-%   mask - Logical array where true indicates points inside the domain
-%   lonn - 2D array of longitudes corresponding to the mask
-%   latt - 2D array of latitudes corresponding to the mask
+%   mask - Logical array identifying points in the buffered domain.
+%       Size: (nLat, nLon) for 'meshgrid', or (nLon, nLat) for 'ndgrid'.
+%   lonn - Longitude coordinates corresponding to the mask.
+%       Size: same as mask.
+%       Unit: degrees east.
+%   latt - Latitude coordinates corresponding to the mask.
+%       Size: same as mask.
+%       Unit: degrees north.
 %
 % See also
-%   SSH2LONLATT, STERIC2LONLATT
+%   GEODOMAIN, BUFFERGRIDMASK, SSH2LONLATT, STERIC2LONLATT
 %
-% Authored by
-%	2025/07/25, williameclee@arizona.edu (@williameclee)
+% Created by
+%   2025/07/25, En-Chi Lee (williameclee@arizona.edu)
 %
-% Last modified by
-%	2025/11/11, williameclee@arizona.edu (@williameclee)
+% Last modified
+%   2026/11/04, En-Chi Lee (williameclee@arizona.edu)
 
 function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshsize, options)
 
@@ -61,6 +81,7 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
         latlim (1, 2) double {mustBeNumeric} = nan
         meshsize (1, 1) double {mustBeNumeric} = nan
         options.Format (1, :) char {mustBeMember(options.Format, {'meshgrid', 'ndgrid'})} = 'meshgrid'
+        options.exteriorBuffer (1, 1) double {mustBeFinite, mustBeNonnegative, mustBeLessThanOrEqual(options.exteriorBuffer, 90)} = 0
         options.Forcenew (1, 1) logical = false
         options.BeQuiet (1, 1) logical = false
         options.SaveData (1, 1) logical = true
@@ -78,6 +99,13 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
     beQuiet = options.BeQuiet;
     saveData = options.SaveData;
     callChain = [options.CallChain, {mfilename}];
+
+    if (ischar(domain) || isstring(domain)) && ...
+            ismember(lower(string(domain)), ["arctic", "antarctica"])
+        domain = GeoDomain(domain);
+    end
+    rotateBack = isa(domain, 'GeoDomain') && ...
+        ismember(domain.Domain, ["arctic", "antarctica"]);
 
     if ~isnan(meshsize)
 
@@ -113,12 +141,23 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
     end
 
     %% Check for existing data
-    dataPath = datapath(domain, meshsize, lonlim, latlim);
-    vars = {'mask' 'lon' 'lat'};
+    dataPath = datapath(domain, meshsize, lonlim, latlim, options.exteriorBuffer);
+    exteriorBuffer = options.exteriorBuffer;
+    cacheVars = {'mask'};
+    if exteriorBuffer > 0
+        cacheVars{end+1} = 'exteriorBuffer';
+    end
+    vars = [cacheVars, {'lon', 'lat'}];
 
     if ~forceNew && ~(isscalar(dataPath) && isnan(dataPath)) && ...
             exist(dataPath, 'file') && all(ismember(vars, who('-file', dataPath)))
-        data = load(dataPath, vars{:});
+        data = load(dataPath, cacheVars{:});
+    else
+        data = [];
+    end
+
+    % Different exact widths can share the same num2str filename.
+    if ~isempty(data) && (exteriorBuffer == 0 || data.exteriorBuffer == exteriorBuffer)
 
         if ~beQuiet
             fprintf('[ULMO>%s] Loaded %s.\n', ...
@@ -126,8 +165,6 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
         end
 
         mask = data.mask;
-        lonn = data.lon;
-        latt = data.lat;
 
         if nargout > 0
 
@@ -146,8 +183,10 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
 
     %% Main
     if isa(domain, 'GeoDomain')
+        % Native grids require geographic coordinates for rotated polar domains.
         domainPoly = ...
-            domain.Lonlat(round(mean(lonlim) / 180) * 180, "OutputFormat", 'polyshape');
+            domain.Lonlat(round(mean(lonlim) / 180) * 180, ...
+                "RotateBack", rotateBack, "OutputFormat", 'polyshape');
     elseif ismatrix(domain) && isnumeric(domain) && size(domain, 2) == 2
         domainPoly = polyshape(domain);
     elseif ischar(domain)
@@ -160,11 +199,11 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
         error('Unsupported domain type: %s', class(domain));
     end
 
-    if min(domainPoly.Vertices(:, 1)) > max(lon)
+    if exteriorBuffer == 0 && min(domainPoly.Vertices(:, 1)) > max(lon)
         error('ULMO:domainmask:InvalidInput', ...
             'Domain longitude range (min: %f) is outside the provided LON range (max: %f).', ...
             min(domainPoly.Vertices(:, 1)), max(lon));
-    elseif max(domainPoly.Vertices(:, 1)) < min(lon)
+    elseif exteriorBuffer == 0 && max(domainPoly.Vertices(:, 1)) < min(lon)
         error('ULMO:domainmask:InvalidInput', ...
             'Domain longitude range (max: %f) is outside the provided LON range (min: %f).', ...
             max(domainPoly.Vertices(:, 1)), min(lon));
@@ -195,8 +234,20 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
 
     end
 
+    if exteriorBuffer > 0
+        mask = buffergridmask(domainPoly, lonn, latt, mask, exteriorBuffer);
+    end
+
     if ischar(dataPath) && saveData
-        save(dataPath, vars{:}, '-v7.3');
+        folder = fileparts(dataPath);
+        if ~isfolder(folder)
+            mkdir(folder);
+        end
+        tmp = [tempname(folder), '.mat'];
+        cleanup = onCleanup(@() deletePartial(tmp));
+        creationDate = datetime('now', 'TimeZone', 'UTC');
+        save(tmp, vars{:}, 'creationDate', '-v7.3');
+        movefile(tmp, dataPath, 'f');
 
         if ~beQuiet
             fprintf('[ULMO>%s] Saved %s.\n', ...
@@ -220,10 +271,9 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
 end
 
 %% Subfunctions
-function dataPath = datapath(domain, meshSize, lonLim, latLim)
+function dataPath = datapath(domain, meshSize, lonLim, latLim, exteriorBuffer)
 
-    if ~(isa(domain, 'GeoDomain') || isa(domain, 'char') || isa(domain, 'cell')) ...
-            || isnan(meshSize)
+    if isnan(meshSize)
         % Data cannot be saved if irregular
         dataPath = nan;
         return
@@ -231,20 +281,35 @@ function dataPath = datapath(domain, meshSize, lonLim, latLim)
 
     dataFolder = fullfile(getenv('IFILES'), 'DOMAINMASK');
 
-    if ~exist(dataFolder, 'dir')
-        mkdir(dataFolder);
-    end
-
     if isa(domain, 'GeoDomain')
         domainName = domain.Id;
+        if ismember(domain.Domain, ["arctic", "antarctica"])
+            domainName = [domainName, '-rotb'];
+        end
     elseif iscell(domain)
         domainName = strjoin(string(domain), '_');
+    elseif ischar(domain)
+        domainName = domain;
+    elseif isnumeric(domain) && exteriorBuffer > 0
+        domainName = hash(domain, 'sha1');
+    else
+        dataPath = nan;
+        return
+    end
+    if exteriorBuffer > 0
+        domainName = sprintf('%s-E%s', domainName, num2str(exteriorBuffer));
     end
 
     dataFile = sprintf('DOMAINMASK-%s-H%s-Box%s_%s_%s_%s.mat', ...
         domainName, num2str(meshSize), ...
         num2str(lonLim(1)), num2str(lonLim(2)), num2str(latLim(1)), num2str(latLim(2)));
     dataPath = fullfile(dataFolder, dataFile);
+end
+
+function deletePartial(path)
+    if isfile(path)
+        delete(path);
+    end
 end
 
 function plotdomainmask(mask, lonn, latt)

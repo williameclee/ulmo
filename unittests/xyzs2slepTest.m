@@ -1,5 +1,7 @@
 classdef xyzs2slepTest < matlab.unittest.TestCase
 
+    % Verify harmonic conventions, masked fits, design reuse and propagated errors.
+
     properties
         Polygon = [340 -25; 380 -20; 375 30; 345 20; 340 -25]
         Lon
@@ -50,17 +52,15 @@ classdef xyzs2slepTest < matlab.unittest.TestCase
             J = 6;
             c = (1:J)' / 7;
             data = testCase.synthesize(testCase.Basis(:, 1:J) * c);
-            [actual, V, N, j, n, used, rankA, s, condition, fitted, residual, dof] = ...
+            [actual, V, N, fit, design] = ...
                 xyzs2slep(data, testCase.Lon, testCase.Lat, testCase.Polygon, 3, truncation = J);
             testCase.verifyEqual(actual, c, 'AbsTol', 2e-11);
             testCase.verifyEqual(V, testCase.Eigenvalues(1:J), 'AbsTol', 1e-12);
             testCase.verifyEqual(N, testCase.ShannonNumber);
-            testCase.verifyEqual([j n rankA dof], [J 80 J 80 - J]);
-            testCase.verifyEqual(used, (1:80)');
-            testCase.verifySize(s, [J 1]);
-            testCase.verifyEqual(condition, s(1) / s(end));
-            testCase.verifyEqual(fitted, data, 'AbsTol', 2e-11);
-            testCase.verifyEqual(residual, zeros(80, 1), 'AbsTol', 2e-11);
+            testCase.verifyEqual([fit.nObs fit.rank], [80 J]);
+            testCase.verifyEqual(fit.condNum, cond(design.A), 'AbsTol', 1e-12);
+            testCase.verifyEqual(design.A * actual, data, 'AbsTol', 2e-11);
+            testCase.verifyLessThan(fit.residualRms, 2e-11);
             % Existing coefficient projection independently checks ordering.
             lmcosi = testCase.toPlm(testCase.Basis(:, 1:J) * c);
             inverse = slep2plm_new(c, testCase.Polygon, 3, 0, 0, 0, J);
@@ -102,8 +102,29 @@ classdef xyzs2slepTest < matlab.unittest.TestCase
         end
 
         function defaultTruncation(testCase)
-            [~, ~, N, J] = xyzs2slep(ones(80, 1), testCase.Lon, testCase.Lat, testCase.Polygon, 3);
-            testCase.verifyEqual(J, max(1, round(N)));
+            [C, ~, N] = xyzs2slep(ones(80, 1), testCase.Lon, testCase.Lat, testCase.Polygon, 3);
+            testCase.verifyEqual(size(C,1), max(1, round(N)));
+        end
+
+        function suppliedBasisTruncation(testCase)
+            args = {testCase.Lon, testCase.Lat, testCase.Polygon, 3};
+            data = cosd(testCase.Lat);
+            [V, order] = sort(testCase.Eigenvalues(:), 'descend');
+            G = testCase.Basis(:, order);
+            fullBasis = {G, V, testCase.ShannonNumber};
+            [expected, expectedV] = xyzs2slep(data, args{:});
+            [actual, actualV] = xyzs2slep(data, args{:}, GVN=fullBasis);
+            testCase.verifyEqual(actual, expected, 'AbsTol', 2e-12);
+            testCase.verifyEqual(actualV, expectedV);
+            % Explicit truncation can select all modes of the full basis.
+            allModes = xyzs2slep(data, args{:}, GVN=fullBasis, truncation=16);
+            testCase.verifySize(allModes, [16 1]);
+            % A subset retains its supplied order and count, even above round(N).
+            retained = {G(:, [3 1 2]), V([3 1 2]), testCase.ShannonNumber};
+            [~, subsetV] = xyzs2slep(data, args{:}, GVN=retained);
+            [~, firstV] = xyzs2slep(data, args{:}, GVN=retained, truncation=1);
+            testCase.verifyEqual(subsetV, retained{2});
+            testCase.verifyEqual(firstV, retained{2}(1));
         end
 
         function missingAndInvalidInputs(testCase)
@@ -111,9 +132,9 @@ classdef xyzs2slepTest < matlab.unittest.TestCase
             lon = testCase.Lon; lon(5) = NaN;
             testCase.verifyError(@() xyzs2slep(data, lon, testCase.Lat, testCase.Polygon, 3), ...
             'ULMO:xyzs2slep:MissingObservation');
-            [~, ~, ~, ~, n, used] = xyzs2slep(data, lon, testCase.Lat, testCase.Polygon, 3, missingPolicy = "omit");
-            testCase.verifyEqual(n, 78);
-            testCase.verifyEqual(used, setdiff((1:80)', [3; 5]));
+            [~, ~, ~, fit, design] = xyzs2slep(data, lon, testCase.Lat, testCase.Polygon, 3, missingPolicy = "omit");
+            testCase.verifyEqual(fit.nObs, 78);
+            testCase.verifyTrue(all(isnan(design.A(5,:))));
             testCase.verifyError(@() xyzs2slep([1 2], 1, [0 0], 30, 1), 'ULMO:xyzs2slep:ObservationSize');
             testCase.verifyError(@() xyzs2slep(1, 0, 91, 30, 1), 'ULMO:xyzs2slep:InvalidObservation');
             testCase.verifyError(@() xyzs2slep(Inf, 0, 0, 30, 1, missingPolicy = "omit"), 'ULMO:xyzs2slep:InvalidObservation');
@@ -126,10 +147,10 @@ classdef xyzs2slepTest < matlab.unittest.TestCase
                 testCase.Polygon, 3, truncation = 3), 'ULMO:xyzs2slep:RankDeficient');
             J = 4;
             data = testCase.synthesize(testCase.Basis(:, 1:J) * (1:J)');
-            [actual, ~, ~, ~, ~, ~, ~, ~, ~, ~, ~, dof] = xyzs2slep(data(1:J), ...
+            [actual, ~, ~, fit] = xyzs2slep(data(1:J), ...
                 testCase.Lon(1:J), testCase.Lat(1:J), testCase.Polygon, 3, truncation = J);
             testCase.verifyEqual(actual, (1:J)', 'AbsTol', 2e-10);
-            testCase.verifyEqual(dof, 0);
+            testCase.verifyEqual(fit.nObs - fit.rank, 0);
             testCase.verifyError(@() xyzs2slep(data, testCase.Lon, testCase.Lat, ...
                 testCase.Polygon, 3, truncation = J, rankTolerance = 0.999), 'ULMO:xyzs2slep:RankDeficient');
         end
@@ -156,16 +177,12 @@ classdef xyzs2slepTest < matlab.unittest.TestCase
             testCase.verifyEqual(actualN, outerN - holeN + islandN, 'AbsTol', 2e-3);
         end
 
-        function uncertaintyAbsentPreservesOutputs(testCase)
-            data = cos((1:80)');
-            original = cell(1, 12);
-            extended = cell(1, 15);
-            [original{:}] = xyzs2slep(data, testCase.Lon, testCase.Lat, testCase.Polygon, 3, truncation = 4);
-            [extended{:}] = xyzs2slep(data, testCase.Lon, testCase.Lat, testCase.Polygon, 3, truncation = 4);
-            testCase.verifyEqual(extended(1:12), original);
-            testCase.verifyEmpty(extended{13});
-            testCase.verifyEmpty(extended{14});
-            testCase.verifyEqual(extended{15}, "none");
+        function absentUncertainty(testCase)
+            [~, ~, ~, fit] = xyzs2slep(cos((1:80)'), testCase.Lon, testCase.Lat, ...
+                testCase.Polygon, 3, truncation=4, uncertaintyOutput="covariance");
+            testCase.verifyEmpty(fit.coeffCov);
+            testCase.verifyEmpty(fit.coeffStds);
+            testCase.verifyEqual(fit.uncSrc, "none");
         end
 
         function standardDeviationAndDiagonalCovariance(testCase)
@@ -213,11 +230,10 @@ classdef xyzs2slepTest < matlab.unittest.TestCase
             [actual, covariance] = testCase.fitUncertainty(data, J, dataCovariance = covarianceData);
             testCase.verifyEqual(actual, expected, 'AbsTol', 2e-11);
             testCase.verifyEqual(covariance, inverseR * inverseR.', 'AbsTol', 2e-12);
-            [~, ~, ~, ~, ~, ~, rankA, s, condition] = xyzs2slep(data, testCase.Lon, ...
+            [~, ~, ~, fit] = xyzs2slep(data, testCase.Lon, ...
                 testCase.Lat, testCase.Polygon, 3, truncation = J, dataCovariance = covarianceData);
-            testCase.verifyEqual(rankA, J);
-            testCase.verifyEqual(s, svd(B), 'AbsTol', 2e-11);
-            testCase.verifyEqual(condition, cond(B), 'AbsTol', 2e-11);
+            testCase.verifyEqual(fit.rank, J);
+            testCase.verifyEqual(fit.condNum, cond(B), 'AbsTol', 2e-11);
             [scaledFit, scaledCov] = testCase.fitUncertainty(data, J, dataCovariance = 9 * covarianceData);
             testCase.verifyEqual(scaledFit, actual, 'AbsTol', 2e-11);
             testCase.verifyEqual(scaledCov, 9 * covariance, 'AbsTol', 2e-12);
@@ -277,14 +293,14 @@ classdef xyzs2slepTest < matlab.unittest.TestCase
         function analyticConstantFieldUncertainty(testCase)
             % Degree zero is a constant, so its weighted-mean covariance can
             % be checked by hand without another matrix factorization.
-            [c, ~, ~, ~, ~, ~, ~, ~, ~, ~, ~, ~, covariance] = ...
-                xyzs2slep([2 4], [0 50], [-20 10], 60, 0, dataStd = [1 2]);
+            [c, ~, ~, fit] = ...
+                xyzs2slep([2 4], [0 50], [-20 10], 60, 0, dataStd = [1 2], uncertaintyOutput="covariance");
             testCase.verifyEqual(c, 2.4, 'AbsTol', 1e-13);
-            testCase.verifyEqual(covariance, 0.8, 'AbsTol', 1e-13);
-            [c, ~, ~, ~, ~, ~, ~, ~, ~, ~, ~, ~, covariance] = ...
-                xyzs2slep([2 4], [0 50], [-20 10], 60, 0, dataCovariance = [1 .5; .5 4]);
+            testCase.verifyEqual(fit.coeffCov, 0.8, 'AbsTol', 1e-13);
+            [c, ~, ~, fit] = ...
+                xyzs2slep([2 4], [0 50], [-20 10], 60, 0, dataCovariance = [1 .5; .5 4], uncertaintyOutput="covariance");
             testCase.verifyEqual(c, 2.25, 'AbsTol', 1e-13);
-            testCase.verifyEqual(covariance, 0.9375, 'AbsTol', 1e-13);
+            testCase.verifyEqual(fit.coeffCov, 0.9375, 'AbsTol', 1e-13);
         end
 
         function uncertaintyValidation(testCase)
@@ -333,12 +349,12 @@ classdef xyzs2slepTest < matlab.unittest.TestCase
             A = A(1:J, :);
             data = A * (1:J)';
             base = {data, testCase.Lon(1:J), testCase.Lat(1:J), testCase.Polygon, 3, 'truncation', J};
-            [actual, ~, ~, ~, ~, ~, ~, ~, ~, ~, ~, dof, covariance] = ...
-                xyzs2slep(base{:}, dataStd = ones(J, 1));
+            [actual, ~, ~, fit] = ...
+                xyzs2slep(base{:}, dataStd = ones(J, 1), uncertaintyOutput="covariance");
             inverseA = A \ eye(J);
             testCase.verifyEqual(actual, (1:J)', 'AbsTol', 2e-10);
-            testCase.verifyEqual(covariance, inverseA * inverseA.', 'AbsTol', 2e-10);
-            testCase.verifyEqual(dof, 0);
+            testCase.verifyEqual(fit.coeffCov, inverseA * inverseA.', 'AbsTol', 2e-10);
+            testCase.verifyEqual(fit.nObs - fit.rank, 0);
             testCase.verifyError(@() xyzs2slep(base{:}, estimateNoiseVariance = true), ...
             'ULMO:xyzs2slep:NoiseDegreesOfFreedom');
         end
@@ -353,13 +369,8 @@ classdef xyzs2slepTest < matlab.unittest.TestCase
             [~, predicted] = testCase.fitUncertainty(A * truth, J, dataCovariance = C);
             draws = 600;
             noise = factor * randn(80, draws);
-            recovered = zeros(J, draws);
-
-            for draw = 1:draws
-                recovered(:, draw) = xyzs2slep(A * truth + noise(:, draw), ...
-                    testCase.Lon, testCase.Lat, testCase.Polygon, 3, ...
-                    truncation = J, dataCovariance = C);
-            end
+            recovered = xyzs2slep(A * truth + noise, testCase.Lon, testCase.Lat, ...
+                testCase.Polygon, 3, truncation=J, dataCovariance=C);
 
             empirical = cov(recovered.');
             % Gaussian sample covariance has this elementwise variance.
@@ -367,6 +378,136 @@ classdef xyzs2slepTest < matlab.unittest.TestCase
             testCase.verifyLessThanOrEqual(abs(empirical - predicted), tolerance);
             testCase.verifyLessThanOrEqual(abs(mean(recovered, 2) - truth), ...
                 6 * sqrt(diag(predicted) / draws));
+        end
+
+        function maskedFieldsAndDesignReuse(testCase)
+            % Reorder and flip supplied modes to detect accidental sorting.
+            G = testCase.Basis(:,[3 1 2]);
+            G(:,2) = -G(:,2);
+            basis = {G, testCase.Eigenvalues([3 1 2]), testCase.ShannonNumber};
+            weights = cosd(testCase.Lat);
+            weights(9) = 0;
+            values = reshape(sin(1:240),80,3);
+            values(2,[1 3]) = NaN;
+            values(5,2) = NaN;
+            [C,V,~,fit,design] = xyzs2slep(values,testCase.Lon,testCase.Lat, ...
+                testCase.Polygon,3,GVN=basis,weight=weights,missingPolicy="omit");
+            testCase.verifyEqual(V,basis{2});
+            testCase.verifyEqual(design.GVN,basis);
+            testCase.verifyEqual(fit.nObs,[78 78 78]);
+            testCase.verifyEmpty(fit.coeffCov);
+            testCase.verifyEqual(fit.uncSrc,"none");
+            A = testCase.designMatrix(3);
+            A = A(:,[3 1 2]);
+            A(:,2) = -A(:,2);
+            testCase.verifyEqual(design.A,A,'AbsTol',2e-11);
+            for iField = 1:3
+                rows = isfinite(values(:,iField)) & weights > 0;
+                w = sqrt(weights(rows));
+                data = values(rows,iField);
+                expected = (w .* A(rows,:)) \ (w .* data);
+                testCase.verifyEqual(C(:,iField),expected,'AbsTol',2e-11);
+                testCase.verifyEqual(fit.residualRms(iField), ...
+                    norm(w .* (data-A(rows,:)*expected))/norm(w),'AbsTol',2e-11);
+                singleFit = xyzs2slep(values(:,iField),design, ...
+                    weight=10*weights,missingPolicy="omit");
+                testCase.verifyEqual(singleFit,expected,'AbsTol',2e-11);
+            end
+        end
+
+        function geometricWeights(testCase)
+            data = [1 NaN; 5 2; NaN 8; 7 6];
+            lon = (1:4)'; lat = zeros(4,1); w = [1; 3; 2; 0];
+            [c,~,~,~,design] = xyzs2slep(data(:,1),lon,lat,60,0, ...
+                weight=w,missingPolicy="omit");
+            testCase.verifyEqual(c,4,'AbsTol',1e-14);
+            testCase.verifyEqual(xyzs2slep(data,design,weight=w,missingPolicy="omit"), ...
+                [4 4.4],'AbsTol',1e-14);
+            for model = {{'dataStd',ones(4,1)}, {'dataCovariance',eye(4)}, {'estimateNoiseVariance',true}}
+                testCase.verifyError(@() xyzs2slep(data,design,model{1}{:},weight=w), ...
+                    'ULMO:xyzs2slep:ConflictingUncertainty');
+            end
+            for bad = {1, -w, [1;2;NaN;4], [1;2;Inf;4], ones(2)}
+                testCase.verifyError(@() xyzs2slep(data,design,weight=bad{1}), ...
+                    'ULMO:xyzs2slep:InvalidWeight');
+            end
+        end
+
+        function inadequateEpochCoverage(testCase)
+            % The first field is determined. Only field 2 loses support.
+            xyz = {testCase.Lon, testCase.Lat, testCase.Polygon, 3};
+            values = ones(80, 2);
+            values(3:end, 2) = NaN;
+            try
+                xyzs2slep(values, xyz{:}, truncation=3, missingPolicy="omit");
+                testCase.assertFail('Expected insufficient coverage.');
+            catch exception
+                testCase.verifyEqual(exception.identifier, 'ULMO:xyzs2slep:InvalidTruncation');
+                testCase.verifySubstring(exception.message, 'Field 2');
+            end
+            testCase.verifyError(@() xyzs2slep(values, xyz{:}, GVN={1,1,1}, ...
+                missingPolicy="omit"), 'ULMO:xyzs2slep:InvalidBasis');
+        end
+
+        function samplingUsesOnlyRequiredRows(testCase)
+            % Record the evaluator's input coordinates, including across blocks.
+            tmp = testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture);
+            writelines(["function Y = ylm(~, ~, theta, phi, varargin)"
+                "writematrix(round(rad2deg(phi(:))), [mfilename('fullpath') '.txt'], 'WriteMode','append');"
+                "Y = [ones(1,numel(theta)); zeros(3,numel(theta))];"
+                "end"], fullfile(tmp.Folder, 'ylm.m'));
+            testCase.applyFixture(matlab.unittest.fixtures.PathFixture(tmp.Folder));
+            log = fullfile(tmp.Folder, 'ylm.txt');
+            lon = (1:7)';
+            lat = zeros(7, 1);
+            lat(7) = NaN;
+            % Row 2 never has data, row 4 has zero weight, and row 7 has no latitude.
+            data = [1 NaN; NaN NaN; 2 3; 8 9; NaN 4; 5 NaN; 7 3];
+            weights = [1; 1; 1; 0; 1; 1; 1];
+            args = {lon, lat, 60, 1, 'weight', weights, 'missingPolicy', 'omit', 'blockSize', 2};
+            % With four modes and insufficient points, no evaluator call is allowed.
+            testCase.verifyError(@() xyzs2slep(data, args{:}, GVN={eye(4),ones(4,1),4}), ...
+                'ULMO:xyzs2slep:InvalidTruncation');
+            testCase.verifyFalse(isfile(log));
+            basis = {[1;0;0;0], 1, 1};
+            [c, ~, ~, fit] = xyzs2slep(data, args{:}, GVN=basis);
+            testCase.verifyEqual(readmatrix(log), [1;3;5;6]);
+            [fullC, ~, ~, fullFit, design] = xyzs2slep(data, args{:}, GVN=basis);
+            testCase.verifyEqual(readmatrix(log), [1;3;5;6;(1:6)']);
+            testCase.verifySize(design.A, [7 1]);
+            testCase.verifyTrue(isnan(design.A(7)));
+            testCase.verifyEqual(fullC, c);
+            testCase.verifyEqual(fullFit, fit);
+            % Later data and weights activate both previously unused rows.
+            later = [NaN;2;NaN;4;NaN;NaN;NaN];
+            reused = xyzs2slep(later, design, missingPolicy="omit");
+            testCase.verifyEqual(reused, 3 / sqrt(4*pi), 'AbsTol', 1e-14);
+        end
+
+        function batchUncertaintyMatchesSingleFields(testCase)
+            values = reshape(cos(1:240),80,3);
+            values(1,[1 3]) = NaN;
+            values(2:3,2) = NaN;
+            values(7,:) = NaN; % Missing on every epoch, including in the compact solve.
+            for model = {{'dataStd',(1:80)'}, {'dataCovariance',toeplitz(0.6.^(0:79))}, ...
+                    {'estimateNoiseVariance',true}}
+                args = [model{1}, {'missingPolicy','omit'}];
+                [C,~,~,fit,design] = xyzs2slep(values,testCase.Lon,testCase.Lat, ...
+                    testCase.Polygon,3,args{:},truncation=4,uncertaintyOutput="covariance");
+                [compactC,~,~,compactFit] = xyzs2slep(values,testCase.Lon,testCase.Lat, ...
+                    testCase.Polygon,3,args{:},truncation=4,uncertaintyOutput="covariance");
+                testCase.verifyEqual(compactC,C,'AbsTol',2e-12);
+                testCase.verifyEqual(compactFit.coeffCov,fit.coeffCov,'AbsTol',2e-12);
+                for iField = 1:3
+                    [c,~,~,singleFit] = xyzs2slep(values(:,iField),design, ...
+                        args{:},uncertaintyOutput="covariance");
+                    testCase.verifyEqual(C(:,iField),c,'AbsTol',2e-12);
+                    testCase.verifyEqual(fit.coeffCov(:,:,iField),singleFit.coeffCov,'AbsTol',2e-12);
+                end
+                [~,~,~,stdOnly] = xyzs2slep(values,design,args{:},uncertaintyOutput="std");
+                testCase.verifyEmpty(stdOnly.coeffCov);
+                testCase.verifyEqual(stdOnly.coeffStds,fit.coeffStds);
+            end
         end
 
         function capAndDegreeZero(testCase)
@@ -383,11 +524,11 @@ classdef xyzs2slepTest < matlab.unittest.TestCase
                 deg2rad(testCase.Lon), 40, 3, 0, 0, 0, 4);
             testCase.verifyEqual(bravo / sqrt(4 * pi), actual, 'AbsTol', 2e-11);
             testCase.verifyEqual(sampled.' * bravo, data, 'AbsTol', 2e-11);
-            [c0, v0, n0, j0] = xyzs2slep([2 4], [0 50], [-20 10], 60, 0);
-            testCase.verifyEqual([c0 v0 n0 j0], [3 .25 .25 1], 'AbsTol', 1e-14);
-            [cg, ~, ~, jg] = xyzs2slep([2 4], [0 50], [-20 10], testCase.Polygon, 0);
+            [c0, v0, n0] = xyzs2slep([2 4], [0 50], [-20 10], 60, 0);
+            testCase.verifyEqual([c0 v0 n0], [3 .25 .25], 'AbsTol', 1e-14);
+            cg = xyzs2slep([2 4], [0 50], [-20 10], testCase.Polygon, 0);
             testCase.verifyEqual(abs(cg), 3, 'AbsTol', 1e-14);
-            testCase.verifyEqual(jg, 1);
+            testCase.verifySize(cg, [1 1]);
         end
 
     end
@@ -404,9 +545,14 @@ classdef xyzs2slepTest < matlab.unittest.TestCase
         end
 
         function [c, covariance, se, source, fitted, residual] = fitUncertainty(testCase, data, J, varargin)
-            [c, ~, ~, ~, ~, ~, ~, ~, ~, fitted, residual, ~, covariance, se, source] = ...
+            [c, ~, ~, fit, design] = ...
                 xyzs2slep(data, testCase.Lon, testCase.Lat, testCase.Polygon, 3, ...
-                'truncation', J, varargin{:});
+                'truncation', J, 'uncertaintyOutput', 'covariance', varargin{:});
+            covariance = fit.coeffCov;
+            se = fit.coeffStds;
+            source = fit.uncSrc;
+            fitted = design.A * c;
+            residual = data - fitted;
         end
 
         function data = synthesize(testCase, coefficients)

@@ -1,332 +1,360 @@
-%% XYZS2SLEP - Fits scattered scalar observations to regional Slepian functions.
-% Uses ordinary or generalised least squares at paired observation locations.
+%% XYZS2SLEP - Fit scalar fields on paired coordinates to a regional Slepian basis.
 %
 % Syntax
-%   [coeffs, V, N] = xyzs2slep(vals, lon, lat, domain, L)
-%   [coeffs, V, N, J, nObs, validIdxs, rnk, SVs, condNum, fitVals, resids, residDof] = xyzs2slep(__)
-%   [__] = xyzs2slep(__, truncation=J, missingPolicy="omit")
-%   [__, coeffCov, coeffStds, uncSrc] = xyzs2slep(__, dataStd=sigma)
+%   [C, V, N, fit, design] = xyzs2slep(vals, lon, lat, domain, L, ...)
+%   [C, V, N, fit] = xyzs2slep(vals, design, ...)
 %
 % Input arguments
-%   vals - Real vector of scalar observations, in field units.
-%   lon, lat - Paired longitude and latitude vectors, in degrees.
-%       Same length as values. Longitudes are wrapped to [0, 360).
-%       Latitudes must lie in [-90, 90]. Row vectors are accepted.
-%   domain - Concentration region accepted by glmalpha_new.
-%       GeoDomain, region name, buffered-region cell, or closed [lon, lat]
-%       polygon in degrees. A scalar is a north-polar cap radius (0, 180].
-%       All supplied observations are used, even outside the domain.
-%   L - Nonnegative integer maximum spherical-harmonic degree.
-%   truncation (name-value) - Positive integer number of retained functions.
-%       Default: max(1, round(N)), limited to the available basis dimension.
-%       An explicit value is never silently reduced.
-%   rankTolerance (name-value) - Relative singular-value threshold in [0, 1).
-%       Default: max(nObs, J)*eps. Singular values must exceed the threshold
-%       times the largest singular value; deficient fits raise an error.
-%   missingPolicy (name-value) - "error" (default) or "omit".
-%       "omit" removes NaN values/coordinates together. Inf is always invalid.
-%   blockSize (name-value) - Positive integer maximum points per harmonic
-%       evaluation block. Default: 1024. The full nObs-by-J matrix is stored.
-%   dataStd (name-value) - Optional positive finite standard-deviation vector.
-%       Same length and units as the original vals; mutually exclusive with
-%       dataCovariance.
-%   dataCovariance (name-value) - Optional positive-definite real covariance.
-%       Observation-by-observation matrix in squared field units. All entries
-%       must be finite, including omitted observations.
-%       The full supplied matrix must be positive definite.
-%   estimateNoiseVariance (name-value) - Whether to estimate an iid residual variance.
-%       Requires nObs > J and no supplied uncertainty.
-%       Uses sum(resids .^ 2) / (nObs - J); this can include model mismatch.
-%       Default: false.
+%   vals - Real nPoint-by-nField matrix in field units. A vector matching
+%       the coordinate count is one field. Each column uses the same grid.
+%   lon, lat - Paired coordinate vectors in degrees. Longitude wraps at 360.
+%   domain - GeoDomain, region name/cell, closed [lon,lat] polygon, or
+%       scalar north-polar cap radius in degrees. All supplied points are used.
+%   L - Nonnegative integer maximum harmonic degree.
+%   design - Fifth output of an earlier call on the same ordered grid.
+%       Reuses the unweighted matrix. Supply new weights/errors on each call.
+%   GVN (name-value) - Optional {G,V,N} for the requested domain and L.
+%       G has (L+1)^2 rows in ADDMOUT order. Columns retain their supplied
+%       order and signs. Supply an already-retained basis to fit exactly it.
+%   truncation (name-value) - Number of leading basis columns. Defaults to
+%       max(1,round(N)), bounded by basis size, for a computed or supplied
+%       full basis. For a supplied subset, defaults to all its columns.
+%       A reused design already fixes the truncation.
+%   missingPolicy (name-value) - "error" (default) or "omit". Omit NaN
+%       values per field and NaN coordinates across fields. Inf is invalid.
+%   weight (name-value) - Finite nonnegative vector, one per grid point,
+%       shared across fields. Minimize sum(weight .* residual.^2). Zero
+%       excludes a point. Uniform centered lat/lon grids can use cosd(lat).
+%       Default is equal weighting. Exclusive with all uncertainty options.
+%   dataStd, dataCovariance (name-value) - Optional absolute observation
+%       standard deviations (positive vector) or positive-definite covariance
+%       (nPoint-by-nPoint). Shared across fields and finite on the full grid.
+%   estimateNoiseVariance (name-value) - Estimate iid residual variance
+%       separately per field. Requires more observations than coefficients.
+%       Default false. Select at most one uncertainty source.
+%   uncertaintyOutput (name-value) - "none" (default), "std", or "covariance".
+%       With a noise model, the last choice returns both covariance and std.
+%   rankTolerance (name-value) - Relative SVD cutoff in [0,1).
+%       Default max(nObs,J)*eps per mask. Rank deficiency raises an error.
+%   blockSize (name-value) - Maximum points per basis evaluation block.
+%       Default 1024. Only rows used by at least one field are sampled
+%       unless the fifth output requests a reusable design.
 %
 % Output arguments
-%   coeffs - J-by-1 fitted coefficients, compatible with plm2slep_new and
-%       slep2plm_new (4*pi-normalized real harmonics), in field units.
-%   V - J-by-1 concentration eigenvalues in descending order.
-%   N - Shannon number of the full concentration problem.
-%   J - Number of retained basis functions.
-%   nObs - Number of retained observations.
-%   validIdxs - nObs-by-1 indices into the original observation vectors.
-%   rnk - Numerical rank of the (whitened, when weighted) design matrix.
-%   SVs - J-by-1 singular values of that same matrix, descending.
-%   condNum - Ratio of largest to smallest singular value.
-%   fitVals - nObs-by-1 predictions in field units.
-%   resids - nObs-by-1 observed minus fitted values, in field units.
-%   residDof - Residual degrees of freedom, nObs-J.
-%   coeffCov - J-by-J propagated covariance in squared field
-%       units. Empty if no uncertainty is supplied or estimated. Supplied
-%       absolute uncertainty is never rescaled using residual variance.
-%   coeffStds - J-by-1 square roots of the covariance diagonal, or [].
-%   uncSrc - "dataStd", "dataCovariance", "estimatedIid", or "none".
+%   C - J-by-nField coefficients in field units, using 4*pi real harmonics.
+%   V, N - Retained concentration eigenvalues and full Shannon number.
+%   fit - nObs, rank, condNum, residualRms (one entry per field). RMS is
+%       in field units, area-weighted when weight is supplied and ordinary
+%       otherwise. uncSrc identifies the shared error model. coeffStds
+%       (J-by-nField) and coeffCov (J-by-J-by-nField) are empty unless
+%       requested with an error model. Covariances are marginal per field.
+%   design - A, lon, lat, and GVN. A retains original row order, including
+%       points missing from any field. Undefined coordinate rows are NaN.
 %
 % Notes
-%   Without uncertainty, each observation has equal weight. Supplied errors
-%   whiten the observations and design matrix before SVD. No area weighting
-%   or regularisation is performed. Covariance is conditional on the fixed
-%   basis/error model and excludes leakage, truncation bias, and coordinate
-%   uncertainty. Singular covariance/exact constraints are not supported.
-%   Rank-deficient fits are rejected; full-rank fits with condition number > 1/sqrt(eps) warn.
-%   The full regional basis is requested before sorting, to avoid truncating
-%   block-ordered cap eigenfunctions prematurely.
+%   Fields with identical usable rows share one factorization. A field with
+%   insufficient coverage fails the call with its column index. Propagated
+%   errors are conditional on the chosen basis and observation error model.
 %
 % See also
-%   GLMALPHA_NEW, PLM2SLEP_NEW, SLEP2PLM_NEW, YLM, XYZ2SLEP
+%   GLMALPHA_NEW, PLM2SLEP_NEW, SLEP2PLM_NEW
 %
 % Created by
 %   2026/10/06, En-Chi Lee (williameclee@arizona.edu)
 %
 % Last modified
-%   2026/10/08, En-Chi Lee (williameclee@arizona.edu)
+%   2026/11/03
 
-function [coeffs, V, N, J, nObs, validIdxs, rnk, SVs, condNum, fitVals, resids, residDof, coeffCov, coeffStds, uncSrc] = ...
-        xyzs2slep(vals, lon, lat, domain, L, options)
+function [C, V, N, fit, design] = xyzs2slep(vals, grid, varargin)
+    % Dispatch the two positional signatures before parsing name-value options.
+    if isstruct(grid)
+        design = grid;
+        geometry = {};
+    else
+        narginchk(5, inf);
+        geometry = [{grid}, varargin(1:3)];
+        varargin = varargin(4:end);
+        design = [];
+    end
+    [C, V, N, fit, design] = fitFields(vals, design, geometry, nargout, varargin{:});
+end
 
+function [C, V, N, fit, design] = fitFields(vals, design, geometry, outputCount, options)
     arguments (Input)
-        vals {mustBeNumeric, mustBeReal, mustBeVector}
-        lon {mustBeNumeric, mustBeReal, mustBeVector}
-        lat {mustBeNumeric, mustBeReal, mustBeVector}
-        domain
-        L (1, 1) double {mustBeFinite, mustBeInteger, mustBeNonnegative}
+        vals (:, :) {mustBeNumeric, mustBeReal}
+        design
+        geometry cell
+        outputCount (1, 1) double
+        options.GVN cell = {}
         options.truncation double {mustBeScalarOrEmpty, mustBeFinite, mustBeInteger, mustBePositive} = []
         options.rankTolerance double {mustBeScalarOrEmpty, mustBeFinite, mustBeNonnegative, mustBeLessThan(options.rankTolerance, 1)} = []
         options.missingPolicy (1, 1) string {mustBeMember(options.missingPolicy, ["error", "omit"])} = "error"
-        options.blockSize (1, 1) double {mustBeFinite, mustBeInteger, mustBePositive} = 1024
+        options.blockSize (1, 1) double {mustBeInteger, mustBeFinite, mustBePositive} = 1024
+        options.weight {mustBeNumeric, mustBeReal} = []
         options.dataStd {mustBeNumeric, mustBeReal} = []
         options.dataCovariance {mustBeNumeric, mustBeReal} = []
         options.estimateNoiseVariance (1, 1) logical = false
+        options.uncertaintyOutput (1, 1) string {mustBeMember(options.uncertaintyOutput, ["none", "std", "covariance"])} = "none"
     end
 
-    origCnt = numel(vals);
-    [vals, lon, lat, nObs, validIdxs, J, Jmax, isCap] = ...
-        preprocessInputs(vals, lon, lat, L, domain, options.truncation, options.missingPolicy);
-
-    [sigma, covFac, uncSrc] = prepareUncertainty( ...
-        options.dataStd, options.dataCovariance, options.estimateNoiseVariance, ...
-        origCnt, validIdxs);
-
-    %% Computing the Slepian functions evaluated at each data point
-    if isCap
-        % ULMO's extracted axisymmetric helper is incomplete; use Alpha.
-        [G, V, ~, ~, N] = glmalpha(domain, L);
-    else
-        [G, V, ~, ~, N] = glmalpha_new(domain, L, 'BeQuiet', true);
-    end
-
-    [V, order] = sort(V(:), 'descend');
-
-    if isempty(J)
-        J = min(Jmax, max(1, round(N)));
-    end
-
-    if J > nObs
-        error('ULMO:xyzs2slep:InvalidTruncation', ...
-            ['The default truncation exceeds the observation count. ', ...
-             'The Shannon number of the domain is %d, but there are only %d data points available. ', ...
-         'Specify a smaller truncation.'], ...
-            J, nObs);
-    end
-
-    residDof = nObs - J;
-
-    if options.estimateNoiseVariance && residDof <= 0
-        error('ULMO:xyzs2slep:NoiseDegreesOfFreedom', ...
-        'Estimating noise variance requires more observations than coefficients.');
-    end
-
-    G = G(:, order(1:J));
-    V = V(1:J);
-
-    % ylm uses unit normalisation and the Condon-Shortley phase. ULMO's
-    % coefficient transforms use 4*pi normalisation and omit that phase.
-    orders = addmout(L);
-    scale = sqrt(4 * pi) * (-1) .^ orders(:);
-    slepVals = zeros(nObs, J); % Slepian functions evaluated at each data point
-
-    for first = 1:options.blockSize:nObs
-        points = first:min(first + options.blockSize - 1, nObs);
-
-        if L == 0
-            slepVals(points, :) = repmat(G, numel(points), 1);
-        else
-            Y = ylm([0 L], [], deg2rad(90 - lat(points)), ...
-                deg2rad(lon(points)), [], [], 0, 1);
-            slepVals(points, :) = (Y .* scale).' * G;
+    if isempty(geometry)
+        if ~isscalar(design) || ~all(isfield(design, {'A', 'GVN', 'lon', 'lat'})) || ...
+                ~isempty(options.GVN) || ~isempty(options.truncation)
+            error('ULMO:xyzs2slep:InvalidDesign', 'Supply a returned design without GVN or truncation.');
         end
-
+        [lon, lat] = coordinates(design.lon, design.lat);
+    else
+        [lon, lat] = coordinates(geometry{1}, geometry{2});
+    end
+    nPoint = numel(lon);
+    if isvector(vals) && numel(vals) == nPoint
+        vals = vals(:);
+    end
+    if isempty(vals) || size(vals, 1) ~= nPoint
+        error('ULMO:xyzs2slep:ObservationSize', 'Supply one row of values per coordinate pair.');
+    end
+    if any(isinf(vals), 'all')
+        error('ULMO:xyzs2slep:InvalidObservation', 'Infinite observations are invalid.');
+    end
+    weight = double(options.weight(:));
+    if ~isempty(weight) && (~isvector(options.weight) || numel(weight) ~= nPoint || ...
+            any(~isfinite(weight) | weight < 0))
+        error('ULMO:xyzs2slep:InvalidWeight', 'Supply one finite nonnegative weight per point.');
+    end
+    if nnz([~isempty(weight), ~isempty(options.dataStd), ~isempty(options.dataCovariance), ...
+            options.estimateNoiseVariance]) > 1
+        error('ULMO:xyzs2slep:ConflictingUncertainty', 'Select only one weight or uncertainty model.');
+    end
+    valid = ~isnan(vals) & ~isnan(lon) & ~isnan(lat);
+    if ~isempty(weight)
+        active = weight > 0;
+    else
+        active = true(nPoint, 1);
+    end
+    if options.missingPolicy == "error" && any(~valid & active, 'all')
+        error('ULMO:xyzs2slep:MissingObservation', 'NaN values or coordinates require missingPolicy="omit".');
+    end
+    valid = valid & active;
+    nObs = sum(valid, 1);
+    emptyField = find(nObs == 0, 1);
+    if ~isempty(emptyField)
+        error('ULMO:xyzs2slep:ObservationSize', 'Field %d has no usable observations.', emptyField);
+    end
+    sampleRows = true(nPoint, 1);
+    if isempty(geometry)
+        validateattributes(design.A, {'double'}, {'real', '2d', 'nrows', nPoint, 'nonempty'});
+        validateBasis(design.GVN);
+        if size(design.A, 2) ~= numel(design.GVN{2})
+            error('ULMO:xyzs2slep:InvalidDesign', 'Design columns must match the retained basis.');
+        end
+        basis = design.GVN;
+        sampled = design.A;
+    else
+        basis = selectBasis(geometry{3}, geometry{4}, options);
+    end
+    [G, V, N] = basis{:};
+    J = numel(V);
+    field = find(nObs < J, 1);
+    if ~isempty(field)
+        error('ULMO:xyzs2slep:InvalidTruncation', ...
+            'Field %d has %d usable points for %d coefficients.', field, nObs(field), J);
+    end
+    if options.estimateNoiseVariance
+        field = find(nObs == J, 1);
+        if ~isempty(field)
+            error('ULMO:xyzs2slep:NoiseDegreesOfFreedom', ...
+                'Field %d needs positive residual degrees of freedom.', field);
+        end
+    end
+    [sigma, covariance, fullFactor, source] = prepareUncertainty(options.dataStd, ...
+        options.dataCovariance, options.estimateNoiseVariance, nPoint);
+    if ~isempty(geometry)
+        if outputCount < 5
+            sampleRows = any(valid, 2);
+        end
+        sampled = sampleBasis(lon(sampleRows), lat(sampleRows), G, geometry{4}, options.blockSize);
+        if outputCount >= 5
+            design = struct('A', sampled, 'lon', lon, 'lat', lat, 'GVN', {basis});
+        end
+    end
+    nField = size(vals, 2);
+    C = zeros(J, nField);
+    fit = struct('nObs', nObs, 'rank', zeros(1, nField), 'condNum', zeros(1, nField), ...
+        'residualRms', zeros(1, nField), 'uncSrc', source, 'coeffStds', [], 'coeffCov', []);
+    wantStd = outputCount >= 4 && options.uncertaintyOutput ~= "none" && source ~= "none";
+    wantCov = wantStd && options.uncertaintyOutput == "covariance";
+    if wantStd
+        fit.coeffStds = zeros(J, nField);
+    end
+    if wantCov
+        fit.coeffCov = zeros(J, J, nField);
     end
 
-    %% Inverting for the Slepian coefficients
-    % The svd(A, 0) syntax in datafit (slepian_bravo) is not recommended per MathWork's documentation
-    wghtedSlepVals = slepVals;
-    wghtedVals = vals;
-
-    % Weight the data by uncertainties
-    if ~isempty(sigma)
-        wghtedSlepVals = slepVals ./ sigma;
-        wghtedVals = vals ./ sigma;
-    elseif ~isempty(covFac)
-        wghtedSlepVals = covFac \ slepVals;
-        wghtedVals = covFac \ vals;
+    [masks, ~, group] = unique(valid.', 'rows');
+    for iMask = 1:size(masks, 1)
+        rows = masks(iMask, :).';
+        fields = find(group == iMask);
+        count = nObs(fields(1));
+        % rows indexes the original observations. Only A may be compact.
+        A = sampled(rows(sampleRows), :);
+        data = double(vals(rows, fields));
+        B = A;
+        rhs = data;
+        if ~isempty(weight)
+            rowScale = sqrt(weight(rows));
+            B = A .* rowScale;
+            rhs = data .* rowScale;
+        elseif ~isempty(sigma)
+            B = A ./ sigma(rows);
+            rhs = data ./ sigma(rows);
+        elseif ~isempty(fullFactor)
+            factor = fullFactor;
+            if count ~= nPoint
+                factor = chol(covariance(rows, rows), 'lower');
+            end
+            B = factor \ A;
+            rhs = factor \ data;
+        end
+        if any(~isfinite(B), 'all') || any(~isfinite(rhs), 'all')
+            error('ULMO:xyzs2slep:WhiteningOverflow', 'Nonfinite scaled values in field %d.', fields(1));
+        end
+        [C(:, fields), rnk, condition, invFactor] = solveMask(B, rhs, ...
+            fields(1), options.rankTolerance, wantStd);
+        if outputCount < 4
+            continue
+        end
+        residual = data - A * C(:, fields);
+        if isempty(weight)
+            rms = vecnorm(residual, 2, 1)/sqrt(count);
+        else
+            rms = vecnorm(rowScale .* residual, 2, 1)/norm(rowScale);
+        end
+        fit.residualRms(fields) = rms;
+        fit.rank(fields) = rnk;
+        fit.condNum(fields) = condition;
+        if wantStd
+            noiseStd = ones(1, numel(fields));
+            if options.estimateNoiseVariance
+                noiseStd = vecnorm(residual, 2, 1)/sqrt(count - J);
+            end
+            fit.coeffStds(:, fields) = vecnorm(invFactor, 2, 2) .* noiseStd;
+            if wantCov
+                fit.coeffCov(:, :, fields) = (invFactor * invFactor.') .* reshape(noiseStd.^2, 1, 1, []);
+            end
+            if any(~isfinite(fit.coeffStds(:, fields)), 'all') || ...
+                    (wantCov && any(~isfinite(fit.coeffCov(:, :, fields)), 'all'))
+                error('ULMO:xyzs2slep:CovarianceOverflow', 'Coefficient uncertainty overflowed.');
+            end
+        end
     end
+end
 
-    if any(~isfinite(wghtedSlepVals(:))) || any(~isfinite(wghtedVals))
-        error('ULMO:xyzs2slep:WhiteningOverflow', ...
-        'Whitening produced nonfinite values; rescale the field and uncertainty units.');
-    end
-
-    [U, S, Q] = svd(wghtedSlepVals, 'econ');
-    SVs = diag(S);
-    tol = options.rankTolerance;
-
+function [coeffs, rnk, condition, invFactor] = solveMask(B, rhs, field, tol, wantStd)
+    [count, J] = size(B);
+    [U, S, Q] = svd(B, 'econ');
+    s = diag(S);
     if isempty(tol)
-        tol = max(nObs, J) * eps;
+        tol = max(count, J)*eps;
     end
-
-    rnk = sum(SVs > tol * SVs(1));
-
+    rnk = sum(s > tol*s(1));
     if rnk < J
         error('ULMO:xyzs2slep:RankDeficient', ...
-            ['Sampled basis has rank %d of %d. ', ...
-         'Reduce truncation or improve spatial coverage.'], ...
-            rnk, J);
+            'Field %d has sampled basis rank %d of %d.', field, rnk, J);
     end
-
-    condNum = SVs(1) / SVs(end);
-
-    if condNum > 1 / sqrt(eps)
+    condition = s(1)/s(end);
+    if condition > 1/sqrt(eps)
         warning('ULMO:xyzs2slep:IllConditioned', ...
-            ['Sampled basis condition number is large (%.3g); ', ...
-         'coefficients may be poorly constrained.'], ...
-            condNum);
+            'Sampled basis condition number %.3g for field %d.', condition, field);
     end
-
-    coeffs = Q * ((U.' * wghtedVals) ./ SVs);
-    fitVals = [];
-    resids = [];
-
-    if nargout >= 10 || options.estimateNoiseVariance
-        fitVals = slepVals * coeffs;
+    coeffs = Q * ((U.' * rhs) ./ s);
+    invFactor = [];
+    if wantStd
+        invFactor = Q ./ s.';
     end
-
-    if nargout >= 11 || options.estimateNoiseVariance
-        resids = vals - fitVals;
-    end
-
-    coeffCov = [];
-    coeffStds = [];
-
-    if nargout >= 13 && uncSrc ~= "none"
-        % Factor form avoids normal equations and an explicit matrix inverse.
-        invFac = Q ./ SVs.';
-
-        if options.estimateNoiseVariance
-            noiseStd = norm(resids) / sqrt(residDof);
-            invFac = invFac * noiseStd;
-        end
-
-        coeffCov = invFac * invFac.';
-
-        if any(~isfinite(coeffCov(:)))
-            error('ULMO:xyzs2slep:CovarianceOverflow', ...
-            'Coefficient covariance overflowed; rescale the field and uncertainty units.');
-        end
-
-        if nargout >= 14
-            coeffStds = sqrt(diag(coeffCov));
-        end
-
-    end
-
 end
 
-%% Subfunctions
-function [vals, lon, lat, nObs, validIdxs, J, Jmax, domainIsCap] = ...
-        preprocessInputs(vals, lon, lat, L, domain, J, missingPolicy)
-    vals = double(vals(:));
-    lon = double(lon(:));
+function [lon, lat] = coordinates(lon, lat)
+    validateattributes(lon, {'numeric'}, {'real', 'vector'});
+    validateattributes(lat, {'numeric'}, {'real', 'vector'});
+    if numel(lat) ~= numel(lon)
+        error('ULMO:xyzs2slep:ObservationSize', 'Supply paired longitude and latitude vectors.');
+    end
+    if any(isinf(lon)) || any(abs(lat) > 90)
+        error('ULMO:xyzs2slep:InvalidObservation', 'Invalid longitude or latitude.');
+    end
+    lon = mod(double(lon(:)), 360);
     lat = double(lat(:));
-
-    if isempty(vals)
-        error('ULMO:xyzs2slep:ObservationSize', ...
-        'Provide nonempty values.');
-    elseif numel(vals) ~= numel(lon) || numel(vals) ~= numel(lat)
-        error('ULMO:xyzs2slep:ObservationSize', ...
-            ['The data points and their coordinate arrays have different sizes. ', ...
-             'There are %d values, %d longitudes, and %d latitudes. ', ...
-         'Provide same number for all three arrays.'], ...
-            numel(vals), numel(lon), numel(lat));
-    end
-
-    if any(isinf(vals))
-        error('ULMO:xyzs2slep:InvalidObservation', ...
-        'Infinite observations/coordinates are invalid.');
-    elseif any(isinf(lon) | isinf(lat))
-        error('ULMO:xyzs2slep:InvalidObservation', ...
-        'Infinite coordinates and latitudes outside [-90, 90] are invalid.');
-    elseif any(abs(lat) > 90)
-        error('ULMO:xyzs2slep:InvalidObservation', ...
-        'Latitudes outside [-90, 90] are invalid.');
-    end
-
-    isValid = ~(isnan(vals) | isnan(lon) | isnan(lat));
-
-    if ~all(isValid) && missingPolicy == "error"
-        error('ULMO:xyzs2slep:MissingObservation', ...
-        'NaN observations/coordinates require missingPolicy="omit".');
-    end
-
-    validIdxs = find(isValid);
-    vals = vals(validIdxs);
-    lon = mod(lon(validIdxs), 360);
-    lat = lat(validIdxs);
-    nObs = numel(vals);
-
-    if nObs == 0
-        error('ULMO:xyzs2slep:ObservationSize', 'No usable observations remain.');
-    end
-
-    Jmax = (L + 1) ^ 2;
-
-    if ~isempty(J)
-
-        if J > Jmax
-            error('ULMO:xyzs2slep:InvalidTruncation', ...
-                ['Truncation must not exceed (L+1)^2. ', ...
-             'Maximum functions at degree %d is %d, but %d functions are requested.'], ...
-                L, Jmax, J);
-        elseif J > nObs
-            error('ULMO:xyzs2slep:InvalidTruncation', ...
-                ['Truncation must not exceed the usable observation count. ', ...
-             'There are only %d valid data points, but %d functions are requested.'], ...
-                nObs, J);
-        end
-
-    end
-
-    domainIsCap = isnumeric(domain) && isscalar(domain);
-
-    if domainIsCap
-        validateattributes(domain, {'numeric'}, {'real', 'finite', '>', 0, '<=', 180});
-    elseif ~((isa(domain, 'GeoDomain') && isscalar(domain)) || ...
-            ischar(domain) || (isstring(domain) && isscalar(domain)) || ...
-            iscell(domain) || (isnumeric(domain) && ismatrix(domain) && size(domain, 2) == 2))
-        error('ULMO:xyzs2slep:InvalidDomain', ...
-            ['Use a GeoDomain, region name/cell, [lon, lat] polygon, or scalar cap radius.', ...
-         'The input domain format of type %s is not supported.'], class(domain));
-    end
-
 end
 
-function [sigma, fac, src] = prepareUncertainty(sigma, cov, estimate, cnt, validIdxs)
+function validateBasis(GVN)
+    if ~iscell(GVN) || numel(GVN) ~= 3
+        error('ULMO:xyzs2slep:InvalidBasis', 'Supply {G, V, N}.');
+    end
+    [G, V, N] = GVN{:};
+    validateattributes(G, {'double', 'single'}, {'real', 'finite', '2d', 'nonempty'});
+    validateattributes(V, {'numeric'}, {'real', 'finite', 'vector', 'numel', size(G, 2)});
+    validateattributes(N, {'numeric'}, {'real', 'finite', 'scalar', 'nonnegative'});
+    if mod(sqrt(size(G, 1)), 1) ~= 0 || size(G, 2) > size(G, 1)
+        error('ULMO:xyzs2slep:InvalidBasis', 'G must have (L+1)^2 rows and at most that many columns.');
+    end
+end
+
+function basis = selectBasis(domain, L, options)
+    validateattributes(L, {'numeric'}, {'real', 'scalar', 'integer', 'nonnegative', 'finite'});
+    J = options.truncation;
+    if ~isempty(options.GVN)
+        validateBasis(options.GVN);
+        [G, V, N] = options.GVN{:};
+        if size(G, 1) ~= (L+1)^2
+            error('ULMO:xyzs2slep:InvalidBasis', 'Supplied basis degree differs from L.');
+        end
+        order = 1:size(G, 2);
+    else
+        if isnumeric(domain) && isscalar(domain)
+            validateattributes(domain, {'numeric'}, {'real', 'finite', '>', 0, '<=', 180});
+            [G, V, ~, ~, N] = glmalpha(domain, L);
+        elseif (isa(domain, 'GeoDomain') && isscalar(domain)) || ischar(domain) || ...
+                (isstring(domain) && isscalar(domain)) || iscell(domain) || ...
+                (isnumeric(domain) && ismatrix(domain) && size(domain, 2) == 2)
+            [G, V, ~, ~, N] = glmalpha_new(domain, L, 'BeQuiet', true);
+        else
+            error('ULMO:xyzs2slep:InvalidDomain', 'Supply a region, polygon or cap radius.');
+        end
+        [V, order] = sort(V(:), 'descend');
+    end
+    if isempty(J)
+        J = size(G, 2);
+        if J == (L+1)^2
+            J = min(J, max(1, round(N)));
+        end
+    end
+    if J > size(G, 2)
+        error('ULMO:xyzs2slep:InvalidTruncation', 'Truncation exceeds the available basis columns.');
+    end
+    G = double(G(:, order(1:J)));
+    V = V(:);
+    basis = {G, V(1:J), N};
+end
+
+function A = sampleBasis(lon, lat, G, L, blockSize)
+    A = nan(numel(lon), size(G, 2));
+    points = find(~isnan(lon) & ~isnan(lat));
+    orders = addmout(L);
+    scale = sqrt(4 * pi) * (-1).^orders(:);
+    for first = 1:blockSize:numel(points)
+        rows = points(first:min(first + blockSize - 1, end));
+        if L == 0
+            A(rows, :) = G;
+        else
+            Y = ylm([0 L], [], deg2rad(90-lat(rows)), deg2rad(lon(rows)), [], [], 0, 1);
+            A(rows, :) = (Y .* scale).' * G;
+        end
+    end
+end
+
+function [sigma, cov, fac, src] = prepareUncertainty(sigma, cov, estimate, cnt)
     fac = [];
     src = "none";
-
-    if (~isempty(sigma) && ~isempty(cov)) || ...
-            (estimate && (~isempty(sigma) || ~isempty(cov)))
-        error('ULMO:xyzs2slep:ConflictingUncertainty', ...
-            ['Multiple sources of uncertainty is specified. ', ...
-         'Choose only one of "dataStd", "dataCovariance", or "estimateNoiseVariance".']);
-    end
 
     if ~isempty(sigma)
         src = "dataStd";
@@ -338,11 +366,10 @@ function [sigma, fac, src] = prepareUncertainty(sigma, cov, estimate, cnt, valid
                 cnt, numel(sigma));
         elseif any(~isfinite(sigma(:))) || any(sigma(:) <= 0)
             error('ULMO:xyzs2slep:InvalidDataStd', ...
-            'dataStd must be finite and non-negative.');
+            'dataStd must be finite and positive.');
         end
 
         sigma = full(double(sigma(:)));
-        sigma = sigma(validIdxs);
     elseif ~isempty(cov)
         src = "dataCovariance";
 
@@ -376,11 +403,6 @@ function [sigma, fac, src] = prepareUncertainty(sigma, cov, estimate, cnt, valid
         if flag ~= 0
             error('ULMO:xyzs2slep:NonPositiveCovariance', ...
             'dataCovariance must be positive definite; no jitter is added.');
-        end
-
-        if numel(validIdxs) ~= cnt
-            % Subset the covariance
-            fac = chol(cov(validIdxs, validIdxs), 'lower');
         end
 
     elseif estimate
