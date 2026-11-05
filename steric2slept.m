@@ -90,8 +90,10 @@
 %   Unit and OutputFormat select outputs, not caches. Updates replace entire
 %   files only after successful completion. Convention changes require manual
 %   rebuilding. Basis caches and projection caches must remain consistent.
-%   The bulk path shares STERIC2LONLATT's temporal operations and native mean
-%   reader; it processes all fields once without intermediate grid caches.
+%   The bulk path shares STERIC2LONLATT's temporal operations and obtains all
+%   native means through STERIC2GMSL. It processes grids in memory without
+%   intermediate grid caches. Unsaved requests may recalculate native means
+%   for each selected component/depth, following STERIC2LONLATT.
 %   Full and shallow fields retain their finite observations. Supplied deep
 %   grids use paired finite full/shallow support: missing deep values there
 %   are zero contributions, and deep values outside that support are omitted.
@@ -271,9 +273,20 @@ function basis = getBasis(domain, L, J, supplied, saveData)
 end
 
 function [fields, means, dates, lon, lat] = prepareRecord(product, timestep, options, schema)
-    % The same native-mean reader validates the grid and supplied depth schema.
-    [means, nativeDates] = stericgmsldata(product, ForceNew=options.ForceNew, ...
-        SaveData=options.SaveData, BeQuiet=options.BeQuiet);
+    % Obtain every diagnostic through the public native-GMSL interface.
+    % A saved forced call refreshes all means; later calls reuse that set.
+    % Unsaved forced calls must each bypass the existing native cache.
+    means = struct();
+    firstMean = true;
+    for iMean = find(schema.supported(:)).'
+        [iType, iDepth] = ind2sub(size(schema.supported), iMean);
+        forceMean = options.ForceNew && (firstMean || ~options.SaveData);
+        [values, nativeDates] = steric2gmsl(product, Type=schema.types(iType), ...
+            Depth=schema.depths(iDepth), ForceNew=forceMean, ...
+            SaveData=options.SaveData, BeQuiet=options.BeQuiet);
+        means.(schema.meanNames(iMean)) = values;
+        firstMean = false;
+    end
     names = cellstr(schema.gridNames(schema.available));
     data = load(stericfilepath(product), 'lon', 'lat', names{:});
     lon = double(data.lon(:));

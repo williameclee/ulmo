@@ -325,11 +325,21 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
         if meansHit
             means = load(outputPath, names{:});
         else
-            [means, nativeDates] = stericgmsldata(product, ...
-                ForceNew=options.ForceNew, SaveData=saveData, ...
-                BeQuiet=double(options.BeQuiet)/2);
-            for iMean = 1:numel(names)
-                means.(names{iMean}) = reshape(means.(names{iMean}), 1, 1, []);
+            % The first saved forced call refreshes the complete native set.
+            % Subsequent saved calls reuse that complete set. With saving
+            % disabled, every forced call must bypass old native means; repeated
+            % calculation is intentional and keeps the native API unchanged.
+            firstMean = true;
+            for iMean = find(supported(:))'
+                [meanType, meanDepth] = ind2sub(size(supported), iMean);
+                forceMean = options.ForceNew && (firstMean || ~saveData);
+                [values, nativeDates] = steric2gmsl(product, Type=types(meanType), ...
+                    Depth=depths(meanDepth), ForceNew=forceMean, SaveData=saveData, ...
+                    BeQuiet=double(options.BeQuiet)/2);
+                % Temporal helpers expect time on axis three. This temporary
+                % shape does not make the scalar series a spatial grid.
+                means.(meanNames(iMean)) = reshape(values, 1, 1, []);
+                firstMean = false;
             end
             [means, meanDates] = processsterictime(means, nativeDates, timestep, intpMthd, epochRange);
             assert(isequal(meanDates(:), coord.dates(:)), ...
