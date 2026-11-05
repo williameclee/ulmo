@@ -4,7 +4,7 @@
 %   2026/11/03, En-Chi Lee
 %
 % Last modified
-%   2026/11/04, En-Chi Lee
+%   2026/11/05, En-Chi Lee
 
 classdef ssh2sleptTest < matlab.unittest.TestCase
     properties
@@ -51,6 +51,56 @@ classdef ssh2sleptTest < matlab.unittest.TestCase
         end
     end
     methods (Test)
+        function outputFormats(t, forceNew)
+            % Fresh fits and cache reads orient coefficients after selecting dates.
+            args = {"NASASSHMonthly", t.Polygon, 1};
+            [expected, expectedDates, expectedFit, expectedBasis] = ...
+                ssh2slept(args{:}, truncation=4, unit="m");
+            file = dir(fullfile(t.Folder, 'SlepianExpansions', '*.nc'));
+            t.assertNumElements(file, 1);
+            path = fullfile(file.folder, file.name);
+            originalBytes = readbinary(path);
+            if ~forceNew
+                delete(fullfile(t.Folder, 'NASASSHMonthly.mat'));
+            end
+            [actual, dates, fit, basis] = ssh2slept(args{:}, truncation=4, ...
+                unit="m", OutputFormat="traditional", ForceNew=forceNew);
+            t.verifyEqual(actual, expected.');
+            t.verifyEqual(dates, expectedDates);
+            t.verifyEqual(fit, expectedFit);
+            t.verifyEqual(basis, expectedBasis);
+            [selected, dates, fit] = ssh2slept(args{:}, t.Dates([2 4]), ...
+                truncation=4, OutputFormat='traditional', ...
+                dropPartialMonths=true, ForceNew=forceNew);
+            t.verifySize(selected, [4 2]);
+            t.verifyEqual(selected, expected(2:3, :).'*1000);
+            t.verifyEqual(dates, expectedDates(2:3));
+            t.verifyEqual(fit.partialMonth, expectedFit.partialMonth(2:3));
+            t.verifyEqual(fit.residualRms, expectedFit.residualRms(2:3)*1000);
+            singleDate = ssh2slept(args{:}, t.Dates([3 3]), truncation=4, ...
+                unit="m", OutputFormat="traditional", ForceNew=forceNew);
+            t.verifySize(singleDate, [4 1]);
+            t.verifyEqual(singleDate, expected(3, :).');
+            [none, dates, fit] = ssh2slept(args{:}, datetime(2010, [1 2], 1), ...
+                truncation=4, OutputFormat="traditional", ForceNew=forceNew);
+            t.verifySize(none, [4 0]);
+            t.verifyEmpty(dates);
+            t.verifyEqual(height(fit), 0);
+            t.verifyEqual(ssh2slept(args{:}, truncation=4, unit="m", ...
+                OutputFormat="timefirst"), expected);
+            if ~forceNew
+                t.verifyEqual(readbinary(path), originalBytes);
+            end
+            t.verifyNumElements(dir(fullfile(t.Folder, 'SlepianExpansions', '*.nc')), 1);
+        end
+
+        function invalidOutputFormat(t)
+            % Reject an unsupported orientation before fitting or creating a cache.
+            t.verifyError(@() ssh2slept("NASASSHMonthly", t.Polygon, 1, ...
+                OutputFormat="invalid"), 'MATLAB:validators:mustBeMember');
+            t.verifyFalse(isfolder(fullfile(t.Folder, 'SlepianExpansions')));
+        end
+
         function readerReturnsNativeMonthlyFlags(t)
             % Subsetting by time must keep flags aligned with the native grid.
             limits = t.Dates([3 4]);

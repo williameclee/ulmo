@@ -5,6 +5,7 @@
 %   [__] = ssh2slept(__, timeRange, unit="m", truncation=J)
 %   [__] = ssh2slept(__, GVN={G,V,N})
 %   [__] = ssh2slept(__, dropPartialMonths=true)
+%   [__] = ssh2slept(__, OutputFormat="traditional")
 %
 % Input arguments
 %   product - "NASASSHMonthly". Reads IFILES/SSH/NASASSHMonthly.mat.
@@ -14,6 +15,9 @@
 %       fixed at 90/L degrees for positive L and zero for L=0.
 %   timeRange - Optional inclusive pair of datetimes or datenums. Default: all.
 %   unit - Output height unit, "mm" (default) or "m".
+%   OutputFormat (name-value) - Orientation of returned coefficients.
+%       "timefirst": dates by modes; "traditional": modes by dates.
+%       Default format: "timefirst".
 %   truncation - Optional retained mode count, with the defaults of xyzs2slep.
 %   GVN - Optional supplied basis {G,V,N}. A nonempty basis forces a fresh
 %       SSH fit and disables reading and writing the projection cache.
@@ -30,7 +34,8 @@
 %   partialMonths - One logical flag per date, true for a partial month.
 %
 % Output arguments
-%   sshSlept - Date-by-mode coefficients in the requested height unit.
+%   sshSlept - Coefficients in the requested height unit and OutputFormat.
+%       Size: (nDates, nModes) for "timefirst", (nModes, nDates) for "traditional".
 %   dates - Native monthly midpoints, as a datetime column.
 %   fit - One row per date: nObs (all fitted cells), areaFraction (observed fraction of the
 %       target domain grid area), condNum, residualRms, and partialMonth.
@@ -45,7 +50,7 @@
 %   Names follow ssh2slept-<product>-<domainId>-<L>-<J>-m.nc. For XY
 %   polygons the domain ID is hash(domain, 'sha1'). J is the fitted mode count.
 %   Arctic and Antarctic IDs include -rotb for geographic observation masks.
-%   The cache stores metres, independent of output unit and requested dates.
+%   The cache stores metres, independent of output unit, OutputFormat and requested dates.
 %   Cache hits read the time coordinate and selected contiguous time slabs.
 %   Requesting GVN on a cache hit loads the domain basis through glmalpha_new.
 %
@@ -56,7 +61,7 @@
 %   2026/11/03
 %
 % Last modified
-%   2026/11/04
+%   2026/11/05
 
 function [sshSlept, dates, fit, GVN] = ssh2slept(product, domain, L, timeRange, options)
     arguments (Input)
@@ -65,6 +70,7 @@ function [sshSlept, dates, fit, GVN] = ssh2slept(product, domain, L, timeRange, 
         L (1, 1) double {mustBeFinite, mustBeInteger, mustBeNonnegative}
         timeRange = []
         options.unit (1, 1) string {mustBeMember(options.unit, ["m", "mm"])} = "mm"
+        options.OutputFormat (1, 1) string {mustBeMember(options.OutputFormat, ["timefirst", "traditional"])} = "timefirst"
         options.truncation double {mustBeScalarOrEmpty, mustBeFinite, mustBeInteger, mustBePositive} = []
         options.GVN cell = {}
         options.ForceNew (1, 1) logical = false
@@ -137,6 +143,9 @@ function [sshSlept, dates, fit, GVN] = ssh2slept(product, domain, L, timeRange, 
         if nargout >= 3
             fit.residualRms = fit.residualRms * 1000;
         end
+    end
+    if options.OutputFormat == "traditional"
+        sshSlept = permute(sshSlept, [2, 1]);
     end
 end
 
