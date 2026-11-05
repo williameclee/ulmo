@@ -36,13 +36,14 @@ classdef GeoDomainIdentityTest < matlab.unittest.TestCase
             end
             identifiers = {'Greenland0-2', 'Greenland0-2-nearby'};
             lon = [0 1];
-            lat = [0 1];
+            lat = [0; 1];
+            maskVersion = 1;
             for iDomain = 1:2
                 id = identifiers{iDomain};
                 mask = false(2);
                 mask(:,iDomain) = true;
                 save(fullfile(root,'DOMAINMASK', ...
-                    sprintf('DOMAINMASK-%s-H1-Box0_1_0_1.mat',id)), 'mask','lon','lat');
+                    sprintf('DOMAINMASK-%s-H1-Box0_1_0_1.mat',id)), 'mask','lon','lat','maskVersion');
 
                 Klmlmp = iDomain/10;
                 XY = []; K1 = []; K = [];

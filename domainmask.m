@@ -13,6 +13,7 @@
 %       function names use geographic coordinates; their mask cache names
 %       include -rotb to distinguish them from rotated masks.
 %   lon - Longitude coordinates, or [] when specifying limits and spacing.
+%       Any longitude convention is accepted. Input order is preserved.
 %       Unit: degrees east.
 %   lat - Latitude coordinates, or [] when specifying limits and spacing.
 %       Unit: degrees north.
@@ -62,6 +63,17 @@
 %       Size: same as mask.
 %       Unit: degrees north.
 %
+% Notes
+%   Polygon membership uses a fixed 0-to-360-degree longitude window and
+%   temporary modulo-360 query coordinates. Returned coordinates retain the
+%   input convention and order. Both longitude seam endpoints are included
+%   when either is on the polygon boundary. Averaging callers must count a
+%   repeated cyclic endpoint only once.
+%   Supplied polygon rings retain their planar topology and are split at the
+%   longitude seam, rather than wrapping their vertices independently.
+%   Mask caches written before this longitude convention are ignored. Cached
+%   projections or regional means derived from old masks need separate rebuilds.
+%
 % See also
 %   GEODOMAIN, BUFFERGRIDMASK, SSH2LONLATT, STERIC2LONLATT
 %
@@ -69,7 +81,7 @@
 %   2025/07/25, En-Chi Lee (williameclee@arizona.edu)
 %
 % Last modified
-%   2026/11/04, En-Chi Lee (williameclee@arizona.edu)
+%   2026/11/05, OpenAI Codex
 
 function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshsize, options)
 
@@ -121,13 +133,11 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
         lat = latlim(1):meshsize:latlim(2);
     elseif isempty(lon) || isempty(lat)
         error('Both LON and LAT must be provided');
-    else
+    elseif isvector(lon) && isvector(lat)
         if isscalar(unique([diff(unique(lon(:))); diff(unique(lat(:)))]))
             meshsize = abs(unique([diff(unique(lon(:))); diff(unique(lat(:)))]));
-            lonlim = [min(lon), max(lon)];
-            latlim = [min(lat), max(lat)];
-            lon = lonlim(1):meshsize:lonlim(2);
-            lat = latlim(1):meshsize:latlim(2);
+            lonlim = [min(lon(:)), max(lon(:))];
+            latlim = [min(lat(:)), max(lat(:))];
         end
 
     end
@@ -136,18 +146,22 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
         lon = lon(:)';
         lat = lat(:);
         [lonn, latt] = meshgrid(lon, lat);
-    elseif ~(ismatrix(lon) && ismatrix(lat)) || size(lon, 1) ~= size(lat, 1)
+    elseif ~isequal(size(lon), size(lat))
         error('LON and LAT must be vectors or matrices of the same size');
+    else
+        lonn = lon;
+        latt = lat;
     end
 
     %% Check for existing data
     dataPath = datapath(domain, meshsize, lonlim, latlim, options.exteriorBuffer);
     exteriorBuffer = options.exteriorBuffer;
-    cacheVars = {'mask'};
+    maskVersion = 1;
+    cacheVars = {'mask', 'maskVersion', 'lon', 'lat'};
     if exteriorBuffer > 0
         cacheVars{end+1} = 'exteriorBuffer';
     end
-    vars = [cacheVars, {'lon', 'lat'}];
+    vars = cacheVars;
 
     if ~forceNew && ~(isscalar(dataPath) && isnan(dataPath)) && ...
             exist(dataPath, 'file') && all(ismember(vars, who('-file', dataPath)))
@@ -157,7 +171,10 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
     end
 
     % Different exact widths can share the same num2str filename.
-    if ~isempty(data) && (exteriorBuffer == 0 || data.exteriorBuffer == exteriorBuffer)
+    if ~isempty(data) && isequal(data.maskVersion, maskVersion) && ...
+            isequal(data.lon, lon) && isequal(data.lat, lat) && ...
+            isequal(size(data.mask), size(lonn)) && ...
+            (exteriorBuffer == 0 || data.exteriorBuffer == exteriorBuffer)
 
         if ~beQuiet
             fprintf('[ULMO>%s] Loaded %s.\n', ...
@@ -185,11 +202,11 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
     if isa(domain, 'GeoDomain')
         % Native grids require geographic coordinates for rotated polar domains.
         domainPoly = ...
-            domain.Lonlat(round(mean(lonlim) / 180) * 180, ...
+            domain.Lonlat(180, ...
                 "RotateBack", rotateBack, "OutputFormat", 'polyshape');
     elseif ismatrix(domain) && isnumeric(domain) && size(domain, 2) == 2
         domainPoly = polyshape(domain);
-    elseif ischar(domain)
+    elseif ischar(domain) || isstring(domain)
         domainPoly = polyshape(feval(domain));
     elseif iscell(domain)
         domainPoly = polyshape(feval(domain{:}));
@@ -199,19 +216,12 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
         error('Unsupported domain type: %s', class(domain));
     end
 
-    if exteriorBuffer == 0 && min(domainPoly.Vertices(:, 1)) > max(lon)
-        error('ULMO:domainmask:InvalidInput', ...
-            'Domain longitude range (min: %f) is outside the provided LON range (max: %f).', ...
-            min(domainPoly.Vertices(:, 1)), max(lon));
-    elseif exteriorBuffer == 0 && max(domainPoly.Vertices(:, 1)) < min(lon)
-        error('ULMO:domainmask:InvalidInput', ...
-            'Domain longitude range (max: %f) is outside the provided LON range (min: %f).', ...
-            max(domainPoly.Vertices(:, 1)), min(lon));
-    end
+    domainPoly = wrapPolygon(domainPoly);
+    queryLon = mod(lonn, 360);
 
     if numel(lonn) < 1e4
         % Run all at once for small grids
-        mask = isinterior(domainPoly, lonn(:), latt(:));
+        mask = isinterior(domainPoly, queryLon(:), latt(:));
         mask = reshape(mask, size(lonn));
     else
         % For large grids, use arrayfyn (can be parallelised)
@@ -223,7 +233,7 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
         end
 
         mask = false(size(lonn));
-        mask = arrayfun(@(i) isinterior(domainPoly, lonn(:, i), latt(:, i)), 1:size(mask, 2), ...
+        mask = arrayfun(@(i) isinterior(domainPoly, queryLon(:, i), latt(:, i)), 1:size(mask, 2), ...
             "UniformOutput", false);
         mask = reshape(cell2mat(mask), size(lonn));
 
@@ -234,8 +244,14 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
 
     end
 
+    % A boundary at 360 degrees is physically the same as one at zero.
+    seam = queryLon == 0;
+    if any(seam, 'all')
+        mask(seam) = mask(seam) | isinterior(domainPoly, 360*ones(nnz(seam), 1), latt(seam));
+    end
+
     if exteriorBuffer > 0
-        mask = buffergridmask(domainPoly, lonn, latt, mask, exteriorBuffer);
+        mask = buffergridmask(domainPoly, queryLon, latt, mask, exteriorBuffer);
     end
 
     if ischar(dataPath) && saveData
@@ -271,6 +287,29 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
 end
 
 %% Subfunctions
+function wrapped = wrapPolygon(polygon)
+    % Clip translated copies as polygons so holes and full-width bands survive.
+    vertices = polygon.Vertices;
+    if isempty(vertices)
+        wrapped = polygon;
+        return
+    end
+    west = min(vertices(:, 1));
+    east = max(vertices(:, 1));
+    if west >= 0 && east <= 360
+        wrapped = polygon;
+        return
+    end
+    south = min(vertices(:, 2));
+    north = max(vertices(:, 2));
+    window = polyshape([0, 360, 360, 0], [south, south, north, north]);
+    wrapped = polyshape();
+    for iCopy = (floor(-east/360)+1):(ceil((360-west)/360)-1)
+        piece = intersect(translate(polygon, [360*iCopy, 0]), window);
+        wrapped = union(wrapped, piece);
+    end
+end
+
 function dataPath = datapath(domain, meshSize, lonLim, latLim, exteriorBuffer)
 
     if isnan(meshSize)
@@ -288,8 +327,8 @@ function dataPath = datapath(domain, meshSize, lonLim, latLim, exteriorBuffer)
         end
     elseif iscell(domain)
         domainName = strjoin(string(domain), '_');
-    elseif ischar(domain)
-        domainName = domain;
+    elseif ischar(domain) || isstring(domain)
+        domainName = char(domain);
     elseif isnumeric(domain) && exteriorBuffer > 0
         domainName = hash(domain, 'sha1');
     else
