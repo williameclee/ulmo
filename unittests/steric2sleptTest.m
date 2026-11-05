@@ -125,7 +125,7 @@ classdef steric2sleptTest < matlab.unittest.TestCase
             t.verifyLessThan(max(fit.residualRms), 1e-8);
             t.verifyEqual(constant, basis{1}(1, :).');
             % Empty and singleton time dimensions must survive formatting.
-            for limits = {datetime(2010, [1 2], 1), t.Data.dates([5 5])}
+            for limits = {datetime(2010, [1 2], 1), t.Data.dates(5) + seconds([-1 1])}
                 [c, dates, ~, ~, h] = steric2slept(args{:}, limits{1}, ...
                     truncation=4, OutputFormat=ordering, BeQuiet=1);
                 if strcmp(ordering, 'traditional')
@@ -359,6 +359,59 @@ classdef steric2sleptTest < matlab.unittest.TestCase
             t.verifyEqual(c,expected.',AbsTol=1e-11);
             t.verifyEqual(fit.nObs,repmat(nnz(mask),60,1));
             t.verifyEqual(ncreadatt(t.cachePath,'/','weighting'),'spherical-midpoint-bands');
+        end
+
+        function textOptionsAcceptCharAndString(t)
+            % Every text selector accepts either representation without conversion.
+            args = {'EN4c14', t.Polygon, 0, days(7)};
+            [c, dates, ~, ~, h] = steric2slept(args{:}, Type='halosteric', ...
+                Depth='shallow', Interpolation='LiNeAr', OutputFormat='traditional', ...
+                Unit='mm', TimeFormat='datenum', BeQuiet=true);
+            [actual, actualDates, ~, ~, actualH] = steric2slept(args{:}, Type="halosteric", ...
+                Depth="shallow", Interpolation="linear", OutputFormat="traditional", ...
+                Unit="mm", TimeFormat="datenum", BeQuiet=1, SaveData=0);
+            t.verifyEqual(actual, c);
+            t.verifyEqual(actualDates, dates);
+            t.verifyEqual(actualH, h);
+            t.verifySize(h, [1, numel(dates)]);
+            t.verifyClass(dates, 'double');
+        end
+
+        function interpolationValidationBelongsToInterpolator(t)
+            % Native sampling does not use the method; fixed steps delegate it.
+            args = {'EN4c14', t.Polygon, 0};
+            steric2slept(args{:}, Interpolation='unused-method', BeQuiet=1);
+            expected = steric2slept(args{:}, days(7), Interpolation='linear', BeQuiet=1);
+            actual = steric2slept(args{:}, days(7), Interpolation='LiN', BeQuiet=1);
+            t.verifyEqual(actual, expected, AbsTol=1e-12);
+            expected = steric2slept(args{:}, days(7), Interpolation='mean', BeQuiet=1);
+            actual = steric2slept(args{:}, days(7), Interpolation="MEAN", BeQuiet=1);
+            t.verifyEqual(actual, expected);
+            try
+                interptemporal(t.Data.dates, t.Data.stericSl, days(7), 'invalid-method');
+                t.assertFail('The interpolation function must reject this method.');
+            catch exception
+                expectedId = exception.identifier;
+            end
+            t.verifyError(@() steric2slept(args{:}, days(7), ...
+                Interpolation='invalid-method', BeQuiet=1), expectedId);
+        end
+
+        function textInputsRejectNontextAndArrays(t)
+            % Reject values that a typed string argument could silently convert.
+            for name = {'Type', 'Depth', 'Interpolation', 'OutputFormat', 'Unit', 'TimeFormat'}
+                for value = {42, ["linear", "nearest"]}
+                    t.verifyError(@() steric2slept('EN4c14', t.Polygon, 0, ...
+                        name{1}, value{1}), 'MATLAB:validators:mustBeTextScalar');
+                end
+            end
+        end
+
+        function timeRangeUsesLoaderValidator(t)
+            for limits = {t.Data.dates([5 5]), t.Data.dates([6 5]), t.Data.dates(5)}
+                t.verifyError(@() steric2slept('EN4c14', t.Polygon, 0, [], limits{1}), ...
+                    'ULMO:notValidTimeRange');
+            end
         end
 
         function nativeQuarterlyAndCacheIdentity(t)

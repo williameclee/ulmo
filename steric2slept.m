@@ -15,7 +15,7 @@
 %       precedes projection and uses native spatial coordinates.
 %       Default step: [] (native timestamps).
 %   timeRange (optional) - Inclusive datetime or datenum output limits.
-%       Applied after processing the complete record.
+%       Increasing limits, applied after processing the complete record.
 %       Size: (1, 2) or (2, 1), or empty.
 %       Default range: [] (complete record).
 %   Type (name-value) - total, thermosteric, halosteric, non-thermosteric
@@ -25,6 +25,7 @@
 %       Default depth: full.
 %   Interpolation (name-value) - Temporal method as in STERIC2LONLATT.
 %       'mean' averages fixed-step windows; midmonth and GRACE always average.
+%       Interpolation methods are validated by INTERPTEMPORAL when used.
 %       Default method: linear.
 %   OutputFormat (name-value) - timefirst or traditional coefficient ordering.
 %       GMSL uses the same time dimension as the coefficients.
@@ -122,26 +123,23 @@ function [stericSlept, dates, fit, GVN, halostericGmsl, constantSlept] = ...
         domain
         L (1, 1) double {mustBeFinite, mustBeInteger, mustBeNonnegative}
         timestep {mustBeTimeStep} = []
-        timeRange = []
-        options.Type (1, 1) string {mustBeMember(options.Type, ...
-            ["total", "thermosteric", "halosteric", "non-thermosteric", "non-halosteric"])} = "total"
-        options.Depth (1, 1) string {mustBeMember(options.Depth, ["full", "shallow", "deep"])} = "full"
-        options.Interpolation (1, 1) string {mustBeMember(options.Interpolation, ...
-            ["linear", "nearest", "previous", "next", "pchip", "cubic", "spline", "makima", "v5cubic", "mean"])} = "linear"
-        options.OutputFormat (1, 1) string {mustBeMember(options.OutputFormat, ["timefirst", "traditional"])} = "timefirst"
-        options.Unit (1, 1) string {mustBeMember(options.Unit, ["m", "mm"])} = "m"
-        options.TimeFormat (1, 1) string {mustBeMember(options.TimeFormat, ["datetime", "datenum"])} = "datetime"
+        timeRange {mustBeTimeRange} = []
+        options.Type {mustBeTextScalar, mustBeMember(options.Type, ...
+            {'total', 'thermosteric', 'halosteric', 'non-thermosteric', 'non-halosteric'})} = 'total'
+        options.Depth {mustBeTextScalar, mustBeMember(options.Depth, {'full', 'shallow', 'deep'})} = 'full'
+        options.Interpolation {mustBeTextScalar} = 'linear'
+        options.OutputFormat {mustBeTextScalar, mustBeMember(options.OutputFormat, {'timefirst', 'traditional'})} = 'timefirst'
+        options.Unit {mustBeTextScalar, mustBeMember(options.Unit, {'m', 'mm'})} = 'm'
+        options.TimeFormat {mustBeTextScalar, mustBeMember(options.TimeFormat, {'datetime', 'datenum'})} = 'datetime'
         options.truncation double {mustBeScalarOrEmpty, mustBeFinite, mustBeInteger, mustBePositive} = []
         options.GVN cell = {}
-        options.ForceNew (1, 1) logical = false
-        options.SaveData (1, 1) logical = true
-        options.BeQuiet (1, 1) double {mustBeMember(options.BeQuiet, [0, 0.5, 1])} = 0.5
+        options.ForceNew (1, 1) {mustBeNumericOrLogical} = false
+        options.SaveData (1, 1) {mustBeNumericOrLogical} = true
+        options.BeQuiet (1, 1) {mustBeNumericOrLogical} = 0.5
     end
-    if ~isempty(timeRange)
-        if isnumeric(timeRange), timeRange = datetime(timeRange, 'ConvertFrom', 'datenum'); end
-        assert(isdatetime(timeRange) && numel(timeRange) == 2 && ...
-            all(isfinite(timeRange)) && timeRange(1) <= timeRange(2), ...
-            'ULMO:steric2slept:TimeRange', 'Supply increasing finite start and end dates.');
+    options.Interpolation = lower(options.Interpolation);
+    if ~isempty(timeRange) && isnumeric(timeRange)
+        timeRange = datetime(timeRange, 'ConvertFrom', 'datenum');
     end
     if iscell(domain)
         domain = GeoDomain(domain{:});
@@ -200,16 +198,16 @@ function [stericSlept, dates, fit, GVN, halostericGmsl, constantSlept] = ...
         halostericGmsl = zeros(0, 1);
         if nargout >= 5, halostericGmsl = means.(haloName)(rows); end
     end
-    if options.Unit == "mm"
+    if strcmp(options.Unit, 'mm')
         stericSlept = 1000 * stericSlept;
         halostericGmsl = 1000 * halostericGmsl;
         if nargout >= 3, fit.residualRms = 1000 * fit.residualRms; end
     end
-    if options.OutputFormat == "traditional"
+    if strcmp(options.OutputFormat, 'traditional')
         stericSlept = stericSlept.';
         halostericGmsl = halostericGmsl.';
     end
-    if options.TimeFormat == "datenum", dates = datenum(dates); end %#ok<DATNM>
+    if strcmp(options.TimeFormat, 'datenum'), dates = datenum(dates); end %#ok<DATNM>
 end
 
 function [stem, configuration, domainId] = cacheStem(product, domain, L, timestep, method)
@@ -293,7 +291,7 @@ function [fields, means, dates, lon, lat] = prepareRecord(product, timestep, opt
     lat = double(data.lat(:));
     data = rmfield(data, {'lon', 'lat'});
     data = prepareDeepSupport(data, schema);
-    useMean = ~isempty(timestep) && (isstring(timestep) || options.Interpolation == "mean");
+    useMean = ~isempty(timestep) && (isstring(timestep) || strcmp(options.Interpolation, 'mean'));
     if useMean, data = addResiduals(data, schema); end
     [data, dates] = processsterictime(data, nativeDates, timestep, options.Interpolation, []);
     if ~useMean, data = addResiduals(data, schema); end
