@@ -14,10 +14,13 @@
 %       application policy is inferred from the product name.
 %
 % See also
-%   steric2lonlatt, steric2gmsl, stericfilepath
+%   steric2lonlatt, steric2gmsl, stericfilepath, stericfieldschema
 %
 % Created by
 %   2026/11/04, En-Chi Lee (williameclee@gmail.com)
+%
+% Last modified
+%   2026/11/05, OpenAI Codex
 
 function info = stericproductinfo(product)
     arguments (Input)
@@ -37,21 +40,13 @@ function info = stericproductinfo(product)
     if ~all(ismember(required, nonempty))
         error('ULMO:LoadData:VariableNotFound', 'Native coordinates, dates and stericSl are required.');
     end
-    names = ["stericSl", "shallowStericSl", "deepStericSl"; ...
-             "thermostericSl", "shallowThermostericSl", "deepThermostericSl"; ...
-             "halostericSl", "shallowHalostericSl", "deepHalostericSl"];
-    available = ismember(names, nonempty);
-    % Product names do not determine depth coverage. Explicit partial splits
-    % are malformed; total coverage can still be described when an optional
-    % halo component is absent. Application policy remains with the caller.
-    split = any(available(:, 2:3), 2);
-    if any(split & ~all(available, 2)) || ...
-            (available(3, 1) && split(1) ~= split(3))
+    schema = stericfieldschema(metadata);
+    if schema.incompleteSplit || schema.incompatibleSplits
         error('ULMO:stericproductinfo:InvalidSchema', ...
             'Supplied components require complete, compatible full/shallow/deep fields.');
     end
-    info.hasShallowField = available(1, 2);
-    info.hasDeepField = available(1, 3);
-    info.hasDeep = split(1);
-    info.hasHalosteric = available(3, 1);
+    info.hasShallowField = schema.available(1, 2);
+    info.hasDeepField = schema.available(1, 3);
+    info.hasDeep = schema.split(1);
+    info.hasHalosteric = schema.available(3, 1);
 end

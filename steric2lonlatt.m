@@ -138,13 +138,13 @@
 %   Calling without outputs attempts to plot the returned global mean.
 %
 % See also
-%   steric2gmsl, stericfilepath, interptemporal, temporalmeanepochs
+%   steric2gmsl, stericfilepath, stericfieldschema, interptemporal, temporalmeanepochs
 %
 % Created by
 %   2025/07/22, En-Chi Lee (williameclee@arizona.edu)
 %
 % Last modified
-%   2026/11/04, En-Chi Lee (williameclee@gmail.com)
+%   2026/11/05, OpenAI Codex
 
 function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt( ...
         product, timestep, meshsize, timelim, options)
@@ -215,7 +215,11 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
     end
 
     % 'default' and 'no halosteric drift' are deprecated Type values.
-    [gridNames, meanNames, types, depths] = fieldnamesmap();
+    schema = stericfieldschema();
+    gridNames = schema.gridNames;
+    meanNames = schema.meanNames;
+    types = schema.types;
+    depths = schema.depths;
     iType = find(types == string(options.Type));
     iDepth = find(depths == string(options.Depth));
     stericVar = char(gridNames(min(iType, 3), iDepth));
@@ -268,10 +272,10 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
             end
         end
         metadata = whos('-file', inputPath);
-        available = gridavailability(metadata, gridNames);
+        schema = nativefields(metadata);
         % A fresh derived cache stores every supported source component, not
         % only the selected output. Explicit names exclude cached GMSL vectors.
-        dataVars = cellstr(gridNames(available));
+        dataVars = cellstr(gridNames(schema.available));
     end
     if options.BeQuiet == 0 || (cacheHit && options.BeQuiet <= 1)
         fprintf('[ULMO>%s] Loading %s steric product from %s.\n', ...
@@ -307,8 +311,8 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
         if ~isfile(nativePath)
             error('ULMO:LoadData:FileNotFound', 'Native means require %s.', nativePath);
         end
-        available = gridavailability(whos('-file', nativePath), gridNames);
-        supported = [available; available(1, :) & available(2, :); available(1, :) & available(3, :)];
+        schema = nativefields(whos('-file', nativePath));
+        supported = schema.supported;
         if nargout >= 6 && ~supported(3, iDepth)
             error('ULMO:steric2lonlatt:UnsupportedField', ...
                 'Product %s has no halosteric GMSL at Depth=%s.', char(product), options.Depth);
@@ -411,33 +415,9 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
 end
 
 %% Subfunctions
-function [grids, means, types, depths] = fieldnamesmap()
-    % Rows follow the public component order; columns are full/shallow/deep.
-    % The two extra mean rows correspond to expressions, not native grids.
-    grids = ["stericSl", "shallowStericSl", "deepStericSl"; ...
-             "thermostericSl", "shallowThermostericSl", "deepThermostericSl"; ...
-             "halostericSl", "shallowHalostericSl", "deepHalostericSl"];
-    means = ["stericGmsl", "shallowStericGmsl", "deepStericGmsl"; ...
-             "thermostericGmsl", "shallowThermostericGmsl", "deepThermostericGmsl"; ...
-             "halostericGmsl", "shallowHalostericGmsl", "deepHalostericGmsl"; ...
-             "nonThermostericGmsl", "shallowNonThermostericGmsl", "deepNonThermostericGmsl"; ...
-             "nonHalostericGmsl", "shallowNonHalostericGmsl", "deepNonHalostericGmsl"];
-    types = ["total", "thermosteric", "halosteric", "non-thermosteric", "non-halosteric"];
-    depths = ["full", "shallow", "deep"];
-end
-
-function available = gridavailability(metadata, names)
-    % Empty fields declare unavailable coverage. A nonempty shallow or deep
-    % field declares a split and therefore requires both layers and the full
-    % field. Missing optional components are not replaced by observed zeros.
-    available = false(size(names));
-    for iName = 1:numel(names)
-        item = metadata(strcmp({metadata.name}, names(iName)));
-        available(iName) = ~isempty(item) && all(item.size > 0);
-    end
-    split = any(available(:, 2:3), 2);
-    if any(split & ~all(available, 2)) || ...
-            (available(1, 1) && available(3, 1) && split(1) ~= split(3))
+function schema = nativefields(metadata)
+    schema = stericfieldschema(metadata);
+    if schema.incompleteSplit || schema.incompatibleSplits
         error('ULMO:steric2lonlatt:InvalidSchema', ...
             'A depth split requires explicit full, shallow and deep grids.');
     end
