@@ -36,7 +36,7 @@ classdef GeoDomainIdentityTest < matlab.unittest.TestCase
             end
             identifiers = {'Greenland0-2', 'Greenland0-2-nearby'};
             lon = [0 1];
-            lat = [0 1];
+            lat = [0; 1];
             for iDomain = 1:2
                 id = identifiers{iDomain};
                 mask = false(2);
