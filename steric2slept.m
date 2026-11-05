@@ -9,14 +9,19 @@
 % Input arguments
 %   product - Prepared StericProduct identifier.
 %   domain - GeoDomain, region name, GeoDomain argument cell or polygon.
+%       Numeric polygons contain longitude/latitude vertices.
+%       Size: (nVertex, 2) for a polygon.
+%       Unit: degrees east and north for polygon coordinates.
 %   L - Maximum spherical harmonic degree, a nonnegative integer.
 %   timestep (optional) - Temporal selection as in STERIC2LONLATT: a positive
 %       duration or number of days, 'midmonth', 'GRACE', or []. Processing
 %       precedes projection and uses native spatial coordinates.
+%       Unit: days for numeric values.
 %       Default step: [] (native timestamps).
 %   timeRange (optional) - Inclusive datetime or datenum output limits.
 %       Increasing limits, applied after processing the complete record.
 %       Size: (1, 2) or (2, 1), or empty.
+%       Unit: days for datenum values.
 %       Default range: [] (complete record).
 %   Type (name-value) - total, thermosteric, halosteric, non-thermosteric
 %       (total minus thermosteric), or non-halosteric (total minus halosteric).
@@ -52,11 +57,21 @@
 %       Default level: 0.5 (calculation/cache messages); 1 suppresses messages.
 %
 % Input file content
-%   lon, lat, dates - Native coordinates and strictly increasing timestamps
-%       in the MAT file resolved by STERICFILEPATH. Longitude spans one cycle;
-%       latitude may be nonuniform. Square grids use (lat,lon,time) ordering.
-%   <component>Sl - Supplied native grids, in metres, with time on axis three.
-%       Fields and complete depth splits follow STERICFIELDSCHEMA.
+%   lon - Regular longitude coordinates spanning one complete cycle.
+%       A duplicated cyclic endpoint is allowed and counted only once.
+%       Size: vector with nLon elements.
+%       Unit: degrees east.
+%   lat - Strictly monotone latitude coordinates; spacing may be nonuniform.
+%       Size: vector with nLat elements.
+%       Unit: degrees north.
+%   dates - Strictly increasing datetime or datenum timestamps.
+%       Size: vector with nNativeTime elements.
+%       Unit: days for datenum values.
+%   <component>Sl - Supplied native grids in STERICFILEPATH(product).
+%       Fields and complete depth splits follow STERICFIELDSCHEMA. All grids
+%       share one orientation; square grids use (lat, lon, time) ordering.
+%       Size: (nLat, nLon, nNativeTime) or (nLon, nLat, nNativeTime).
+%       Unit: m.
 %
 % Output arguments
 %   stericSlept - Raw selected component/depth coefficients.
@@ -64,12 +79,20 @@
 %       Unit: Unit.
 %   dates - Returned timestamps in TimeFormat.
 %       Size: (nTime, 1).
+%       Unit: days for datenum output.
 %   fit - Table of nObs, areaFraction, condNum and residualRms, one row per
 %       returned epoch. Counts include exterior-buffer cells and zero-filled
 %       deep cells; areaFraction measures fitted area inside the target.
 %       Residual RMS uses Unit.
-%   GVN - Retained harmonic basis, eigenvalues and full Shannon number.
-%   halostericGmsl - Selected depth's independently processed halosteric GMSL.
+%       Size: (nTime, 4) table.
+%   GVN - Cell array {G, V, N}: retained harmonic basis, concentration
+%       eigenvalues and full Shannon number. G uses the real 4*pi-normalized
+%       harmonic convention.
+%       Size: (1, 3); G is ((L+1)^2, J), V is (J, 1), N is scalar.
+%   halostericGmsl - Selected depth's temporally processed halosteric GMSL.
+%       Independent of Type. For split products, full GMSL is the sum of the
+%       processed shallow/deep means. Unavailable halosteric means raise an
+%       error only when this output is requested.
 %       Size: (nTime, 1) for timefirst; (1, nTime) for traditional.
 %       Unit: Unit.
 %   constantSlept - Harmonic projection of unit C00: GVN{1}(1,:).'.
@@ -82,8 +105,14 @@
 %   <component>Gmsl - All applicable processed global means in metres, (time).
 %   <component>Slept_<diagnostic> - Per-field fitting diagnostics, (time).
 %   constantSlept - Unit-C00 projection, (mode), with units 1.
-%   time, mode, creationDate - Epochs, retained mode indices and UTC creation time.
-%       Attributes record field availability and the projection configuration.
+%   time - Processed epoch timestamps.
+%       Size: (nTime, 1).
+%       Unit: seconds since 2000-01-01 00:00:00, interpreted as UTC.
+%   mode - Retained mode indices, 1:J.
+%       Size: (J, 1).
+%   creationDate - UTC time when the projection cache was written.
+%       Size: scalar.
+%       Unit: seconds since 1970-01-01 00:00:00 UTC.
 %
 % Notes
 %   One complete NetCDF-4 file per product/temporal/domain/L/J configuration
@@ -91,6 +120,9 @@
 %   Unit and OutputFormat select outputs, not caches. Updates replace entire
 %   files only after successful completion. Convention changes require manual
 %   rebuilding. Basis caches and projection caches must remain consistent.
+%   Global attributes record available fields/means, product, domain, degree,
+%   retained/default truncation, temporal configuration, observation buffer,
+%   area weighting and deep-support convention.
 %   The bulk path shares STERIC2LONLATT's temporal operations and obtains all
 %   native means through STERIC2GMSL. It processes grids in memory without
 %   intermediate grid caches. Unsaved requests may recalculate native means

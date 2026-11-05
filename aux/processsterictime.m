@@ -4,21 +4,32 @@
 %   [data, dates] = PROCESSSTERICTIME(data, dates, timestep, method, limits)
 %
 % Input arguments
-%   data - Structure of arrays with time on axis three.
-%   dates - Native datetime column, (nTime, 1).
-%   timestep - Native ([]), duration, midmonth or GRACE selection.
+%   data - Nonempty scalar structure of fields with time on axis three.
+%       Each field has size (nX, nY, nNativeTime); scalar series use (1, 1,
+%       nNativeTime). Spatial sizes can differ between fields.
+%   dates - Strictly increasing native datetime timestamps.
+%       Size: (nNativeTime, 1).
+%   timestep - Native ([]), positive duration, 'midmonth' or 'GRACE' selection.
+%       Callers convert numeric day counts to durations before calling.
 %   method - Temporal interpolation method, or mean for fixed-step averaging.
-%   limits - Datetime range for early temporal selection, or [].
+%       Named epochs always average; native selection ignores this argument.
+%   limits - Inclusive datetime limits selecting processed timestamps, or [].
+%       Averaging selects window centres without clipping native samples.
+%       Native selection ignores these limits; callers select outputs later.
+%       Size: two-element vector, or empty for the complete record.
 %
 % Output arguments
 %   data - Processed fields with time on axis three.
+%       Field names and spatial dimensions are unchanged.
+%       Each field has size (nX, nY, nTime); input units are preserved.
 %   dates - Processed datetime column.
+%       Size: (nTime, 1).
 %
 % Notes
 %   Each field uses its own finite samples. Process grids and GMSL separately.
 %
 % See also
-%   steric2lonlatt, interptemporal, temporalmeanepochs
+%   steric2lonlatt, steric2slept, interptemporal, temporalmeanepochs
 %
 % Created by
 %   2026/11/05, En-Chi Lee

@@ -3,6 +3,15 @@
 % temporal-before-spatial fitting, independent masks, unit-C00 projection,
 % all-field NetCDF replacement and matching coefficient/GMSL orientation.
 %
+% Syntax
+%   results = runtests('unittests/steric2sleptTest.m')
+%
+% Notes
+%   Native files, GRACE windows, Earth constants and caches are synthetic.
+%   Each case uses temporary IFILES and ORIGINALGRACEDATA roots. Production
+%   data are not read or changed. Includes decimal-domain cache discovery,
+%   deep-support conventions, argument validation and failure preservation.
+%
 % Created by
 %   2026/11/05, En-Chi Lee
 
