@@ -46,6 +46,8 @@
 %           have to apply counterrotation after diagonalizing in
 %           LOCALIZATION.
 %       The default value is 0.
+%   SaveData (name-value) - Whether to save kernel and quadrature cache files.
+%       Default flag: true.
 %
 % Output arguments
 %   Kernel - The localization kernel whose eigenfunctions we want,
@@ -75,6 +77,7 @@
 %   PLOTSLEP, PLM2AVG, KERNELC, LEGENDREPRODINT, DLMLMP
 %
 % Last modified by
+%   2026/11/05, En-Chi Lee
 %   2026/09/25, williameclee@arizona.edu (@williameclee)
 %   2023/11/11, fjsimons@alum.mit.edu (@fjsimons)
 %   2017/05/26, plattner@alumni.ethz.ch (@AlainPlattner)
@@ -310,7 +313,9 @@ function varargout = kernelcp_new(varargin)
         nGL = max(ngl, 2 * Lmax);
         % These are going to be the required colatitudes - forget XY
         [w, x, N] = gausslegendrecof(nGL, [], intv);
-        save(fullfile(getenv('IFILES'), 'gausslegendrecof.mat'), 'w', 'x', 'N')
+        if saveData
+            save(fullfile(getenv('IFILES'), 'gausslegendrecof.mat'), 'w', 'x', 'N')
+        end
         % fprintf('%s calculated %i Gauss-Legendre points and weights\n', upper(mfilename), N)
 
         % First calculate the Legendre functions themselves
