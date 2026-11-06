@@ -13,7 +13,6 @@
 %       function names use geographic coordinates; their mask cache names
 %       include -rotb to distinguish them from rotated masks.
 %   lon - Longitude coordinates, or [] when specifying limits and spacing.
-%       Any longitude convention is accepted. Input order is preserved.
 %       Unit: degrees east.
 %   lat - Latitude coordinates, or [] when specifying limits and spacing.
 %       Unit: degrees north.
@@ -37,17 +36,12 @@
 %       Default format: 'meshgrid'.
 %   exteriorBuffer (name-value) - Spherical buffer around the finished polygon.
 %       Includes grid points within this angular distance of the boundary.
-%       Boundary edges are densified linearly at 1-degree spacing, then treated
-%       as minor great-circle segments. Distances include segment endpoints.
-%       Must be between 0 and 90. Positive widths use separate mask caches.
 %       Unit: degrees of spherical arc.
 %       Default width: 0.
 %   Forcenew (name-value) - Whether to recompute an existing mask.
 %       Default value: false.
 %   SaveData (name-value) - Whether to save a cache for a regular grid.
-%       Supplied coordinate vectors must be increasing to use a grid cache.
-%       Named domains are cacheable; numeric polygons are cacheable when
-%       exteriorBuffer is positive. Polyshape inputs are not cached.
+%       Polyshape inputs are not cached.
 %       Default value: true.
 %   BeQuiet (name-value) - Whether to suppress progress messages.
 %       Default value: false.
