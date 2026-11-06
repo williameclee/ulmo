@@ -84,6 +84,12 @@
 %   partialMonths - Logical column aligned with dates for native NASASSHMonthly
 %       maps. Empty for other products or interpolated grids and epochs.
 %
+% Monthly NASA requests
+%   For NASASSHMonthly, 'midmonth' and [] select the same native monthly
+%   epochs and cache. Temporal averaging/interpolation is skipped, including
+%   when spatial interpolation is requested. Native-grid requests retain
+%   partialMonths. Old redundant Tmidmonth caches are not selected.
+%
 % Data sources
 %	MEaSUREs Gridded Sea Surface Height Anomalies Version 2205
 % 		https://podaac.jpl.nasa.gov/dataset/SEA_SURFACE_HEIGHT_ALT_GRIDS_L4_2SATS_5DAY_6THDEG_V_JPL2205
@@ -149,6 +155,13 @@ function [ssh, sshSigma, dates, lon, lat, partialMonths] = ssh2lonlatt(product, 
         meshsize = [];
     end
 
+    % This prepared product already contains calendar-month means and labels.
+    % Canonicalise before cache selection, including spatial-only requests.
+    if product == SSHProduct.NASASSHMonthly && ...
+            (ischar(timestep) || isstring(timestep)) && ...
+            isscalar(string(timestep)) && strcmpi(timestep, 'midmonth')
+        timestep = [];
+    end
     % Preserve the legacy path builder's method spelling.
     [timestep, ~, useMean] = normalizetimeconfig(timestep, intpMthd);
 
