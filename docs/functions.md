@@ -43,7 +43,6 @@ The ultimate goal is to drop the `_new` suffixes and replace the original functi
 | `plm2xyz` | Projects spherical harmonics onto latitude-longitude grids/points. | [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git) | none | Replacement for `plm2xyz` in [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git). |
 | `slep2plm_new` | Projects Slepian functions back to spherical harmonics. | [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git) | none | Replacement for `slep2plm` in [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git), with support for `GeoDomain` objects. |
 | `xyzs2slep` | Fits one or more scalar fields on shared coordinates to a regional Slepian basis, with per-field masks, optional geometric weights or observation uncertainty, and sampled basis reuse. | [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git) | | |
-| `steric2slept` | Fits temporally processed raw steric fields, caches all supported components/depths in NetCDF, and returns separate halosteric GMSL and unit-C00 projection coefficients. | | |
 | `preparegridcoordinates` | Validates rectangular coordinates, returns ascending-axis indices, removes a cyclic endpoint and computes relative area weights. | | | |
 | `prepareslepianbasis` | Prepares retained Slepian columns with explicit supplied-basis ordering, truncation and optional orthonormality checks. | | | |
 | `fitgriddedslepian` | Fits named gridded fields with shared buffered geometry and sampled designs, retaining empty epochs and target-area diagnostics. | | | |
@@ -88,6 +87,7 @@ The ultimate goal is to drop the `_new` suffixes and replace the original functi
 | `ssh2lonlatt` | Reads and converts altimetric SSH data from different missions to gridded data. | | |
 | `steric2lonlatt` | Returns steric component grids and optional requested-depth halosteric GMSL on the same dates. | | |
 | `steric2gmsl` | Returns one native global mean steric sea level series for a selected component and depth; caches all supported means. | | |
+| `steric2slept` | Fits temporally processed raw steric fields, caches all supported components/depths in NetCDF, and returns separate halosteric GMSL and unit-C00 projection coefficients. | | |
 
 #### Data Pre-Processing
 
