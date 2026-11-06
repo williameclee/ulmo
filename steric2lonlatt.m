@@ -23,7 +23,13 @@
 %       The default product is 'EN4'.
 %   timestep - Temporal interpolation time step
 %       - Numeric or duration scalar, in units of days.
-%       - Character vector, 'midmonth' (at the middle of each month).
+%       - 'midmonth': mean of native samples in each calendar month,
+%         dated at the midpoint.
+%       - 'GRACE': mean within CSR RL06 degree-60 GRACE solution windows.
+%         Missing months use calendar boundaries inside the gap, with outer
+%         bounds aligned to adjacent real solutions. Dates are window midpoints.
+%         Monthly inputs are averaged by native timestamps, not reconstructed
+%         at daily resolution.
 %       When not specified, no temporal interpolation is performed.
 %   meshsize - Spatial interpolation grid size in degrees
 %       - Real scalar, in units of degrees.
@@ -37,8 +43,12 @@
 %       used. This option is only relevant when spatial interpolation is
 %       performed.
 %   Interpolation - Interpolation method, for both temporal and spatial
-%       - A string of valid method for INTERP1.
-%       The default intepolation method is 'linear'. This option is only
+%       - An INTERP1 method, or 'mean' to average native samples.
+%         For 'midmonth' and 'GRACE', this option controls spatial
+%         interpolation only. Fixed-step means use
+%         half-open windows centered on the output dates. Spatial
+%         interpolation uses 'linear' when 'mean' is requested.
+%       The default interpolation method is 'linear'. This option is only
 %       relevant when temporal or spatial interpolation is performed.
 %   OutputFormat - Format of the output mesh
 %       - 'meshgrid' or 'ndgrid' for (lat, lon, t) or (lon, lat, t)
@@ -57,7 +67,9 @@
 %       The default is 'full'.
 %	ForceNew - Logical flag to force reprocess of the data
 %		The default option is false.
-%	SaveData - Logical flag to save the data
+%   TruncationBeforeInterpolation - Whether to restrict interpolation to timelim.
+%       The default is false, so the cache covers the full product time range.
+%	SaveData - Logical flag to cache the spatially and temporally interpolated data
 %		The default option is true.
 %	BeQuiet - Logical flag to print messages
 %		- true: Suppress all messages.
@@ -80,15 +92,14 @@
 %		The dimensions (i.e. row or column vector) depend on the
 %       OutputFormat option.
 %
-% Authored by
+% Created by
 %	2025/07/22, En-Chi Lee (williameclee@arizona.edu)
 %
-% Last modified by
-%	2026/04/08, En-Chi Lee (williameclee@arizona.edu)
-%     - Added option to truncate data before interpolation to save time
-%	2025/11/03, En-Chi Lee (williameclee@arizona.edu)
+% Last modified
+%	2026/11/01, En-Chi Lee (williameclee@gmail.com)
 
-function [steric, stericSigma, dates, lon, lat] = steric2lonlatt(product, timestep, meshsize, timelim, options)
+function [steric, stericSigma, dates, lon, lat] = steric2lonlatt( ...
+        product, timestep, meshsize, timelim, options)
     %% Initialisation
     arguments (Input)
         product StericProduct {mustBeScalarOrEmpty} = 'EN4c14'
@@ -96,8 +107,7 @@ function [steric, stericSigma, dates, lon, lat] = steric2lonlatt(product, timest
         meshsize = []
         timelim {mustBeTimeRange} = []
         options.LonOrigin {mustBeFinite, mustBeReal} = []
-        options.Interpolation ...
-            {mustBeTextScalar, mustBeMember(options.Interpolation, {'linear', 'nearest', 'next', 'previous', 'spline', 'pchip'})} = 'linear'
+        options.Interpolation {mustBeTextScalar} = 'linear'
         options.TimeFormat (1, :) DateFormat = 'datetime'
         options.OutputFormat (1, :) MeshFormat = 'meshgrid'
         options.Unit {mustBeTextScalar, mustBeMember(options.Unit, {'mm', 'm'})} = 'm'
@@ -190,189 +200,127 @@ function [steric, stericSigma, dates, lon, lat] = steric2lonlatt(product, timest
     stericVar = char(strjoin([stericVar(1), arrayfun(@capitalise, stericVar(2:end), "UniformOutput", false)], ''));
 
     %% Check for existing file
-    outputPath = ...
-        outputpath(product, timestep, meshsize, lonOrigin, intpMthd, options.TruncationBeforeInterpolation, timelim);
+    useMean = ~isempty(timestep) && (ischar(timestep) || isstring(timestep) || strcmpi(intpMthd, 'mean'));
+    spatialIntpMthd = intpMthd;
 
-    vars = {'lon', 'lat', 'dates', 'stericSl', stericVar};
+    if strcmpi(spatialIntpMthd, 'mean')
+        spatialIntpMthd = 'linear';
+    end
 
-    if ~options.ForceNew && exist(outputPath, 'file') && ...
-            all(ismember(vars, who('-file', outputPath)))
+    % Epoch means include the selected component and any native-time drift correction.
+    comp = '';
 
-        if options.BeQuiet <= 1
-            t = tic;
-            msg = 'this may take a while...';
-            fprintf('[ULMO>%s] Loading <a href="matlab: fprintf(''%s\\n'');open(''%s'')">%s steric product</a>, %s\n', ...
-                callchaintext(callChain), outputPath, outputPath, product, msg);
+    if useMean
+        comp = sprintf('-%s-%s', options.Depth, strrep(options.Type, ' ', '-'));
+    end
+
+    outputPath = outputpath(product, timestep, meshsize, lonOrigin, intpMthd, ...
+        options.TruncationBeforeInterpolation, timelim, comp);
+
+    baseStericVar = stericVar;
+
+    if ismember(options.Type, ["non-thermosteric", "non-halosteric", "no halosteric drift"])
+        baseStericVar = replace(stericVar, ["Thermosteric", "Halosteric"], "Steric");
+        baseStericVar = char(replace(baseStericVar, ["thermosteric", "halosteric"], "steric"));
+    end
+
+    vars = unique({stericVar, baseStericVar});
+    coordVars = {'lon', 'lat', 'dates'};
+    cacheVars = vars;
+
+    if useMean
+        cacheVars = {'steric'};
+    end
+
+    cacheHit = ~options.ForceNew && isfile(outputPath) && ...
+        all(ismember([coordVars, cacheVars], who('-file', outputPath)));
+
+    if cacheHit
+        inputPath = outputPath;
+        dataVars = cacheVars;
+    else
+        inputPath = outputpath(product);
+
+        if ~isfile(inputPath)
+            error('ULMO:LoadData:FileNotFound', 'Input file %s not found.', inputPath);
         end
 
-        data = load(outputPath, vars{:});
+        available = who('-file', inputPath);
+        missing = setdiff([coordVars, vars], available);
 
-        if options.BeQuiet <= 1
-            fprintf(repmat('\b', 1, length(msg) + 1));
-            fprintf('took %.1f seconds.\n', toc(t));
+        if ~isempty(missing)
+            error('ULMO:LoadData:VariableNotFound', ...
+                'Variables missing from %s: %s', inputPath, strjoin(missing, ', '));
         end
 
-        if strcmpi(options.Type, "non-thermosteric")
-            baseStericVar = replace(replace(stericVar, "Thermosteric", "Steric"), "thermosteric", "steric");
-            steric = data.(baseStericVar) - data.(stericVar);
-        elseif strcmpi(options.Type, "non-halosteric")
-            baseStericVar = replace(replace(stericVar, "Halosteric", "Steric"), "halosteric", "steric");
-            steric = data.(baseStericVar) - data.(stericVar);
-        elseif strcmpi(options.Type, 'no halosteric drift')
-            gridWeight = cosd(data.lat(:));
-            tol = length(data.dates) * 0.8;
-            lsMask = (sum(~isnan(data.(stericVar)), 3) >= tol) & (sum(data.(stericVar) ~= 0, 3) >= tol);
-            gmSteric = sum(data.(stericVar) .* lsMask .* gridWeight, [1, 2], 'omitmissing') ...
-                ./ sum(~isnan(data.(stericVar)) .* lsMask .* gridWeight, [1, 2], 'omitmissing');
-            baseStericVar = replace(replace(stericVar, "Halosteric", "Steric"), "halosteric", "steric");
-            steric = data.(baseStericVar) - gmSteric;
+        if useMean
+            dataVars = vars;
         else
-            steric = data.(stericVar);
+            dataVars = available(contains(lower(available), 'stericsl'));
         end
 
-        [steric, stericSigma, dates, lon, lat] = formatoutput( ...
-            steric, data.dates, data.lon, data.lat, ...
-            timelim, timeFmt, outputFmt, unit);
-
-        if nargout > 0
-            return
-        end
-
-        plotsealeveltseries(dates, steric, lon, lat, ...
-            product, unit, 'Global mean steric sea level');
-
-        return
-    elseif ~options.ForceNew && exist(outputPath, 'file') && ...
-            ~all(ismember(vars, who('-file', outputPath)))
-        notFoundVars = vars(~ismember(vars, who('-file', outputPath)));
-        warning('ULMO:LoadData:VariableNotFound', ...
-            'Some Variables not found in %s, reprocessing required:\n''%s''', outputPath, strjoin(notFoundVars, ''', '''));
     end
 
-    %% Main
-    inputPath = outputpath(product);
-
-    if ~exist(inputPath, 'file')
-        error('ULMO:LoadData:FileNotFound', ...
-            'Input file %s not found.', inputPath);
+    if options.BeQuiet == 0 || (cacheHit && options.BeQuiet <= 1)
+        fprintf('[ULMO>%s] Loading %s steric product from %s.\n', ...
+            callchaintext(callChain), product, inputPath);
     end
 
-    if any(~ismember(vars, who('-file', inputPath)))
-        notFoundVars = vars(~ismember(vars, who('-file', inputPath)));
-        error('ULMO:LoadData:VariableNotFound', ...
-            'Some Variables not found in %s:\n''%s''', inputPath, strjoin(notFoundVars, ''', '''));
-    end
+    coord = load(inputPath, coordVars{:});
+    data = load(inputPath, dataVars{:});
 
-    allStericVars = who('-file', inputPath);
-    allStericVars = allStericVars(contains(lower(allStericVars), 'stericsl'));
-
-    coord = load(inputPath, 'lon', 'lat', 'dates');
-    data = load(inputPath, allStericVars{:});
-
-    if options.BeQuiet == 0
-        fprintf('[ULMO>%s] Loaded uninterpolated <a href="matlab: fprintf(''%s\\n'');open(''%s'')">%s steric product</a>.\n', ...
-            callchaintext(callChain), inputPath, inputPath, product);
-    end
-
-    if ~isempty(timestep)
-
-        if options.BeQuiet == 0
-            t = tic;
-            templine = 'this may take a while...';
-            fprintf('[ULMO>%s] Interpolating %d fields temporally, %s\n', ...
-                callchaintext(callChain), numel(fields(data)), templine);
-        end
+    if ~cacheHit
+        epochRange = [];
 
         if options.TruncationBeforeInterpolation
-            additionalArgs = {"TimeRange", timelim};
+            epochRange = timelim;
+        end
+
+        if useMean
+            [data, coord] = preparegrid(data, coord, meshsize, lonOrigin, spatialIntpMthd, options.BeQuiet, callChain);
+            steric = selectsteric(data, coord, stericVar, baseStericVar, options.Type);
+            epochs = temporalmeanepochs(coord.dates, timestep, epochRange);
+            data = struct();
+            [data.steric, coord.dates] = averageepochs(coord.dates, steric, epochs);
         else
-            additionalArgs = {};
-        end
 
-        [data, dates] = structfun(@(x) interptemporal( ...
-            coord.dates, x, timestep, intpMthd, additionalArgs{:}, ...
-            "BeQuiet", true, "CallChain", callChain), data, "UniformOutput", false);
-        coord.dates = dates.(allStericVars{1});
+            if ~isempty(timestep)
 
-        if options.BeQuiet == 0
-            fprintf(repmat('\b', 1, length(templine) + 1));
-            fprintf('took %.1f seconds.\n', toc(t));
-        end
+                if options.BeQuiet == 0
+                    fprintf('[ULMO>%s] Interpolating %d fields temporally.\n', ...
+                        callchaintext(callChain), numel(dataVars));
+                end
 
-    end
-
-    if ~(isempty(meshsize) && isempty(lonOrigin))
-
-        if options.BeQuiet == 0
-            t = tic;
-            templine = 'this may take a while...';
-            fprintf('[ULMO>%s] Interpolating %d fields spatially, %s\n', ...
-                callchaintext(callChain), numel(fields(data)), templine);
-        end
-
-        [data, lon, lat] = structfun(@(x) interpspatial( ...
-            coord.lon, coord.lat, x, meshsize, lonOrigin, intpMthd, ...
-            BeQuiet = true, CallChain = callChain), data, "UniformOutput", false);
-        coord.lon = lon.(allStericVars{1});
-        coord.lat = lat.(allStericVars{1});
-
-        if options.BeQuiet == 0
-            fprintf(repmat('\b', 1, length(templine) + 1));
-            fprintf('took %.1f seconds.\n', toc(t));
-        end
-
-    end
-
-    if saveData
-
-        if options.BeQuiet <= 1
-            t = tic;
-            msg = 'this may take a while...';
-            fprintf('[ULMO>%s] Saving <a href="matlab: fprintf(''%s\\n'');open(''%s'')">%s steric product</a>, %s\n', ...
-                callchaintext(callChain), outputPath, outputPath, product, msg);
-        end
-
-        try
-
-            if exist(outputPath, "file")
-                additionalArgs = {'-append'};
-            else
-                additionalArgs = {};
+                [data, dates] = structfun(@(x) interptemporal(coord.dates, x, timestep, intpMthd, ...
+                    TimeRange = epochRange, BeQuiet = true, CallChain = callChain), data, "UniformOutput", false);
+                coord.dates = dates.(dataVars{1});
             end
 
-            save(outputPath, '-struct', 'coord', 'lon', 'lat', 'dates', '-v7.3', additionalArgs{:});
-            save(outputPath, '-struct', 'data', allStericVars{:}, '-append');
-        catch ME
-            warning('ULMO:SaveData:SaveFailed', ...
-                'Saving to %s failed with error:\n%s\nTrying to save afresh.', ...
-                outputPath, ME.message);
-            save(outputPath, '-struct', 'coord', 'lon', 'lat', 'dates', '-v7.3');
-            save(outputPath, '-struct', 'data', allStericVars{:}, '-append');
+            [data, coord] = preparegrid(data, coord, meshsize, lonOrigin, spatialIntpMthd, options.BeQuiet, callChain);
         end
 
-        if options.BeQuiet <= 1
-            fprintf(repmat('\b', 1, length(msg) + 1));
-            fprintf('took %.1f seconds.\n', toc(t));
+        if saveData && ~strcmp(inputPath, outputPath)
+            data.lon = coord.lon;
+            data.lat = coord.lat;
+            data.dates = coord.dates;
+            save(outputPath, '-struct', 'data', '-v7.3');
+
+            if options.BeQuiet <= 1
+                fprintf('[ULMO>%s] Saved %s.\n', callchaintext(callChain), filehref(outputPath, 'steric product'));
+            end
+
         end
 
     end
 
-    if strcmpi(options.Type, "non-thermosteric")
-        baseStericVar = replace(replace(stericVar, "Thermosteric", "Steric"), "thermosteric", "steric");
-        steric = data.(baseStericVar) - data.(stericVar);
-    elseif strcmpi(options.Type, "non-halosteric")
-        baseStericVar = replace(replace(stericVar, "Halosteric", "Steric"), "halosteric", "steric");
-        steric = data.(baseStericVar) - data.(stericVar);
-    elseif strcmpi(options.Type, 'no halosteric drift')
-        gridWeight = cosd(coord.lat(:));
-        tol = length(coord.dates) * 0.8;
-        lsMask = (sum(~isnan(data.(stericVar)), 3) >= tol) & (sum(data.(stericVar) ~= 0, 3) >= tol);
-        gmSteric = sum(data.(stericVar) .* lsMask .* gridWeight, [1, 2], 'omitmissing') ...
-            ./ sum(~isnan(data.(stericVar)) .* lsMask .* gridWeight, [1, 2], 'omitmissing');
-        baseStericVar = replace(replace(stericVar, "Halosteric", "Steric"), "halosteric", "steric");
-        steric = data.(baseStericVar) - gmSteric;
+    if useMean
+        steric = data.steric;
     else
-        steric = data.(stericVar);
+        steric = selectsteric(data, coord, stericVar, baseStericVar, options.Type);
+    end
+
+    if nargout == 0
+        timeFmt = 'datetime';
     end
 
     [steric, stericSigma, dates, lon, lat] = formatoutput( ...
@@ -394,8 +342,52 @@ function [steric, stericSigma, dates, lon, lat] = steric2lonlatt(product, timest
 end
 
 %% Subfunctions
-function [meshIntp, lonIntp, latIntp] = ...
-        interpspatial(lon, lat, mesh, meshSize, lonOrigin, intpMthd, options)
+function [data, coord] = preparegrid(data, coord, meshsize, lonOrigin, intpMthd, beQuiet, callChain)
+    allStericVars = fieldnames(data);
+
+    if isempty(meshsize) && isempty(lonOrigin)
+        return
+    end
+
+    if beQuiet == 0
+        t = tic;
+        templine = 'this may take a while...';
+        fprintf('[ULMO>%s] Interpolating %d fields spatially, %s\n', ...
+            callchaintext(callChain), numel(allStericVars), templine);
+    end
+
+    [data, lon, lat] = structfun(@(x) interpspatial( ...
+        coord.lon, coord.lat, x, meshsize, lonOrigin, intpMthd, ...
+        BeQuiet = true, CallChain = callChain), data, "UniformOutput", false);
+    coord.lon = lon.(allStericVars{1});
+    coord.lat = lat.(allStericVars{1});
+
+    if beQuiet == 0
+        fprintf(repmat('\b', 1, length(templine) + 1));
+        fprintf('took %.1f seconds.\n', toc(t));
+    end
+
+end
+
+function steric = selectsteric(data, coord, stericVar, baseStericVar, type)
+
+    if ismember(type, ["non-thermosteric", "non-halosteric"])
+        steric = data.(baseStericVar) - data.(stericVar);
+    elseif strcmpi(type, 'no halosteric drift')
+        gridWeight = cosd(coord.lat(:));
+        tol = length(coord.dates) * 0.8;
+        lsMask = (sum(~isnan(data.(stericVar)), 3) >= tol) & (sum(data.(stericVar) ~= 0, 3) >= tol);
+        gmSteric = sum(data.(stericVar) .* lsMask .* gridWeight, [1, 2], 'omitmissing') ...
+            ./ sum(~isnan(data.(stericVar)) .* lsMask .* gridWeight, [1, 2], 'omitmissing');
+        steric = data.(baseStericVar) - gmSteric;
+    else
+        steric = data.(stericVar);
+    end
+
+end
+
+function [meshIntp, lonIntp, latIntp] = interpspatial( ...
+        lon, lat, mesh, meshSize, lonOrigin, intpMthd, options)
 
     arguments (Input)
         lon (:, :) double
@@ -462,8 +454,6 @@ function [meshIntp, lonIntp, latIntp] = ...
     [lonn, latt] = meshgrid(lon, lat);
 
     if size(lonn) ~= size(mesh, 1:2)
-        disp(size(lonn));
-        disp(size(mesh));
         error('ULMO:Interpolation:DimensionMismatch', ...
             'Longitude/latitude mesh size (%d,%d) does not match data size (%d,%d).', ...
             size(lonn), size(mesh, 1:2));
@@ -489,8 +479,8 @@ function [meshIntp, lonIntp, latIntp] = ...
 end
 
 % Format output
-function [steric, stericSigma, dates, lon, lat] = ...
-        formatoutput(steric, dates, lon, lat, timelim, timeFmt, outputFmt, unit)
+function [steric, stericSigma, dates, lon, lat] = formatoutput( ...
+        steric, dates, lon, lat, timelim, timeFmt, outputFmt, unit)
 
     if ~isempty(timelim)
         isValidTime = (dates >= timelim(1)) & (dates <= timelim(2));
@@ -531,8 +521,8 @@ function [steric, stericSigma, dates, lon, lat] = ...
 end
 
 % Find output path
-function outputPath = ...
-        outputpath(product, timeStep, meshSize, lonOrigin, intpMthd, truncBeforeIntp, timelim)
+function outPath = outputpath( ...
+        product, timeStep, meshSize, lonOrigin, intpMthd, truncBeforeIntp, timelim, component)
 
     arguments (Input)
         product StericProduct {mustBeScalarOrEmpty}
@@ -542,6 +532,7 @@ function outputPath = ...
         intpMthd {mustBeTextScalar} = ""
         truncBeforeIntp (1, 1) {mustBeNumericOrLogical} = false
         timelim {mustBeTimeRange} = []
+        component (1, :) char = ''
     end
 
     outputFolder = fullfile(getenv("IFILES"), 'STERIC', char(product));
@@ -550,8 +541,8 @@ function outputPath = ...
 
     if ~isempty(timeStep)
 
-        if (ischar(timeStep) || isstring(timeStep)) && strcmpi(timeStep, 'midmonth')
-            timeStepStr = '-Tmidmonth';
+        if ischar(timeStep) || isstring(timeStep)
+            timeStepStr = sprintf('-T%s', lower(timeStep));
         elseif isduration(timeStep)
             timeStepStr = sprintf('-T%s', erase(sprintf('%s', timeStep), ' '));
         elseif isnumeric(timeStep)
@@ -559,6 +550,11 @@ function outputPath = ...
         else
             error(sprintf('ULMO:%s:InvalidTimeStep', upper(mfilename)), ...
                 'Unrecognised time step input for saving: %s', class(timeStep));
+        end
+
+        % Earlier linear fixed-step caches could contain bin averages.
+        if isduration(timeStep) && strcmpi(intpMthd, 'linear')
+            timeStepStr = [timeStepStr, '-interp'];
         end
 
     end
@@ -584,16 +580,20 @@ function outputPath = ...
     if truncBeforeIntp && ~isempty(timelim)
 
         if isnumeric(timelim)
-            timelim = datetime(timelim, 'ConvertFrom', 'datenum', 'Format', 'yyyyMMdd');
-        else
-            timelim = datetime(timelim, 'Format', 'yyyyMMdd');
+            timelim = datetime(timelim, 'ConvertFrom', 'datenum');
         end
 
-        timelimStr = sprintf('-%s_%s', timelim);
+        timeFmt = 'yyyyMMdd';
+
+        if any(timeofday(timelim) ~= 0)
+            timeFmt = 'yyyyMMdd''T''HHmmssSSSSSSSSS';
+        end
+
+        timelimStr = sprintf('-%s_%s', string(timelim(1), timeFmt), string(timelim(2), timeFmt));
     end
 
-    outputFile = sprintf('%s-StericSeaLevel%s%s%s%s.mat', ...
-        product, timeStepStr, spaceIntpStr, intpMethodStr, timelimStr);
+    outputFile = sprintf('%s-StericSeaLevel%s%s%s%s%s.mat', ...
+        product, timeStepStr, spaceIntpStr, intpMethodStr, timelimStr, component);
 
-    outputPath = fullfile(outputFolder, outputFile);
+    outPath = fullfile(outputFolder, outputFile);
 end
