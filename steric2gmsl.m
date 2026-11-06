@@ -95,13 +95,13 @@
 %   caches. This function does not interpolate, remove drift or rebuild grids.
 %
 % See also
-%   steric2lonlatt, stericfilepath, stericfieldschema
+%   steric2lonlatt, stericfilepath, preparegridcoordinates, stericfieldschema
 %
 % Created by
 %   2026/11/04, En-Chi Lee (williameclee@gmail.com)
 %
 % Last modified
-%   2026/11/05, OpenAI Codex
+%   2026/11/06, En-Chi Lee
 
 function [gmsl, dates] = steric2gmsl(product, options)
     arguments (Input)
@@ -193,29 +193,21 @@ function [schema, precision] = fieldschema(metadata)
 end
 
 function [dates, weights, keepLon, transposeGrid] = coordinates(coord, metadata, names)
-    lon = double(coord.lon(:));
-    lat = double(coord.lat(:));
-    if ~isnumeric(coord.lon) || ~isnumeric(coord.lat) || ...
-            ~isvector(coord.lon) || ~isvector(coord.lat) || ...
-            ~isreal(lon) || ~isreal(lat) || any(~isfinite([lon; lat])) || ...
-            numel(lon) < 2 || numel(lat) < 2 || any(abs(lat) > 90)
-        error('ULMO:steric2gmsl:InvalidGrid', 'Expected finite longitude/latitude coordinate vectors.');
+    try
+        [~, ~, iLon, iLat, orderedWeights] = preparegridcoordinates( ...
+            coord.lon, coord.lat, RequireGlobalLongitude=true);
+    catch cause
+        if strcmp(cause.identifier, 'ULMO:preparegridcoordinates:InvalidGrid')
+            throwAsCaller(addCause(MException('ULMO:steric2gmsl:InvalidGrid', '%s', cause.message), cause));
+        end
+        rethrow(cause)
     end
-    steps = [lon(2) - lon(1), lat(2) - lat(1)];
-    tolerance = 3e-5; % Allows single-precision coordinate rounding, in degrees.
-    latitudeSteps = diff(lat);
-    if steps(1) == 0 || any(abs(diff(lon) - steps(1)) > tolerance) || ...
-            ~(all(latitudeSteps > 0) || all(latitudeSteps < 0))
-        error('ULMO:steric2gmsl:InvalidGrid', ...
-            'Longitude must be regularly spaced and latitude must be strictly monotone.');
-    end
-    keepLon = 1:numel(lon);
-    if abs(abs(lon(end) - lon(1)) - 360) <= tolerance
-        keepLon(end) = [];
-    end
-    if abs(numel(keepLon) * abs(steps(1)) - 360) > tolerance * numel(lon)
-        error('ULMO:steric2gmsl:InvalidGrid', 'Longitude must cover one complete periodic grid.');
-    end
+    lon = coord.lon; lat = coord.lat;
+    % Keep the native reader's original traversal and summation order.
+    [keepLon, orderLon] = sort(iLon);
+    keepLon = keepLon.';
+    weights = zeros(numel(lat), numel(keepLon));
+    weights(iLat, :) = orderedWeights(orderLon, :).';
     dates = coord.dates;
     if isnumeric(dates) && isreal(dates) && all(isfinite(dates(:)))
         dates = datetime(dates, 'ConvertFrom', 'datenum');
@@ -241,16 +233,6 @@ function [dates, weights, keepLon, transposeGrid] = coordinates(coord, metadata,
         end
         transposeGrid = thisTranspose;
     end
-    if all(abs(latitudeSteps - steps(2)) <= tolerance)
-        latitudeWeights = cosd(lat);
-    else
-        boundaries = [lat(1) - latitudeSteps(1) / 2; ...
-                      (lat(1:end - 1) + lat(2:end)) / 2; ...
-                      lat(end) + latitudeSteps(end) / 2];
-        boundaries = max(-90, min(90, boundaries));
-        latitudeWeights = abs(diff(sind(boundaries)));
-    end
-    weights = repmat(latitudeWeights, 1, numel(keepLon));
 end
 
 function valid = validcache(metadata, names, nDates)

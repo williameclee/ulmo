@@ -143,10 +143,13 @@
 %   underdetermined nonempty fits raise errors; previous caches are preserved.
 %
 % See also
-%   steric2lonlatt, steric2gmsl, ssh2slept, grace2slept_new, xyzs2slep
+%   steric2lonlatt, steric2gmsl, prepareslepianbasis, fitgriddedslepian, processfieldtime
 %
 % Created by
 %   2026/11/05, En-Chi Lee
+%
+% Last modified
+%   2026/11/06, En-Chi Lee
 
 function [stericSlept, dates, fit, GVN, halostericGmsl, constantSlept] = ...
         steric2slept(product, domain, L, timestep, timeRange, options)
@@ -169,7 +172,7 @@ function [stericSlept, dates, fit, GVN, halostericGmsl, constantSlept] = ...
         options.SaveData (1, 1) {mustBeNumericOrLogical} = true
         options.BeQuiet (1, 1) {mustBeNumericOrLogical} = 0.5
     end
-    options.Interpolation = lower(options.Interpolation);
+    [timestep, options.Interpolation] = normalizetimeconfig(timestep, options.Interpolation);
     if ~isempty(timeRange) && isnumeric(timeRange)
         timeRange = datetime(timeRange, 'ConvertFrom', 'datenum');
     end
@@ -181,8 +184,6 @@ function [stericSlept, dates, fit, GVN, halostericGmsl, constantSlept] = ...
     assert((isa(domain, 'GeoDomain') && isscalar(domain)) || ...
         (isnumeric(domain) && ismatrix(domain) && size(domain, 2) == 2 && all(isfinite(domain), 'all')), ...
         'ULMO:steric2slept:Domain', 'Supply a GeoDomain, region name or finite polygon.');
-    if isnumeric(timestep) && ~isempty(timestep), timestep = days(timestep); end
-    if ischar(timestep) || isstring(timestep), timestep = lower(string(timestep)); end
     schema = stericfieldschema();
     iType = find(schema.types == options.Type);
     iDepth = find(schema.depths == options.Depth);
@@ -251,14 +252,7 @@ function [stem, configuration, domainId] = cacheStem(product, domain, L, timeste
     else
         domainId = hash(domain, 'sha1');
     end
-    if isempty(timestep)
-        configuration = 'native';
-    elseif isduration(timestep)
-        % 17 digits distinguish representable fixed steps, including fractions.
-        configuration = sprintf('T%sseconds-%s', sprintf('%.17g', seconds(timestep)), method);
-    else
-        configuration = char(timestep); % Named epochs always average.
-    end
+    [~, ~, ~, configuration] = normalizetimeconfig(timestep, method);
     stem = fullfile(root, 'STERIC', char(product), 'SlepianExpansions', ...
         sprintf('steric2slept-%s-%s-%s-%d', char(product), configuration, domainId, L));
 end
@@ -279,29 +273,16 @@ function path = findCache(stem, J)
 end
 
 function basis = getBasis(domain, L, J, supplied, saveData)
-    if isempty(supplied)
-        [G, V, ~, ~, N] = glmalpha_new(domain, L, SaveData=saveData, BeQuiet=true);
-        [V, order] = sort(V(:), 'descend');
-        G = G(:, order);
-    else
-        assert(numel(supplied) == 3, 'ULMO:steric2slept:Basis', 'Supply {G,V,N}.');
-        [G, V, N] = supplied{:};
+    try
+        basis = prepareslepianbasis(domain, L, J, supplied, ...
+            SaveData=saveData, RequireOrthonormal=true);
+    catch cause
+        if startsWith(cause.identifier, 'ULMO:prepareslepianbasis:')
+            identifier = strrep(cause.identifier, 'prepareslepianbasis', 'steric2slept');
+            throwAsCaller(addCause(MException(identifier, '%s', cause.message), cause));
+        end
+        rethrow(cause)
     end
-    validateattributes(G, {'double', 'single'}, {'real', 'finite', '2d', 'nonempty', 'nrows', (L+1)^2});
-    validateattributes(V, {'numeric'}, {'real', 'finite', 'vector', 'numel', size(G, 2)});
-    validateattributes(N, {'numeric'}, {'real', 'finite', 'scalar', 'nonnegative'});
-    assert(size(G, 2) <= size(G, 1), 'ULMO:steric2slept:Basis', 'Too many basis columns.');
-    if isempty(J)
-        J = size(G, 2);
-        if J == (L+1)^2, J = min(J, max(1, round(N))); end
-    end
-    assert(J <= size(G, 2), 'ULMO:steric2slept:Truncation', 'Truncation exceeds basis size.');
-    precision = double(eps(class(G)));
-    G = double(G(:, 1:J));
-    assert(norm(G.'*G - eye(J), 'fro') <= 100 * precision * max(size(G)), ...
-        'ULMO:steric2slept:Basis', 'The retained harmonic basis must be orthonormal.');
-    V = V(:);
-    basis = {G, V(1:J), N};
 end
 
 function [fields, means, dates, lon, lat] = prepareRecord(product, timestep, options, schema)
@@ -325,9 +306,9 @@ function [fields, means, dates, lon, lat] = prepareRecord(product, timestep, opt
     lat = double(data.lat(:));
     data = rmfield(data, {'lon', 'lat'});
     data = prepareDeepSupport(data, schema);
-    useMean = ~isempty(timestep) && (isstring(timestep) || strcmp(options.Interpolation, 'mean'));
+    [~, ~, useMean] = normalizetimeconfig(timestep, options.Interpolation);
     if useMean, data = addResiduals(data, schema); end
-    [data, dates] = processsterictime(data, nativeDates, timestep, options.Interpolation, []);
+    [data, dates] = processfieldtime(data, nativeDates, timestep, options.Interpolation, []);
     if ~useMean, data = addResiduals(data, schema); end
     fields = struct();
     fieldNames = replace(schema.meanNames, 'Gmsl', 'Sl');
@@ -341,7 +322,7 @@ function [fields, means, dates, lon, lat] = prepareRecord(product, timestep, opt
     for iMean = 1:numel(meanNames)
         means.(meanNames{iMean}) = reshape(means.(meanNames{iMean}), 1, 1, []);
     end
-    [means, meanDates] = processsterictime(means, nativeDates, timestep, options.Interpolation, []);
+    [means, meanDates] = processfieldtime(means, nativeDates, timestep, options.Interpolation, []);
     assert(isequal(dates, meanDates), 'ULMO:steric2slept:Dates', 'Grid and GMSL dates differ.');
     for iMean = 1:numel(meanNames), means.(meanNames{iMean}) = means.(meanNames{iMean})(:); end
     % Match the loader's full GMSL convention under nonlinear interpolation.
@@ -382,73 +363,18 @@ function data = addResiduals(data, schema)
 end
 
 function [coefficients, fits, buffer, weighting] = fitRecord(fields, dates, lon, lat, domain, L, basis, options)
-    keepLon = 1:numel(lon);
-    if abs(abs(lon(end)-lon(1))-360) <= 3e-5, keepLon(end) = []; end
-    [lon, orderLon] = sort(lon(keepLon));
-    keepLon = keepLon(orderLon);
-    [lat, orderLat] = sort(lat);
-    steps = diff(lat);
-    if all(abs(steps-steps(1)) <= 3e-5)
-        latitudeWeights = cosd(lat);
-        weighting = 'cosine-latitude';
-    else
-        edges = [lat(1)-steps(1)/2; (lat(1:end-1)+lat(2:end))/2; lat(end)+steps(end)/2];
-        latitudeWeights = diff(sind(max(-90, min(90, edges))));
-        weighting = 'spherical-midpoint-bands';
-    end
-    mask = domainmask(domain, lon, lat, Format='ndgrid', SaveData=false, BeQuiet=true);
-    buffer = 0;
-    if L > 0, buffer = 90/L; end
-    observationMask = mask;
-    if buffer > 0
-        observationMask = domainmask(domain, lon, lat, Format='ndgrid', ...
-            exteriorBuffer=buffer, SaveData=options.SaveData, ForceNew=options.ForceNew, BeQuiet=true);
-    end
-    [gridLon, gridLat] = ndgrid(lon, lat);
-    weights = repmat(latitudeWeights.', numel(lon), 1);
-    totalArea = sum(weights(mask));
-    assert(totalArea > 0, 'ULMO:steric2slept:EmptyTarget', 'The target contains no positive-area grid cells.');
-    points = find(observationMask & weights > 0);
-    weights = weights(points);
-    target = mask(points);
-    J = size(basis{1}, 2);
-    nTime = numel(dates);
-    assert(nTime > 0, 'ULMO:steric2slept:EmptyRecord', 'Temporal selection produced no epochs.');
-    design = [];
-    coefficients = struct();
-    fits = struct();
-    for name = string(fieldnames(fields)).'
-        values = fields.(name)(keepLon, orderLat, :);
-        values = reshape(values, [], nTime);
-        values = values(points, :);
-        assert(~any(isinf(values), 'all'), 'ULMO:steric2slept:InvalidObservation', ...
-            '%s contains infinite observations.', name);
-        observed = isfinite(values);
-        nObs = sum(observed, 1).';
-        areaFraction = min(1, (weights(target).' * observed(target, :)).' / totalArea);
-        epochs = find(nObs > 0);
-        assert(~isempty(epochs), 'ULMO:steric2slept:EmptyRecord', 'No observed cells for %s.', name);
-        try
-            if isempty(design)
-                [c, ~, ~, stats, design] = xyzs2slep(values(:, epochs), gridLon(points), gridLat(points), ...
-                    domain, L, GVN=basis, truncation=J, weight=weights, missingPolicy="omit");
-            else
-                [c, ~, ~, stats] = xyzs2slep(values(:, epochs), design, weight=weights, missingPolicy="omit");
-            end
-        catch cause
-            field = regexpi(cause.message, '\bfield (\d+)\b', 'tokens', 'once');
-            context = "Fit failed for " + name;
-            if ~isempty(field), context = context + " at " + string(dates(epochs(str2double(field{1})))); end
-            throwAsCaller(addCause(MException('ULMO:steric2slept:FitFailed', '%s: %s', context, cause.message), cause));
+    try
+        [coefficients, fits, buffer, weighting] = fitgriddedslepian( ...
+            fields, dates, lon, lat, domain, L, basis, ...
+            SaveData=options.SaveData, ForceNew=options.ForceNew, RequireGlobalLongitude=true);
+    catch cause
+        if startsWith(cause.identifier, 'ULMO:fitgriddedslepian:') || ...
+                startsWith(cause.identifier, 'ULMO:preparegridcoordinates:')
+            parts = split(string(cause.identifier), ':');
+            identifier = char("ULMO:steric2slept:" + parts(end));
+            throwAsCaller(addCause(MException(identifier, '%s', cause.message), cause));
         end
-        coeffs = nan(nTime, J);
-        condNum = nan(nTime, 1);
-        residualRms = nan(nTime, 1);
-        coeffs(epochs, :) = c.';
-        condNum(epochs) = stats.condNum;
-        residualRms(epochs) = stats.residualRms;
-        coefficients.(name) = coeffs;
-        fits.(name) = table(nObs, areaFraction, condNum, residualRms);
+        rethrow(cause)
     end
 end
 

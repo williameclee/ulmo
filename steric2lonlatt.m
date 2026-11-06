@@ -144,7 +144,7 @@
 %   2025/07/22, En-Chi Lee (williameclee@arizona.edu)
 %
 % Last modified
-%   2026/11/05, OpenAI Codex
+%   2026/11/06, En-Chi Lee
 
 function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt( ...
         product, timestep, meshsize, timelim, options)
@@ -210,9 +210,7 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
         timelim = datetime(timelim, 'ConvertFrom', 'datenum');
     end
 
-    if ~isempty(timestep) && isnumeric(timestep)
-        timestep = days(timestep);
-    end
+    [timestep, intpMthd, useMean] = normalizetimeconfig(timestep, intpMthd);
 
     % 'default' and 'no halosteric drift' are deprecated Type values.
     schema = stericfieldschema();
@@ -233,7 +231,6 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
         vars = {stericVar};
     end
 
-    useMean = ~isempty(timestep) && (ischar(timestep) || isstring(timestep) || strcmpi(intpMthd, 'mean'));
     spatialIntpMthd = intpMthd;
     if strcmpi(spatialIntpMthd, 'mean'), spatialIntpMthd = 'linear'; end
     % Epoch caches carry the selected expression in their filename. Keeping
@@ -299,7 +296,7 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
             % separate from the caller's later global-mean subtraction.
             data.steric = selectsteric(data, stericVar, baseStericVar, options.Type);
         end
-        [data, coord.dates] = processsterictime(data, coord.dates, timestep, intpMthd, epochRange);
+        [data, coord.dates] = processfieldtime(data, coord.dates, timestep, intpMthd, epochRange);
         if ~useMean
             [data, coord] = preparegrid(data, coord, meshsize, lonOrigin, spatialIntpMthd, options.BeQuiet, callChain);
         end
@@ -341,7 +338,7 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
                 means.(meanNames(iMean)) = reshape(values, 1, 1, []);
                 firstMean = false;
             end
-            [means, meanDates] = processsterictime(means, nativeDates, timestep, intpMthd, epochRange);
+            [means, meanDates] = processfieldtime(means, nativeDates, timestep, intpMthd, epochRange);
             assert(isequal(meanDates(:), coord.dates(:)), ...
                 'ULMO:steric2lonlatt:MeanDates', 'GMSL and grid dates must agree.');
             for iMean = 1:numel(names)
