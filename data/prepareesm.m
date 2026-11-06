@@ -38,6 +38,9 @@
 %
 % Created by
 %   2026/10/31, En-Chi Lee (williameclee@gmail.com)
+%
+% Last modified
+%   2026/11/03, En-Chi Lee (williameclee@gmail.com)
 
 function outPath = prepareesm(inFolder, comp, options)
 
@@ -54,7 +57,8 @@ function outPath = prepareesm(inFolder, comp, options)
     end
 
     % Discover component files and resolve the configured prepared-data destination.
-    [inFiles, outPath] = getIOpaths(inFolder, comp);
+    [inFiles, outPath] = getIOpaths(inFolder, comp, options.ForceNew);
+    outFolder = fileparts(outPath);
 
     % Parse timestamps from filenames before ordering the coefficient samples.
     dates = NaT(numel(inFiles), 1);
@@ -152,13 +156,13 @@ function [plm, eqRad] = readesmfile(path)
 end
 
 % Resolve the output under IFILES and recursively discover source component files.
-function [inFiles, outPath] = getIOpaths(inFolder, comp)
+function [inFiles, outPath] = getIOpaths(inFolder, comp, forceNew)
     dataRoot = getenv('IFILES');
     assert(~isempty(dataRoot), 'ULMO:prepareesm:MissingDataRoot', ...
     'Set IFILES before importing ESM fields.');
     outFolder = fullfile(dataRoot, 'ESM', 'ESAESM2');
     outPath = fullfile(outFolder, "ESAESM2_" + string(comp) + ".nc");
-    assert(options.ForceNew || ~isfile(outPath), ...
+    assert(forceNew || ~isfile(outPath), ...
         'ULMO:prepareesm:FileExists', ...
         'Prepared data already exist. Use ForceNew=true to replace %s.', outPath);
     inFiles = dir(fullfile(inFolder, '**', "mtmshc_" + string(comp) + "_*.gfc"));

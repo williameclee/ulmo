@@ -57,7 +57,8 @@ function plot_esm_epoch(fields, epoch, options)
     %% Plotting
     coast = load('coastlines');
     figHandle = figure('Visible', 'on');
-    sgtitle(figHandle, sprintf('ESAESM2 component mass anomalies (%s)', string(epoch, 'MMM yyyy')));
+    sgtitle(figHandle, ...
+        sprintf('ESAESM2 component mass anomalies (%s)', string(epoch, 'MMM yyyy')));
     % Interpolate a diverging palette centered on zero mass anomaly
     anchors = [0.10, 0.25, 0.55; 0.33, 0.65, 0.83; 0.97, 0.97, 0.94; ...
                    0.90, 0.49, 0.32; 0.58, 0.08, 0.16];

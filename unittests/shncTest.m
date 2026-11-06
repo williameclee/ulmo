@@ -6,7 +6,7 @@
 %   2026/10/31, En-Chi Lee (williameclee@gmail.com)
 %
 % Last modified
-%   2026/11/01, En-Chi Lee (williameclee@gmail.com)
+%   2026/11/03, En-Chi Lee (williameclee@gmail.com)
 
 classdef shncTest < matlab.unittest.TestCase
 
@@ -50,7 +50,7 @@ classdef shncTest < matlab.unittest.TestCase
         function cacheHitReadsOnlySelectedEpochAndDegree(testCase)
             dates = [datetime(2003, 1, 16, 12, 0, 0); datetime(2003, 2, 15); datetime(2003, 3, 16, 12, 0, 0)];
             c = reshape(1:36, 6, 2, 3);
-            path = fullfile(testCase.Folder, 'ESAESM2_O_GRAV-Tmidmonth.nc');
+            path = fullfile(testCase.Folder, 'ESAESM2_O-GRAV-Tmidmonth.nc');
             writeshnc(path, c, c / 10, dates, 'GRAV', 'Labels', testCase.Labels);
             testCase.recordReads();
             [p, s] = esm2plmt('O', [datetime(2003, 2, 1), datetime(2003, 2, 28)], ...

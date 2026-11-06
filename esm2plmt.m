@@ -35,7 +35,7 @@
 %       Default option: 0.5 (report cache reads and writes).
 %
 % Input file content
-%   $IFILES/ESM/ESAESM2/ESAESM2-COMPONENT.nc, written by PREPAREESM:
+%   $IFILES/ESM/ESAESM2/ESAESM2_COMPONENT.nc, written by PREPAREESM:
 %   degree, order - uint16 vectors, stored once on the lm dimension.
 %   coefficients - Native-degree dimensionless Stokes values. Size: (M, 2, N).
 %       Dimensions: lm, cs (cosine then sine), time. Precision: double.
@@ -69,6 +69,9 @@
 %
 % Created by
 %   2026/10/31, En-Chi Lee (williameclee@gmail.com)
+%
+% Last modified
+%   2026/11/03, En-Chi Lee (williameclee@gmail.com)
 
 function [esmPlmt, esmStdPlmt, dates] = esm2plmt(comp, varargin)
     % Consume the component before parsing optional/name-value arguments:
@@ -117,7 +120,7 @@ function [esmPlmt, esmStdPlmt, dates] = loadesm(comp, timelim, timestep, options
     dataRoot = getenv('IFILES');
     assert(~isempty(dataRoot), 'ULMO:esm2plmt:MissingDataRoot', 'Set IFILES before reading ESM fields.');
     dataFolder = fullfile(dataRoot, 'ESM', 'ESAESM2');
-    inPath = fullfile(dataFolder, "ESAESM2-" + string(comp) + ".nc");
+    inPath = fullfile(dataFolder, "ESAESM2_" + string(comp) + ".nc");
 
     % An averaged cache already has the requested units; read only the selected
     % time/degree slab and skip native conversion and averaging on a cache hit.
@@ -230,7 +233,7 @@ end
 
 % Identify derived caches by component, unit and averaging step.
 function path = getoutputpath(folder, component, unit, timestep)
-    product = "ESAESM2-" + string(component) + "-" + string(unit);
+    product = "ESAESM2_" + string(component) + "-" + string(unit);
 
     path = fullfile(folder, product + "-T" + string(timestep) + ".nc");
 end
