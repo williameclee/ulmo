@@ -139,4 +139,3 @@ function [coefficients, fits, buffer, weighting] = fitgriddedslepian(fields, dat
         fits.(name) = table(nObs, areaFraction, condNum, residualRms);
     end
 end
-
