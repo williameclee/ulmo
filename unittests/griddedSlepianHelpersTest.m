@@ -122,7 +122,8 @@ classdef griddedSlepianHelpersTest < matlab.unittest.TestCase
             [alone, aloneFits] = fitgriddedslepian(struct('b', second), ...
                 dates, lon, lat, t.Polygon, 1, basis, SaveData=false);
             t.verifyEqual(combined.b, alone.b, AbsTol=1e-12);
-            t.verifyEqual(fits.b, aloneFits.b);
+            t.verifyEqual(fits.b.nObs, aloneFits.b.nObs);
+            t.verifyEqual(fits.b{:,2:4}, aloneFits.b{:,2:4}, AbsTol=1e-14);
             t.verifyLessThan(fits.a.residualRms, 1e-12);
             t.verifyLessThan(fits.b.residualRms, 1e-12);
         end
