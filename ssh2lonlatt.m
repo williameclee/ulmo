@@ -92,7 +92,7 @@
 %	2025/05/19, En-Chi Lee (williameclee@arizona.edu)
 %
 % Last modified
-%	2026/11/04
+%	2026/11/06
 
 function [ssh, sshSigma, dates, lon, lat, partialMonths] = ssh2lonlatt(product, timestep, meshsize, timelim, options)
 
@@ -149,9 +149,8 @@ function [ssh, sshSigma, dates, lon, lat, partialMonths] = ssh2lonlatt(product, 
         meshsize = [];
     end
 
-    if ~isempty(timestep) && isnumeric(timestep)
-        timestep = days(timestep);
-    end
+    % Preserve the legacy path builder's method spelling.
+    [timestep, ~, useMean] = normalizetimeconfig(timestep, intpMthd);
 
     if ~isempty(timelim) && isnumeric(timelim)
         timelim = datetime(timelim, 'ConvertFrom', 'datenum');
@@ -163,7 +162,6 @@ function [ssh, sshSigma, dates, lon, lat, partialMonths] = ssh2lonlatt(product, 
     end
 
     %% Checking for existing data
-    useMean = ~isempty(timestep) && (ischar(timestep) || isstring(timestep) || strcmpi(intpMthd, 'mean'));
     spatialIntpMthd = intpMthd;
 
     if strcmpi(spatialIntpMthd, 'mean')
@@ -211,27 +209,27 @@ function [ssh, sshSigma, dates, lon, lat, partialMonths] = ssh2lonlatt(product, 
 
     if ~nativeMonthly && ~intpDataExists
         nativeDates = data.dates;
+        if isnumeric(nativeDates), nativeDates = datetime(nativeDates, 'ConvertFrom', 'datenum'); end
 
         if useMean
             data = preparegrid(data, meshsize, lonOrigin, spatialIntpMthd, beQuiet, callChain);
 
             % The cached epochs span the product. Apply timelim only to the output.
-            epochs = temporalmeanepochs(nativeDates, timestep, []);
-            [data.sshs, data.dates] = averageepochs(nativeDates, data.sshs, epochs);
-
+            fields = struct('height', data.sshs);
+            if ~isempty(data.sshErrors), fields.errorSquared = data.sshErrors.^2; end
+            [fields, data.dates] = processfieldtime(fields, nativeDates, timestep, intpMthd, []);
+            data.sshs = fields.height;
             if ~isempty(data.sshErrors)
-                % RMS of native uncertainties, without assuming independent errors.
-                data.sshErrors = sqrt(averageepochs(nativeDates, data.sshErrors .^ 2, epochs));
+                % Preserve RMS uncertainty; these are not independent errors.
+                data.sshErrors = sqrt(fields.errorSquared);
             end
         else
             if ~isempty(timestep)
-                [data.sshs, data.dates] = interptemporal(nativeDates, data.sshs, timestep, intpMthd, ...
-                    BeQuiet = (beQuiet == 2), CallChain = callChain);
-
-                if ~isempty(data.sshErrors)
-                    data.sshErrors = interptemporal(nativeDates, data.sshErrors, timestep, intpMthd, ...
-                        BeQuiet = (beQuiet == 2), CallChain = callChain);
-                end
+                fields = struct('height', data.sshs);
+                if ~isempty(data.sshErrors), fields.error = data.sshErrors; end
+                [fields, data.dates] = processfieldtime(fields, nativeDates, timestep, intpMthd, []);
+                data.sshs = fields.height;
+                if ~isempty(data.sshErrors), data.sshErrors = fields.error; end
             end
 
             data = preparegrid(data, meshsize, lonOrigin, spatialIntpMthd, beQuiet, callChain);

@@ -4,7 +4,7 @@
 %   2026/11/03, En-Chi Lee
 %
 % Last modified
-%   2026/11/05, En-Chi Lee
+%   2026/11/06, En-Chi Lee
 
 classdef ssh2sleptTest < matlab.unittest.TestCase
     properties
@@ -51,6 +51,40 @@ classdef ssh2sleptTest < matlab.unittest.TestCase
         end
     end
     methods (Test)
+        function descendingNonuniformCyclicSource(t)
+            % The source is lon-by-lat even when both spatial axes descend.
+            lon = (360:-30:0).'; lat = [50; 15; -10; -40];
+            dates = datetime(2020,1,15); partialMonths = false;
+            [x,y] = ndgrid(lon,lat); sshs = 2 + x/100 + y/80;
+            sshs(end,:) = 1e6; % Excluded duplicate of the first longitude.
+            save(fullfile(t.Folder,'NASASSHMonthly.mat'), 'sshs','dates','lon','lat','partialMonths');
+            polygon = [10 -60; 130 -60; 130 60; 10 60; 10 -60];
+            wlat = abs(diff(sind([67.5; 32.5; 2.5; -25; -55])));
+            weights = repmat(wlat.',numel(lon),1);
+            selected = x >= 10 & x <= 130;
+            expected = sum(weights(selected).*sshs(selected))/sum(weights(selected));
+            [c, when, fit] = ssh2slept('NASASSHMonthly',polygon,0,GVN={1,1,1},unit='m');
+            t.verifyEqual(c,expected,AbsTol=1e-12); t.verifyEqual(when,dates);
+            t.verifyEqual(fit.nObs,nnz(selected)); t.verifyEqual(fit.areaFraction,1);
+            t.verifyFalse(fit.partialMonth);
+        end
+
+        function invalidCoordinatesDoNotDependOnStericValidation(t)
+            native = fullfile(t.Folder,'NASASSHMonthly.mat');
+            data = load(native); data.lat([2 3]) = data.lat([3 2]);
+            save(native,'-struct','data');
+            t.verifyError(@() ssh2slept('NASASSHMonthly',t.Polygon,0,GVN={1,1,1}), ...
+                'ULMO:ssh2slept:SourceGrid');
+        end
+
+        function unsavedComputedBasisCreatesNoCaches(t)
+            root = fileparts(t.Folder);
+            before = dir(fullfile(root,'**','*'));
+            ssh2slept('NASASSHMonthly',t.Polygon,0,SaveData=false,unit='m');
+            after = dir(fullfile(root,'**','*'));
+            t.verifyEqual({after(~[after.isdir]).name},{before(~[before.isdir]).name});
+        end
+
         function outputFormats(t, forceNew)
             % Fresh fits and cache reads orient coefficients after selecting dates.
             args = {"NASASSHMonthly", t.Polygon, 1};

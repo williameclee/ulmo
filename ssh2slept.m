@@ -29,7 +29,9 @@
 %
 % Input file content
 %   sshs - Native SSH anomalies in metres, ordered by longitude, latitude and date.
-%   lon, lat - Ascending native grid coordinates in degrees at 0.5-degree spacing.
+%   lon, lat - Rectangular coordinates in degrees. Longitude is regular and
+%       latitude is strictly monotone, possibly nonuniform. Descending axes
+%       and a duplicated cyclic longitude endpoint are supported.
 %   dates - Native monthly midpoints in ascending order, as datetimes.
 %   partialMonths - One logical flag per date, true for a partial month.
 %
@@ -43,8 +45,9 @@
 %   GVN - Retained harmonic basis, eigenvalues, and full Shannon number.
 %
 % Notes
-%   A cache miss fits the complete source record using cosine-latitude
-%   weights on the native regular grid. Empty months retain NaN coefficients.
+%   A cache miss fits the complete source record. Uniform latitude uses
+%   cosine-latitude weights; nonuniform latitude uses spherical midpoint
+%   bands. Cyclic endpoints count once. Empty months retain NaN coefficients.
 %   A wholly empty record or an underdetermined nonempty month raises an error.
 %   IFILES/SSH/SlepianExpansions holds one NetCDF-4 file per projection.
 %   Names follow ssh2slept-<product>-<domainId>-<L>-<J>-m.nc. For XY
@@ -55,13 +58,13 @@
 %   Requesting GVN on a cache hit loads the domain basis through glmalpha_new.
 %
 % See also
-%   XYZS2SLEP, SSH2LONLATT, DOMAINMASK, READSHNCTIME, GLMALPHA_NEW
+%   ssh2lonlatt, prepareslepianbasis, fitgriddedslepian, readshnctime
 %
 % Created by
 %   2026/11/03
 %
 % Last modified
-%   2026/11/05
+%   2026/11/06, En-Chi Lee
 
 function [sshSlept, dates, fit, GVN] = ssh2slept(product, domain, L, timeRange, options)
     arguments (Input)
@@ -111,14 +114,11 @@ function [sshSlept, dates, fit, GVN] = ssh2slept(product, domain, L, timeRange, 
         outputCount = max(nargout, 3 * options.dropPartialMonths);
         [sshSlept, dates, fit] = readCache(path, timeRange, outputCount);
         if nargout >= 4
-            [G, V, ~, ~, N] = glmalpha_new(domain, L, 'BeQuiet', true);
-            % Match the eigenvalue order and retained columns used by xyzs2slep.
-            [V, order] = sort(V(:), 'descend');
             J = size(sshSlept, 2);
-            GVN = {G(:, order(1:J)), V(1:J), N};
+            GVN = prepareslepianbasis(domain, L, J, {}, SaveData=options.SaveData);
         end
     else
-        [sshSlept, dates, fit, GVN] = fitRecord(product, domain, L, observationBuffer, options);
+        [sshSlept, dates, fit, GVN] = fitRecord(product, domain, L, options);
         if options.SaveData
             % A forced fit skips lookup. A first default fit determines J here.
             if options.ForceNew || isempty(path)
@@ -186,7 +186,7 @@ function [path, tmp, cacheHit] = getoutputfile(product, domain, L, J, saveData, 
     end
 end
 
-function [coeffs, dates, fit, basis] = fitRecord(product, domain, L, observationBuffer, options)
+function [coeffs, dates, fit, basis] = fitRecord(product, domain, L, options)
     [values, ~, dates, lon, lat, partialMonth] = ssh2lonlatt(product, ...
         OutputFormat='ndgrid', Unit='m', BeQuiet=true);
     lon = double(lon(:));
@@ -195,56 +195,26 @@ function [coeffs, dates, fit, basis] = fitRecord(product, domain, L, observation
     assert(isdatetime(dates) && ~isempty(dates) && all(isfinite(dates)) && ...
         issorted(dates, 'strictascend') && numel(partialMonth) == nTime, ...
         'ULMO:ssh2slept:SourceDates', 'Invalid monthly dates or partial-month flags.');
-    assert(isequal(size(values, 1:3), [numel(lon), numel(lat), nTime]) && ...
-        all(diff(lon) == 0.5) && all(diff(lat) == 0.5), ...
-        'ULMO:ssh2slept:SourceGrid', 'Expected an ascending native 0.5-degree lon-by-lat grid.');
-    % areaFraction measures observed coverage within the original target domain.
-    mask = domainmask(domain, lon, lat, Format='ndgrid', SaveData=false, BeQuiet=true);
-    observationMask = mask;
-    % A positive buffer includes exterior cells in the fit and in nObs.
-    if observationBuffer > 0
-        observationMask = domainmask(domain, lon, lat, Format='ndgrid', ...
-            exteriorBuffer=observationBuffer, SaveData=options.SaveData, ...
-            ForceNew=options.ForceNew, BeQuiet=true);
-    end
-    [gridLon, gridLat] = ndgrid(lon, lat);
-    weights = cosd(gridLat);
-    totalArea = sum(weights(mask));
-    values = reshape(values, [], nTime);
-    points = find(observationMask(:) & any(~isnan(values), 2));
-    assert(~isempty(points), 'ULMO:ssh2slept:EmptyRecord', ...
-        'No observed SSH cells in the observation region over the source record.');
-    values = values(points, :);
-    gridLon = gridLon(points);
-    gridLat = gridLat(points);
-    weights = weights(points);
-    observed = ~isnan(values);
-    nObs = sum(observed, 1).';
-    target = mask(points);
-    assert(totalArea > 0, 'ULMO:ssh2slept:EmptyTarget', 'The target contains no grid cells.');
-    areaFraction = min(1, (weights(target).' * observed(target, :)).' / totalArea);
-    months = find(nObs > 0);
+    assert(isequal(size(values, 1:3), [numel(lon), numel(lat), nTime]), ...
+        'ULMO:ssh2slept:SourceGrid', 'Expected a longitude-by-latitude-by-time source grid.');
     try
-        [c, ~, ~, stats, design] = xyzs2slep(values(:, months), gridLon, gridLat, domain, L, ...
-            weight=weights, missingPolicy="omit", truncation=options.truncation, GVN=options.GVN);
+        basis = prepareslepianbasis(domain, L, options.truncation, options.GVN, ...
+            SaveData=options.SaveData);
+        [coefficients, fits] = fitgriddedslepian(struct('ssh', values), dates, lon, lat, ...
+            domain, L, basis, SaveData=options.SaveData, ForceNew=options.ForceNew);
     catch cause
-        % Field numbers in solver errors index the nonempty months.
-        field = regexpi(cause.message, '\bfield (\d+)\b', 'tokens', 'once');
-        context = "NASASSHMonthly fit failed";
-        if ~isempty(field)
-            context = context + " for " + string(dates(months(str2double(field{1}))));
+        identifier = 'ULMO:ssh2slept:FitFailed';
+        if ismember(string(cause.identifier), ["ULMO:fitgriddedslepian:EmptyRecord", ...
+                "ULMO:fitgriddedslepian:EmptyTarget"])
+            identifier = strrep(cause.identifier, 'fitgriddedslepian', 'ssh2slept');
+        elseif strcmp(cause.identifier, 'ULMO:preparegridcoordinates:InvalidGrid')
+            identifier = 'ULMO:ssh2slept:SourceGrid';
         end
-        err = MException('ULMO:ssh2slept:FitFailed', '%s: %s', context, cause.message);
-        throwAsCaller(addCause(err, cause));
+        throwAsCaller(addCause(MException(identifier, '%s', cause.message), cause));
     end
-    basis = design.GVN;
-    coeffs = nan(nTime, size(c, 1));
-    condNum = nan(nTime, 1);
-    residualRms = nan(nTime, 1);
-    coeffs(months, :) = c.';
-    condNum(months) = stats.condNum;
-    residualRms(months) = stats.residualRms;
-    fit = table(nObs, areaFraction, condNum, residualRms, partialMonth);
+    coeffs = coefficients.ssh;
+    fit = fits.ssh;
+    fit.partialMonth = partialMonth(:);
 end
 
 function writeCache(destination, path, product, L, observationBuffer, coeffs, dates, fit, defaultJ)
