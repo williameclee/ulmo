@@ -77,6 +77,9 @@ function domainName = domainname(domain, format)
                     domainName = 'South America';
             end
 
+        case 'nonicesheetland'
+            domainName = 'Land outside Greenland and Antarctica';
+
         case 'continents'
             domainName = 'All continents';
 
