@@ -69,12 +69,14 @@ function [coefficients, fits, buffer, weighting] = fitgriddedslepian(fields, dat
     dates = dates(:);
     names = fieldnames(fields);
     assert(~isempty(names), 'ULMO:fitgriddedslepian:EmptyRecord', 'Supply at least one field.');
+    observedAnywhere = false(nLon, nLat);
     for iField = 1:numel(names)
         values = fields.(names{iField});
         assert((isa(values, 'double') || isa(values, 'single')) && isreal(values) && ...
             ndims(values) <= 3 && isequal(size(values, 1:3), [nLon, nLat, numel(dates)]), ...
             'ULMO:fitgriddedslepian:InvalidGrid', ...
             'Field %s must have longitude-by-latitude-by-time dimensions.', names{iField});
+        observedAnywhere = observedAnywhere | any(~isnan(values), 3);
     end
     mask = domainmask(domain, lon, lat, Format='ndgrid', SaveData=false, BeQuiet=true);
     buffer = 0;
@@ -87,7 +89,9 @@ function [coefficients, fits, buffer, weighting] = fitgriddedslepian(fields, dat
     [gridLon, gridLat] = ndgrid(lon, lat);
     totalArea = sum(weights(mask));
     assert(totalArea > 0, 'ULMO:fitgriddedslepian:EmptyTarget', 'The target contains no positive-area grid cells.');
-    points = find(observationMask & weights > 0);
+    % Retain rows used by any field, including fields fitted later. This
+    % avoids sampling permanently missing cells in the single-field SSH path.
+    points = find(observationMask & weights > 0 & observedAnywhere(keepLon, orderLat));
     weights = weights(points);
     target = mask(points);
     % The caller selects and validates the retained basis once. XYZS2SLEP
@@ -106,7 +110,10 @@ function [coefficients, fits, buffer, weighting] = fitgriddedslepian(fields, dat
             '%s contains infinite observations.', name);
         observed = isfinite(values);
         nObs = sum(observed, 1).';
-        areaFraction = min(1, (weights(target).' * observed(target, :)).' / totalArea);
+        areaFraction = zeros(nTime, 1);
+        if any(target)
+            areaFraction = min(1, (weights(target).' * observed(target, :)).' / totalArea);
+        end
         epochs = find(nObs > 0);
         assert(~isempty(epochs), 'ULMO:fitgriddedslepian:EmptyRecord', 'No observed cells for %s.', name);
         try
