@@ -31,8 +31,8 @@
 %       The option is only supported for Greenland.
 %   DefaultParams (name-value) - Whether to apply domain-specific defaults.
 %       - For 'spacific', 'satlantic' and 'indian', the default latitude
-%         limits are [-60, 60]. 
-%       - For 'oceans', 'npacific' and 'indian', the default additional 
+%         limits are [-60, 60].
+%       - For 'oceans', 'npacific' and 'indian', the default additional
 %         buffers are {'earthquakes', 10}.
 %       Default value: false.
 %
@@ -64,12 +64,12 @@
 classdef GeoDomain
 
     properties
-        Domain string;
-        Upscale(1, 1) double {mustBeNumeric};
-        Buffer(1, 1) double {mustBeNumeric};
-        Latlim(1, 2) double {mustBeNumeric};
-        MoreBuffers cell;
-        NearBy(1, 1) logical;
+        Domain string
+        Upscale(1, 1) double {mustBeNumeric}
+        Buffer(1, 1) double {mustBeNumeric}
+        Latlim(1, 2) double {mustBeNumeric}
+        MoreBuffers cell
+        NearBy(1, 1) logical
     end
 
     methods

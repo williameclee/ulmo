@@ -36,16 +36,12 @@
 %       Default format: 'meshgrid'.
 %   exteriorBuffer (name-value) - Spherical buffer around the finished polygon.
 %       Includes grid points within this angular distance of the boundary.
-%       Boundary edges are densified linearly at 1-degree spacing, then treated
-%       as minor great-circle segments. Distances include segment endpoints.
-%       Must be between 0 and 90. Positive widths use separate mask caches.
 %       Unit: degrees of spherical arc.
 %       Default width: 0.
 %   Forcenew (name-value) - Whether to recompute an existing mask.
 %       Default value: false.
 %   SaveData (name-value) - Whether to save a cache for a regular grid.
-%       Named domains are cacheable; numeric polygons are cacheable when
-%       exteriorBuffer is positive. Polyshape inputs are not cached.
+%       Polyshape inputs are not cached.
 %       Default value: true.
 %   BeQuiet (name-value) - Whether to suppress progress messages.
 %       Default value: false.
@@ -81,7 +77,8 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
         latlim (1, 2) double {mustBeNumeric} = nan
         meshsize (1, 1) double {mustBeNumeric} = nan
         options.Format (1, :) char {mustBeMember(options.Format, {'meshgrid', 'ndgrid'})} = 'meshgrid'
-        options.exteriorBuffer (1, 1) double {mustBeFinite, mustBeNonnegative, mustBeLessThanOrEqual(options.exteriorBuffer, 90)} = 0
+        options.exteriorBuffer (1, 1) double ...
+            {mustBeFinite, mustBeNonnegative, mustBeLessThanOrEqual(options.exteriorBuffer, 90)} = 0
         options.Forcenew (1, 1) logical = false
         options.BeQuiet (1, 1) logical = false
         options.SaveData (1, 1) logical = true
@@ -122,14 +119,13 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
         lat = latlim(1):meshsize:latlim(2);
     elseif isempty(lon) || isempty(lat)
         error('Both LON and LAT must be provided');
-    else
+    elseif isvector(lon) && isvector(lat) && ...
+            all(diff(lon(:)) > 0) && all(diff(lat(:)) > 0)
 
         if isscalar(unique([diff(unique(lon(:))); diff(unique(lat(:)))]))
             meshsize = abs(unique([diff(unique(lon(:))); diff(unique(lat(:)))]));
-            lonlim = [min(lon), max(lon)];
-            latlim = [min(lat), max(lat)];
-            lon = lonlim(1):meshsize:lonlim(2);
-            lat = latlim(1):meshsize:latlim(2);
+            lonlim = [min(lon(:)), max(lon(:))];
+            latlim = [min(lat(:)), max(lat(:))];
         end
 
     end
@@ -138,8 +134,11 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
         lon = lon(:)';
         lat = lat(:);
         [lonn, latt] = meshgrid(lon, lat);
-    elseif ~(ismatrix(lon) && ismatrix(lat)) || size(lon, 1) ~= size(lat, 1)
+    elseif ~isequal(size(lon), size(lat))
         error('LON and LAT must be vectors or matrices of the same size');
+    else
+        lonn = lon;
+        latt = lat;
     end
 
     %% Check for existing data
@@ -154,7 +153,7 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
     vars = [cacheVars, {'lon', 'lat'}];
 
     if ~forceNew && ~(isscalar(dataPath) && isnan(dataPath)) && ...
-            exist(dataPath, 'file') && all(ismember(vars, who('-file', dataPath)))
+            exist(dataPath, 'file')
         data = load(dataPath, cacheVars{:});
     else
         data = [];
@@ -189,11 +188,11 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
     if isa(domain, 'GeoDomain')
         % Native grids require geographic coordinates for rotated polar domains.
         domainPoly = ...
-            domain.Lonlat(round(mean(lonlim) / 180) * 180, ...
+            domain.Lonlat(180, ...
             "RotateBack", rotateBack, "OutputFormat", 'polyshape');
     elseif ismatrix(domain) && isnumeric(domain) && size(domain, 2) == 2
         domainPoly = polyshape(domain);
-    elseif ischar(domain)
+    elseif ischar(domain) || isstring(domain)
         domainPoly = polyshape(feval(domain));
     elseif iscell(domain)
         domainPoly = polyshape(feval(domain{:}));
@@ -203,19 +202,12 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
         error('Unsupported domain type: %s', class(domain));
     end
 
-    if extBuf == 0 && min(domainPoly.Vertices(:, 1)) > max(lon)
-        error('ULMO:domainmask:InvalidInput', ...
-            'Domain longitude range (min: %f) is outside the provided LON range (max: %f).', ...
-            min(domainPoly.Vertices(:, 1)), max(lon));
-    elseif extBuf == 0 && max(domainPoly.Vertices(:, 1)) < min(lon)
-        error('ULMO:domainmask:InvalidInput', ...
-            'Domain longitude range (max: %f) is outside the provided LON range (min: %f).', ...
-            max(domainPoly.Vertices(:, 1)), min(lon));
-    end
+    domainPoly = wrapPolygon(domainPoly);
+    queryLonn = mod(lonn, 360);
 
     if numel(lonn) < 1e4
         % Run all at once for small grids
-        mask = isinterior(domainPoly, lonn(:), latt(:));
+        mask = isinterior(domainPoly, queryLonn(:), latt(:));
         mask = reshape(mask, size(lonn));
     else
         % For large grids, use arrayfyn (can be parallelised)
@@ -227,7 +219,7 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
         end
 
         mask = false(size(lonn));
-        mask = arrayfun(@(i) isinterior(domainPoly, lonn(:, i), latt(:, i)), 1:size(mask, 2), ...
+        mask = arrayfun(@(i) isinterior(domainPoly, queryLonn(:, i), latt(:, i)), 1:size(mask, 2), ...
             "UniformOutput", false);
         mask = reshape(cell2mat(mask), size(lonn));
 
@@ -238,8 +230,15 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
 
     end
 
+    % A boundary at 360 degrees is physically the same as one at zero.
+    seam = queryLonn == 0;
+
+    if any(seam, 'all')
+        mask(seam) = mask(seam) | isinterior(domainPoly, 360 * ones(nnz(seam), 1), latt(seam));
+    end
+
     if extBuf > 0
-        mask = buffergridmask(domainPoly, lonn, latt, mask, extBuf);
+        mask = buffergridmask(domainPoly, queryLonn, latt, mask, extBuf);
     end
 
     if ischar(dataPath) && saveData
@@ -257,7 +256,7 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
 
         if ~beQuiet
             fprintf('[ULMO>%s] Saved %s.\n', ...
-                callchaintext(callChain), filehref(dataPath, 'domainMask'));
+                callchaintext(callChain), filehref(dataPath, 'domain mask'));
         end
 
     end
@@ -277,6 +276,35 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
 end
 
 %% Subfunctions
+function wrapped = wrapPolygon(polygon)
+    % Clip translated copies as polygons so holes and full-width bands survive.
+    vertices = polygon.Vertices;
+
+    if isempty(vertices)
+        wrapped = polygon;
+        return
+    end
+
+    west = min(vertices(:, 1));
+    east = max(vertices(:, 1));
+
+    if west >= 0 && east <= 360
+        wrapped = polygon;
+        return
+    end
+
+    south = min(vertices(:, 2));
+    north = max(vertices(:, 2));
+    window = polyshape([0, 360, 360, 0], [south, south, north, north]);
+    wrapped = polyshape();
+
+    for iCopy = (floor(-east / 360) + 1):(ceil((360 - west) / 360) - 1)
+        piece = intersect(translate(polygon, [360 * iCopy, 0]), window);
+        wrapped = union(wrapped, piece);
+    end
+
+end
+
 function dataPath = datapath(dom, meshSize, lonLim, latLim, extBuf)
 
     if isnan(meshSize)
@@ -296,8 +324,8 @@ function dataPath = datapath(dom, meshSize, lonLim, latLim, extBuf)
 
     elseif iscell(dom)
         domName = strjoin(string(dom), '_');
-    elseif ischar(dom)
-        domName = dom;
+    elseif ischar(dom) || isstring(dom)
+        domName = char(dom);
     elseif isnumeric(dom) && extBuf > 0
         domName = hash(dom, 'sha1');
     else
