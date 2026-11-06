@@ -112,6 +112,7 @@
 %   back...
 %
 % Last modified by
+%   2026/11/05, En-Chi Lee
 %   2026/09/25, williameclee@arizona.edu (@williameclee)
 %   2017/12/01, fjsimons@alum.mit.edu (@fjsimons)
 %   2016/06/27, charig@princeton.edu (@harig00)
@@ -223,7 +224,7 @@ function varargout = glmalpha_new(varargin)
         upscale = sord;
         [G, V, N] = glmalpha_geographic( ...
             maxL, domain, upscale, anti, rotb, ldim, bp, EL, EM, xver, ...
-            beQuiet, forceNew, mesg, callChain);
+            beQuiet, forceNew, mesg, callChain, saveData);
 
         G = G(:, 1:truncation);
         V = V(1:truncation);
