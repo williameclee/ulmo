@@ -3,6 +3,7 @@
 % Syntax
 %   [sshSlept, dates, fit, GVN] = ssh2slept("NASASSHMonthly", domain, L)
 %   [__] = ssh2slept(__, timeRange, unit="m", truncation=J)
+%   [__] = ssh2slept(__, TimeStep="midmonth")
 %   [__] = ssh2slept(__, GVN={G,V,N})
 %   [__] = ssh2slept(__, dropPartialMonths=true)
 %   [__] = ssh2slept(__, OutputFormat="traditional")
@@ -14,6 +15,10 @@
 %   L - Maximum spherical harmonic degree. The exterior observation buffer is
 %       fixed at 90/L degrees for positive L and zero for L=0.
 %   timeRange - Optional inclusive pair of datetimes or datenums. Default: all.
+%   TimeStep (name-value) - Requested temporal selection, forwarded to SSH2LONLATT.
+%       Default selection: [] (native epochs). For NASASSHMonthly, 'midmonth'
+%       is equivalent to native and uses the same projection cache. Other
+%       selections are not yet supported and raise an error before cache lookup.
 %   unit - Output height unit, "mm" (default) or "m".
 %   OutputFormat (name-value) - Orientation of returned coefficients.
 %       "timefirst": dates by modes; "traditional": modes by dates.
@@ -51,6 +56,8 @@
 %   polygons the domain ID is hash(domain, 'sha1'). J is the fitted mode count.
 %   Arctic and Antarctic IDs include -rotb for geographic observation masks.
 %   The cache stores metres, independent of output unit, OutputFormat and requested dates.
+%   Native and midmonth requests share this cache for NASASSHMonthly; neither
+%   request temporally resamples that already monthly source.
 %   Cache hits read the time coordinate and selected contiguous time slabs.
 %   Requesting GVN on a cache hit loads the domain basis through glmalpha_new.
 %
@@ -61,7 +68,7 @@
 %   2026/11/03
 %
 % Last modified
-%   2026/11/05
+%   2026/11/06
 
 function [sshSlept, dates, fit, GVN] = ssh2slept(product, domain, L, timeRange, options)
     arguments (Input)
@@ -69,6 +76,7 @@ function [sshSlept, dates, fit, GVN] = ssh2slept(product, domain, L, timeRange, 
         domain
         L (1, 1) double {mustBeFinite, mustBeInteger, mustBeNonnegative}
         timeRange = []
+        options.TimeStep {mustBeTimeStep} = []
         options.unit (1, 1) string {mustBeMember(options.unit, ["m", "mm"])} = "mm"
         options.OutputFormat (1, 1) string {mustBeMember(options.OutputFormat, ["timefirst", "traditional"])} = "timefirst"
         options.truncation double {mustBeScalarOrEmpty, mustBeFinite, mustBeInteger, mustBePositive} = []
@@ -77,6 +85,13 @@ function [sshSlept, dates, fit, GVN] = ssh2slept(product, domain, L, timeRange, 
         options.SaveData (1, 1) logical = true
         options.dropPartialMonths (1, 1) logical = false
     end
+    % Only equivalent native/monthly requests can share the existing cache.
+    % Validate before lookup so other selections cannot return monthly data.
+    timestep = options.TimeStep;
+    assert(isempty(timestep) || ((ischar(timestep) || isstring(timestep)) && ...
+        isscalar(string(timestep)) && strcmpi(timestep, 'midmonth')), ...
+        'ULMO:ssh2slept:TimeStep', ...
+        'NASASSHMonthly projections currently support only native ([]) or midmonth epochs.');
     if ~isempty(timeRange)
         if isnumeric(timeRange)
             timeRange = datetime(timeRange, 'ConvertFrom', 'datenum');
@@ -187,7 +202,7 @@ function [path, tmp, cacheHit] = getoutputfile(product, domain, L, J, saveData, 
 end
 
 function [coeffs, dates, fit, basis] = fitRecord(product, domain, L, observationBuffer, options)
-    [values, ~, dates, lon, lat, partialMonth] = ssh2lonlatt(product, ...
+    [values, ~, dates, lon, lat, partialMonth] = ssh2lonlatt(product, options.TimeStep, ...
         OutputFormat='ndgrid', Unit='m', BeQuiet=true);
     lon = double(lon(:));
     lat = double(lat(:));
