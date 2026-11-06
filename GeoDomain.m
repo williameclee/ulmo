@@ -64,12 +64,12 @@
 classdef GeoDomain
 
     properties
-        Domain string;
-        Upscale(1, 1) double {mustBeNumeric};
-        Buffer(1, 1) double {mustBeNumeric};
-        Latlim(1, 2) double {mustBeNumeric};
-        MoreBuffers cell;
-        NearBy(1, 1) logical;
+        Domain string
+        Upscale(1, 1) double {mustBeNumeric}
+        Buffer(1, 1) double {mustBeNumeric}
+        Latlim(1, 2) double {mustBeNumeric}
+        MoreBuffers cell
+        NearBy(1, 1) logical
     end
 
     methods
