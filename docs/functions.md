@@ -42,6 +42,7 @@ The ultimate goal is to drop the `_new` suffixes and replace the original functi
 | `plm2avgp` | Computes the integral of spherical harmonics over a domain in parallel. | [slepian_delta](https://github.com/csdms-contrib/slepian_delta.git) | none | Replacement for `plm2avgp` in [slepian_delta](https://github.com/csdms-contrib/slepian_delta.git). |
 | `plm2xyz` | Projects spherical harmonics onto latitude-longitude grids/points. | [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git) | none | Replacement for `plm2xyz` in [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git). |
 | `slep2plm_new` | Projects Slepian functions back to spherical harmonics. | [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git) | none | Replacement for `slep2plm` in [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git), with support for `GeoDomain` objects. |
+| `xyzs2slep` | Fits scattered scalar observations to a regional Slepian basis, with optional weighted fitting and uncertainty propagation. | [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git) | | |
 | `slep2xyz` | Projects Slepian functions onto latitude-longitude grids/points. | [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git) | none | WIP |
 | `slept2resid_new` | Fits a time series | [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git) | none | Replacement for `slept2resid` in [slepian_delta](https://github.com/csdms-contrib/slepian_delta.git), with support for `GeoDomain` objects. |
 | `sphgaussfilt` | Apply Gaussian filter to spherical harmonics | none | none | |
@@ -62,8 +63,8 @@ The ultimate goal is to drop the `_new` suffixes and replace the original functi
 | `lovenumber` | Reads the elastic Love numbers for geoid/VLM/HLM. | | [ISSM](https://github.com/ISSMteam/ISSM.git), [slepian_delta](https://github.com/csdms-contrib/slepian_delta.git), or [ALMA3](https://github.com/danielemelini/ALMA3.git) | Replacement for `lovenums` in [slepian_delta](https://github.com/csdms-contrib/slepian_delta.git). |
 | `slfa2plmt` | Reads and converts the *RSL* SLF calculated by [Adhikari et al. (2019)](https://doi.org/10.5194/essd-11-629-2019) to spherical harmonic fields. | | [Adhikari et al. (2019)](https://doi.org/10.5194/essd-11-629-2019) | WIP |
 | `slfa2slept` | Projects the *RSL* SLF calculated by [Adhikari et al. (2019)](https://doi.org/10.5194/essd-11-629-2019) to Slepian coefficients. | [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git) | See `slfa2plmt` | WIP |
-| `solvesle` | Solves the elastic/transient SLE for a given mass load and land water mask. | | none | |
-| `solvedegree1` | Solves the Stokes coefficients for the geocentric motion from GRACE data. | | GRACE | |
+| `solvesle` | Solves the fixed-ocean elastic SLE with full-response uncertainty propagation. | | Love numbers, ocean geometry | [Linear solver guide](linear-sle.md). |
+| `solvedegree1` | Estimates degree 1 and optional low-degree coefficients through a prepared linear response map. | | GRACE, GIA, Love numbers, ocean geometry | [Linear solver guide](linear-sle.md). |
 
 ### GIA Model Processing
 

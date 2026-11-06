@@ -666,12 +666,6 @@
         "purpose": "whether to include rotational feedback"
       },
       {
-        "name": "ReplaceWithGAD",
-        "kind": "ordered",
-        "type": ["logical", "scalar"],
-        "purpose": "whether to replace GAC correction with GAD"
-      },
-      {
         "name": "RecomputeDegree1",
         "kind": "namevalue",
         "type": ["logical", "scalar"],
