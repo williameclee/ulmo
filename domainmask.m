@@ -1,4 +1,4 @@
-%% DOMAINMASK - Compute a geographic domain mask on a longitude-latitude grid.
+%% DOMAINMASK - Computes a geographic domain mask on a longitude-latitude grid.
 %
 % Syntax
 %   [mask, lonn, latt] = DOMAINMASK(domain, lon, lat)
@@ -84,7 +84,7 @@
 %   2025/07/25, En-Chi Lee (williameclee@arizona.edu)
 %
 % Last modified
-%   2026/11/05, OpenAI Codex
+%   2026/11/06, OpenAI Codex
 
 function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshsize, options)
 
@@ -119,6 +119,7 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
             ismember(lower(string(domain)), ["arctic", "antarctica"])
         domain = GeoDomain(domain);
     end
+
     rotateBack = isa(domain, 'GeoDomain') && ...
         ismember(domain.Domain, ["arctic", "antarctica"]);
 
@@ -138,6 +139,7 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
         error('Both LON and LAT must be provided');
     elseif isvector(lon) && isvector(lat) && ...
             all(diff(lon(:)) > 0) && all(diff(lat(:)) > 0)
+
         if isscalar(unique([diff(unique(lon(:))); diff(unique(lat(:)))]))
             meshsize = abs(unique([diff(unique(lon(:))); diff(unique(lat(:)))]));
             lonlim = [min(lon(:)), max(lon(:))];
@@ -159,11 +161,13 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
 
     %% Check for existing data
     dataPath = datapath(domain, meshsize, lonlim, latlim, options.exteriorBuffer);
-    exteriorBuffer = options.exteriorBuffer;
+    extBuf = options.exteriorBuffer;
     cacheVars = {'mask'};
-    if exteriorBuffer > 0
-        cacheVars{end+1} = 'exteriorBuffer';
+
+    if extBuf > 0
+        cacheVars{end + 1} = 'extBuf';
     end
+
     vars = [cacheVars, {'lon', 'lat'}];
 
     if ~forceNew && ~(isscalar(dataPath) && isnan(dataPath)) && ...
@@ -174,7 +178,7 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
     end
 
     % Different exact widths can share the same num2str filename.
-    if ~isempty(data) && (exteriorBuffer == 0 || data.exteriorBuffer == exteriorBuffer)
+    if ~isempty(data) && (extBuf == 0 || data.extBuf == extBuf)
 
         if ~beQuiet
             fprintf('[ULMO>%s] Loaded %s.\n', ...
@@ -203,7 +207,7 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
         % Native grids require geographic coordinates for rotated polar domains.
         domainPoly = ...
             domain.Lonlat(180, ...
-                "RotateBack", rotateBack, "OutputFormat", 'polyshape');
+            "RotateBack", rotateBack, "OutputFormat", 'polyshape');
     elseif ismatrix(domain) && isnumeric(domain) && size(domain, 2) == 2
         domainPoly = polyshape(domain);
     elseif ischar(domain) || isstring(domain)
@@ -250,15 +254,17 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
         mask(seam) = mask(seam) | isinterior(domainPoly, 360*ones(nnz(seam), 1), latt(seam));
     end
 
-    if exteriorBuffer > 0
-        mask = buffergridmask(domainPoly, queryLon, latt, mask, exteriorBuffer);
+    if extBuf > 0
+        mask = buffergridmask(domainPoly, queryLon, latt, mask, extBuf);
     end
 
     if ischar(dataPath) && saveData
         folder = fileparts(dataPath);
+
         if ~isfolder(folder)
             mkdir(folder);
         end
+
         tmp = [tempname(folder), '.mat'];
         cleanup = onCleanup(@() deletePartial(tmp));
         creationDate = datetime('now', 'TimeZone', 'UTC');
@@ -310,7 +316,7 @@ function wrapped = wrapPolygon(polygon)
     end
 end
 
-function dataPath = datapath(domain, meshSize, lonLim, latLim, exteriorBuffer)
+function dataPath = datapath(dom, meshSize, lonLim, latLim, extBuf)
 
     if isnan(meshSize)
         % Data cannot be saved if irregular
@@ -320,35 +326,40 @@ function dataPath = datapath(domain, meshSize, lonLim, latLim, exteriorBuffer)
 
     dataFolder = fullfile(getenv('IFILES'), 'DOMAINMASK');
 
-    if isa(domain, 'GeoDomain')
-        domainName = domain.Id;
-        if ismember(domain.Domain, ["arctic", "antarctica"])
-            domainName = [domainName, '-rotb'];
+    if isa(dom, 'GeoDomain')
+        domName = dom.Id;
+
+        if ismember(dom.Domain, ["arctic", "antarctica"])
+            domName = [domName, '-rotb'];
         end
-    elseif iscell(domain)
-        domainName = strjoin(string(domain), '_');
-    elseif ischar(domain) || isstring(domain)
-        domainName = char(domain);
-    elseif isnumeric(domain) && exteriorBuffer > 0
-        domainName = hash(domain, 'sha1');
+
+    elseif iscell(dom)
+        domName = strjoin(string(dom), '_');
+    elseif ischar(dom) || isstring(dom)
+        domName = char(dom);
+    elseif isnumeric(dom) && extBuf > 0
+        domName = hash(dom, 'sha1');
     else
         dataPath = nan;
         return
     end
-    if exteriorBuffer > 0
-        domainName = sprintf('%s-E%s', domainName, num2str(exteriorBuffer));
+
+    if extBuf > 0
+        domName = sprintf('%s-E%s', domName, num2str(extBuf));
     end
 
     dataFile = sprintf('DOMAINMASK-%s-H%s-Box%s_%s_%s_%s.mat', ...
-        domainName, num2str(meshSize), ...
+        domName, num2str(meshSize), ...
         num2str(lonLim(1)), num2str(lonLim(2)), num2str(latLim(1)), num2str(latLim(2)));
     dataPath = fullfile(dataFolder, dataFile);
 end
 
 function deletePartial(path)
+
     if isfile(path)
         delete(path);
     end
+
 end
 
 function plotdomainmask(mask, lonn, latt)
