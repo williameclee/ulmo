@@ -1,31 +1,45 @@
-%% GEODOMAIN
-% Is a class that stores the information of a geographical domain.
+%% GEODOMAIN - Stores the parameters of a geographic domain.
 %
-% Properties
-%   Domain - The name of the domain
+% Syntax
+%   domain = GEODOMAIN(name)
+%   domain = GEODOMAIN(name, upscale, buf, latlim, moreBuffers, nearBy)
+%   domain = GEODOMAIN(name, "Name", value)
+%
+% Input arguments
+%   name - Name of the domain.
 %       The domain name should be the name of a function that returns the
 %       coordinates of the domain boundary.
-%   Upscale - The resolution of the domain
+%   Upscale (optional) - Resolution of the domain boundary.
 %       The upscale value is the number of times the domain boundary is
 %       upscaled.
-%       The default value is 0.
-%   Buffer - The buffer from the domain boundary
+%       Default value: 0.
+%   buf (optional) - Buffer from the domain boundary.
 %       The buffer is the distance from the domain boundary to the coastlines.
-%       The default value is 0.
-%   Latlim - The latitudes of the domain
+%       Unit: degrees of spherical arc.
+%       Default value: 0.
+%   Latlim (optional) - Latitude limits of the domain.
 %       The latitudes are specified as a 1-by-2 vector.
-%       The default value is [-90, 90].
-%   MoreBuffers - Additional buffers to apply to the coastlines
+%       Size: (1, 2).
+%       Unit: degrees north.
+%       Default limits: [-90, 90].
+%   MoreBuffers (optional) - Additional buffers to apply to the coastlines.
 %       The additional buffers are specified as a cell array of domain names
 %       and buffer values.
-%       The default value is an empty cell array.
-%   NearBy - A flag to indicate whether the domain is near another domain
-%       The default value is false.
+%       Default value: {}.
+%   NearBy (optional) - Whether to subtract nearby islands from Greenland.
+%       Default value: false.
 %       The option is only supported for Greenland.
+%   DefaultParams (name-value) - Whether to apply domain-specific defaults.
+%       - For 'spacific', 'satlantic' and 'indian', the default latitude
+%         limits are [-60, 60].
+%       - For 'oceans', 'npacific' and 'indian', the default additional
+%         buffers are {'earthquakes', 10}.
+%       Default value: false.
 %
 % Methods
 %   Id - The identifier for the domain
 %       It is useful for finding domain-specific files.
+%       NearBy=true appends -nearby to the identifier.
 %   DisplayName - The display name of the domain
 %       The display name is the name of the domain in a human-readable form.
 %   Lonlat - The longitude and latitude coordinates of the domain
@@ -44,18 +58,18 @@
 % See also
 %   SPHAREA
 %
-% Last modified by
-%   2026/09/25, williameclee@arizona.edu (@williameclee)
+% Last modified
+%   2026/11/04, En-Chi Lee (williameclee@gmail.com)
 
 classdef GeoDomain
 
     properties
-        Domain string;
-        Upscale(1, 1) double {mustBeNumeric};
-        Buffer(1, 1) double {mustBeNumeric};
-        Latlim(1, 2) double {mustBeNumeric};
-        MoreBuffers cell;
-        NearBy(1, 1) logical;
+        Domain string
+        Upscale(1, 1) double {mustBeNumeric}
+        Buffer(1, 1) double {mustBeNumeric}
+        Latlim(1, 2) double {mustBeNumeric}
+        MoreBuffers cell
+        NearBy(1, 1) logical
     end
 
     methods
@@ -111,6 +125,11 @@ classdef GeoDomain
                 [capitalise(char(obj.Domain)), dataattrchar( ...
                  "Upscale", obj.Upscale, "Buffer", obj.Buffer, ...
                  "Latlim", obj.Latlim, "MoreBuffers", obj.MoreBuffers)];
+
+            if obj.NearBy
+                id = [id, '-nearby'];
+            end
+
         end
 
         % Display name
