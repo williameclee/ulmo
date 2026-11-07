@@ -112,8 +112,7 @@
 %   back...
 %
 % Last modified by
-%   2026/11/05, En-Chi Lee
-%   2026/09/25, williameclee@arizona.edu (@williameclee)
+%   2026/11/05, En-Chi Lee (williameclee@gmail.com)
 %   2017/12/01, fjsimons@alum.mit.edu (@fjsimons)
 %   2016/06/27, charig@princeton.edu (@harig00)
 %   2016/10/11, plattner@alumni.ethz.ch (@AlainPlattner)
@@ -201,8 +200,8 @@ function varargout = glmalpha_new(varargin)
         data = load(dataPath, vars{:});
 
         if ~beQuiet
-            fprintf('[ULMO>%s] Loaded <a href="matlab: fprintf(''%s\\n'');open(''%s'')">projection matrix</a>.\n', ...
-                callchaintext(callChain), dataPath, dataPath);
+            fprintf('[ULMO>%s] Loaded %s.\n', ...
+                callchaintext(callChain), filehref(dataPath, 'projection matrix'));
         end
 
         varargout = {data.G, data.V, data.EL, data.EM, data.N, GM2AL, MTAP, IMTAP};
@@ -224,7 +223,7 @@ function varargout = glmalpha_new(varargin)
         upscale = sord;
         [G, V, N] = glmalpha_geographic( ...
             maxL, domain, upscale, anti, rotb, ldim, bp, EL, EM, xver, ...
-            beQuiet, forceNew, mesg, callChain, saveData);
+            forceNew, saveData, beQuiet, mesg, callChain);
 
         G = G(:, 1:truncation);
         V = V(1:truncation);
@@ -249,8 +248,8 @@ function varargout = glmalpha_new(varargin)
         end
 
         if ~beQuiet
-            fprintf('[ULMO>%s] Saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">projection matrix</a>.\n', ...
-                callchaintext(callChain), dataPath, dataPath);
+            fprintf('[ULMO>%s] Saved %s.\n', ...
+                callchaintext(callChain), filehref(dataPath, 'projection matrix'));
         end
 
     end

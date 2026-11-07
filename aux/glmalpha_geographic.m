@@ -27,15 +27,13 @@
 % See also
 %   GLMALPHA, KERNELC, KERNELCP, LOCALIZATION
 %
-% Last modified by
-%   2026/11/05, En-Chi Lee
-% 	2025/11/03, williameclee@arizona.edu
+% Last modified
+%   2026/11/05, En-Chi Lee (williameclee@gmail.com)
 
 function [G, V, N] = glmalpha_geographic( ...
         L, domain, upscale, isAntiDomain, rotateBack, ldim, isBp, ...
-        EL, EM, xver, beQuiet, forceNew, mesg, callChain, saveData)
-    % Older internal callers retain the default kernel-cache behavior.
-    if nargin < 15, saveData = true; end
+        EL, EM, xver, forceNew, saveData, beQuiet, mesg, callChain)
+
     %% Computing the kernel
     % See if we can run this calculation in parallel
     canRunParallel = license('test', 'distrib_computing_toolbox') && ...
@@ -44,8 +42,8 @@ function [G, V, N] = glmalpha_geographic( ...
         ~verLessThan('matlab', '8.2'));
     % Actually computing the kernel
     if canRunParallel || ~saveData
-        Kernel = kernelcp_new(L, domain, upscale, "ForceNew", forceNew, ...
-            "BeQuiet", beQuiet, "CallChain", callChain, "SaveData", saveData);
+        Kernel = kernelcp_new(L, domain, upscale, ...
+            "ForceNew", forceNew, "SaveData", saveData, "BeQuiet", beQuiet, "CallChain", callChain);
     else
         Kernel = kernelc(L, domain, upscale);
     end
