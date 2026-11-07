@@ -1,62 +1,150 @@
 %% XYZS2SLEP - Fits scalar fields on paired coordinates to a regional Slepian basis.
+% Each field is fitted by least squares on its usable observations. Fields
+% share coordinates, a retained basis, and any weights or observation errors.
 %
 % Syntax
-%   [C, V, N, fit, design] = xyzs2slep(vals, lon, lat, domain, L, ...)
-%   [C, V, N, fit] = xyzs2slep(vals, design, ...)
+%   [C, V, N, fit, design] = xyzs2slep(vals, lon, lat, domain, L)
+%   [C, V, N, fit] = xyzs2slep(vals, design)
+%   [__] = xyzs2slep(__, "Name", Value)
 %
 % Input arguments
-%   vals - Real nPoint-by-nField matrix in field units. 
-%       A vector matching the coordinate count is one field. Each column uses the same grid.
-%   lon, lat - Paired coordinate vectors in degrees. 
-%       Longitude wraps at 360.
-%   domain - GeoDomain, region name/cell, closed [lon,lat] polygon, or
-%       scalar north-polar cap radius in degrees. 
-%       All supplied points are used.
-%   L - Nonnegative integer maximum harmonic degree.
-%   design - Fifth output of an earlier call on the same ordered grid.
-%       Reuses the unweighted matrix. Supply new weights/errors on each call.
-%   GVN (name-value) - Optional {G,V,N} for the requested domain and L.
-%       G has (L+1)^2 rows in ADDMOUT order. Columns retain their supplied
-%       order and signs. Supply an already-retained basis to fit exactly it.
-%   truncation (name-value) - Number of leading basis columns. Defaults to
-%       max(1,round(N)), bounded by basis size, for a computed or supplied
-%       full basis. For a supplied subset, defaults to all its columns.
-%       A reused design already fixes the truncation.
-%   missingPolicy (name-value) - "error" (default) or "omit". Omit NaN
-%       values per field and NaN coordinates across fields. Inf is invalid.
-%   weight (name-value) - Finite nonnegative vector, one per grid point,
-%       shared across fields. Minimize sum(weight .* residual.^2). Zero
-%       excludes a point. Uniform centered lat/lon grids can use cosd(lat).
-%       Default is equal weighting. Exclusive with all uncertainty options.
-%   dataStd, dataCovariance (name-value) - Optional absolute observation
-%       standard deviations (positive vector) or positive-definite covariance
-%       (nPoint-by-nPoint). Shared across fields and finite on the full grid.
-%   estimateNoiseVariance (name-value) - Estimate iid residual variance
-%       separately per field. Requires more observations than coefficients.
-%       Default false. Select at most one uncertainty source.
-%   uncertaintyOutput (name-value) - "none" (default), "std", or "covariance".
-%       With a noise model, the last choice returns both covariance and std.
-%   rankTolerance (name-value) - Relative SVD cutoff in [0,1).
-%       Default max(nObs,J)*eps per mask. Rank deficiency raises an error.
+%   vals - Real observations, with one field per column.
+%       Rows follow the supplied coordinate order. A vector matching the
+%       coordinate count is treated as one field, in either orientation.
+%       Size: (nPts, nField), or a vector of length nPts for one field.
+%       Unit: field units.
+%   lon - Paired longitudes, supplied as the second argument (grid).
+%       Longitudes are wrapped to [0, 360). Supply design instead to reuse
+%       an earlier sampled basis.
+%       Size: (nPts, 1) or (1, nPts).
+%       Unit: degrees east.
+%   lat (optional) - Paired latitudes in [-90, 90].
+%       Required with lon; omit when supplying design.
+%       Size: (nPts, 1) or (1, nPts).
+%       Unit: degrees north.
+%       Default value: [].
+%   domain (optional) - Region used to construct the Slepian basis.
+%       Accepts a scalar GeoDomain, region name/cell, closed [lon, lat]
+%       polygon, or scalar north-polar cap radius in (0, 180]. Required
+%       with lon; omit when supplying design. Does not clip observations.
+%       Size: scalar, region specification, or (nVertex, 2) polygon.
+%       Unit: degrees for polygon coordinates and cap radius.
+%       Default value: [].
+%   L (optional) - Nonnegative integer maximum harmonic degree.
+%       Required with lon; omit when supplying design.
+%       Size: scalar.
+%       Unit: dimensionless.
+%       Default value: [].
+%   design - Sampled basis returned by an earlier call, supplied as grid.
+%       Reuses the same ordered coordinates and retained basis. Omit lat,
+%       domain, L, GVN, and truncation. Supply weights/errors again on each
+%       call; they are not stored in design. See the output fields below.
+%       Size: scalar structure.
+%   GVN (name-value) - Supplied {G, V, N} for the requested domain and L.
+%       G contains real harmonic coefficients in ADDMOUT order. V contains
+%       their concentration eigenvalues; N is the full Shannon number.
+%       Supplied columns retain their order and signs. A supplied basis
+%       bypasses domain construction; its geographical origin is not checked.
+%       Size: three-element cell; G is ((L+1)^2, nBasis), V has nBasis
+%       elements, and N is scalar.
+%       Unit: dimensionless.
+%       Default basis: {}, computed from domain and L.
+%   truncation (name-value) - Positive integer number J of leading modes.
+%       Cannot exceed the available basis columns. A reused design fixes J.
+%       Size: scalar or empty.
+%       Default count: [], using min(nBasis, max(1, round(N))) for a full
+%       basis with (L+1)^2 columns, or all columns of a supplied subset.
+%   missingPolicy (name-value) - Treatment of NaN observations/coordinates.
+%       "error" rejects NaNs at points with nonzero weight. "omit" removes
+%       NaN observations per field and NaN coordinates across all fields.
+%       Infinite observations or coordinates are always invalid.
+%       Size: text scalar.
+%       Default policy: "error".
+%   weight (name-value) - Finite nonnegative weights shared across fields.
+%       Minimises sum(weight .* residual.^2); zero excludes a point.
+%       Uniform centred latitude-longitude grids can use cosd(lat) for
+%       approximate area weighting. Cannot be combined with an error model.
+%       Size: (nPts, 1), (1, nPts), or empty.
+%       Unit: relative weights; a common positive scale does not affect C.
+%       Default weights: [], equal weighting.
+%   dataStd (name-value) - Absolute observation standard deviations.
+%       Must be finite and positive on the full grid, including omitted
+%       points. Shared across fields; assumes uncorrelated point errors.
+%       Size: (nPts, 1), (1, nPts), or empty.
+%       Unit: field units.
+%       Default value: [], no supplied standard deviations.
+%   dataCovariance (name-value) - Absolute observation error covariance.
+%       Must be finite, symmetric, and positive definite on the full grid.
+%       Shared across fields; rows and columns follow the coordinate order.
+%       Size: (nPts, nPts) or empty.
+%       Unit: squared field units.
+%       Default value: [], no supplied covariance.
+%   estimateNoiseVariance (name-value) - Whether to estimate residual variance.
+%       Assumes independent, identically distributed errors within each
+%       field. Uses sum(residual.^2)/(nObs-J) separately for each field;
+%       each field must have more usable observations than coefficients.
+%       Size: logical scalar.
+%       Default value: false.
+%   uncertaintyOutput (name-value) - Coefficient uncertainty to return in fit.
+%       "none" returns neither array; "std" returns standard deviations;
+%       "covariance" returns both standard deviations and covariance.
+%       Requires an error model and the fourth output to produce arrays.
+%       Size: text scalar.
+%       Default output: "none".
+%   rankTolerance (name-value) - Relative singular-value cutoff in [0, 1).
+%       Singular values must exceed this fraction of the largest value.
+%       Applied after weighting or whitening; rank deficiency is an error.
+%       Size: scalar or empty.
+%       Unit: dimensionless.
+%       Default tolerance: [], using max(nObs, J)*eps for each usable mask.
 %   blockSize (name-value) - Maximum points per basis evaluation block.
-%       Default 1024. Only rows used by at least one field are sampled
-%       unless the fifth output requests a reusable design.
+%       Must be a finite positive integer. Limits harmonic evaluation
+%       storage; the sampled Slepian matrix is still retained for the fit.
+%       Size: scalar.
+%       Default count: 1024.
 %
 % Output arguments
-%   C - J-by-nField coefficients in field units, using 4*pi real harmonics.
-%   V, N - Retained concentration eigenvalues and full Shannon number.
-%   fit - nObs, rank, condNum, residualRms (one entry per field). RMS is
-%       in field units, area-weighted when weight is supplied and ordinary
-%       otherwise. uncSrc identifies the shared error model. coeffStds
-%       (J-by-nField) and coeffCov (J-by-J-by-nField) are empty unless
-%       requested with an error model. Covariances are marginal per field.
-%   design - A, lon, lat, and GVN. A retains original row order, including
-%       points missing from any field. Undefined coordinate rows are NaN.
+%   C - Coefficients in the retained Slepian basis.
+%       Uses real spherical harmonics with squared norm 4*pi on the sphere.
+%       Size: (J, nField).
+%       Unit: field units.
+%   V - Concentration eigenvalues of the retained modes.
+%       Computed modes are sorted in descending concentration. Supplied
+%       modes retain the order in GVN.
+%       Size: (J, 1).
+%       Unit: dimensionless.
+%   N - Full Shannon number, before truncation.
+%       Size: scalar.
+%       Unit: dimensionless.
+%   fit - Diagnostics and optional coefficient uncertainties.
+%       nObs, rank, and condNum: (1, nField) usable counts, numerical ranks,
+%           and 2-norm condition numbers of the weighted/whitened matrices.
+%       residualRms: (1, nField), in field units. Uses the supplied weight,
+%           or ordinary RMS even when observation uncertainties are supplied.
+%       uncSrc: "none", "dataStd", "dataCovariance", or "estimatedIid".
+%       coeffStds: (J, nField), in field units, or [] when not requested.
+%       coeffCov: (J, J, nField), in squared field units, or [] when not
+%           requested. Each slice is a marginal covariance for one field.
+%       Both uncertainty arrays are [] when no error model is selected.
+%       Size: scalar structure.
+%   design - Unweighted sampled basis for reuse on the same ordered grid.
+%       A: (nPts, J) dimensionless matrix, including points unused by this
+%           fit. Rows with NaN coordinates are NaN.
+%       lon, lat: (nPts, 1) coordinate vectors in degrees.
+%       GVN: {G, V, N} for the retained basis.
+%       Size: scalar structure.
 %
 % Notes
-%   Fields with identical usable rows share one factorisation. A field with
-%   insufficient coverage fails the call with its column index. Propagated
-%   errors are conditional on the chosen basis and observation error model.
+%   Select at most one of weight, dataStd, dataCovariance, or
+%   estimateNoiseVariance. Supplied uncertainties are absolute and are not
+%   rescaled by residual variance. Errors are conditional on the retained
+%   basis and the selected observation error model; cross-field covariance
+%   is not computed.
+%   Fields with identical usable rows share one SVD. Insufficient coverage
+%   or rank deficiency fails the call and identifies an affected column.
+%   Without the fifth output, only rows used by at least one field are
+%   sampled. Requesting design samples every defined coordinate so later
+%   calls can use observations or positive weights at previously unused rows.
 %
 % See also
 %   GLMALPHA_NEW, PLM2SLEP_NEW, SLEP2PLM_NEW
@@ -89,6 +177,9 @@ function [C, V, N, fit, design] = xyzs2slep(vals, grid, lat, domain, L, options)
             {mustBeMember(options.uncertaintyOutput, ["none", "std", "covariance"])} = "none"
     end
 
+    %% Resolve coordinates or reuse a sampled design
+    % Optional geometry arguments allow both signatures to use one arguments
+    % block. A returned design already fixes the coordinates and basis.
     reuseDesign = isstruct(grid);
 
     if reuseDesign
@@ -114,6 +205,7 @@ function [C, V, N, fit, design] = xyzs2slep(vals, grid, lat, domain, L, options)
         [lon, lat] = coordinates(grid, lat);
     end
 
+    %% Validate observations and construct each field's usable mask
     nPts = numel(lon);
 
     if isvector(vals) && numel(vals) == nPts
@@ -141,6 +233,7 @@ function [C, V, N, fit, design] = xyzs2slep(vals, grid, lat, domain, L, options)
         'Select only one weight or uncertainty model.');
     end
 
+    % Coordinate validity is shared; missing values can differ by field.
     valid = ~isnan(vals) & ~isnan(lon) & ~isnan(lat);
 
     if ~isempty(wght)
@@ -149,6 +242,7 @@ function [C, V, N, fit, design] = xyzs2slep(vals, grid, lat, domain, L, options)
         actv = true(nPts, 1);
     end
 
+    % Zero-weight rows are excluded even under the strict missing policy.
     if strcmpi(options.missingPolicy, "error") && any(~valid & actv, 'all')
         error('ULMO:xyzs2slep:MissingObservation', ...
         'NaN values or coordinates require missingPolicy="omit".');
@@ -163,6 +257,7 @@ function [C, V, N, fit, design] = xyzs2slep(vals, grid, lat, domain, L, options)
             'Field %d has no usable observations.', emptyField);
     end
 
+    %% Select the retained basis and check coverage before sampling
     sampleRows = true(nPts, 1);
 
     if reuseDesign
@@ -189,6 +284,8 @@ function [C, V, N, fit, design] = xyzs2slep(vals, grid, lat, domain, L, options)
             'Field %d has %d usable points for %d coefficients.', field, nObs(field), J);
     end
 
+    % Residual variance needs positive degrees of freedom; supplied absolute
+    % errors can also be propagated for an exactly determined fit.
     if options.estimateNoiseVariance
         field = find(nObs == J, 1);
 
@@ -199,11 +296,15 @@ function [C, V, N, fit, design] = xyzs2slep(vals, grid, lat, domain, L, options)
 
     end
 
+    % Validate the full error model before selecting any field's submatrix.
     [sigma, cov, fullFactor, source] = prepareUncertainty(options.dataStd, ...
         options.dataCovariance, options.estimateNoiseVariance, nPts);
 
+    %% Sample the basis and allocate requested outputs
     if ~reuseDesign
 
+        % A reusable design must include rows that later fields may activate.
+        % Otherwise, sampling only the union of usable rows avoids extra work.
         if nargout < 5
             sampleRows = any(valid, 2);
         end
@@ -231,18 +332,25 @@ function [C, V, N, fit, design] = xyzs2slep(vals, grid, lat, domain, L, options)
         fit.coeffCov = zeros(J, J, nField);
     end
 
+    %% Fit fields with identical masks together
+    % Shared weights/errors make one factorisation sufficient for each mask.
     [masks, ~, group] = unique(valid.', 'rows');
 
     for iMask = 1:size(masks, 1)
         rows = masks(iMask, :).';
         fields = find(group == iMask);
         count = nObs(fields(1));
-        % rows indexes the original observations. Only A may be compact.
+        % rows refers to the original grid; sampleRows maps it to sampled.
+        % Observation arrays retain their original rows even when sampled
+        % contains only the union of rows needed by the current fields.
         A = sampled(rows(sampleRows), :);
         data = double(vals(rows, fields));
         B = A;
         rhs = data;
 
+        % Apply the same transformation to A and data. Standard deviations
+        % or a Cholesky factor whiten errors to unit covariance; geometric
+        % weights instead define the least-squares objective without errors.
         if ~isempty(wght)
             rowScale = sqrt(wght(rows));
             B = A .* rowScale;
@@ -253,6 +361,8 @@ function [C, V, N, fit, design] = xyzs2slep(vals, grid, lat, domain, L, options)
         elseif ~isempty(fullFactor)
             factor = fullFactor;
 
+            % A subset of a Cholesky factor is generally not the factor of
+            % the corresponding covariance submatrix, so refactor the subset.
             if count ~= nPts
                 factor = chol(cov(rows, rows), 'lower');
             end
@@ -272,6 +382,8 @@ function [C, V, N, fit, design] = xyzs2slep(vals, grid, lat, domain, L, options)
             continue
         end
 
+        % Report residuals in field units, before whitening. Only geometric
+        % weights enter the reported RMS; observation errors do not.
         residual = data - A * C(:, fields);
 
         if isempty(wght)
@@ -285,12 +397,16 @@ function [C, V, N, fit, design] = xyzs2slep(vals, grid, lat, domain, L, options)
         fit.condNum(fields) = condition;
 
         if wantStd
+            % Absolute error scales are already included in invFactor.
+            % Only estimated iid noise adds a field-specific residual scale.
             noiseStd = ones(1, numel(fields));
 
             if options.estimateNoiseVariance
                 noiseStd = vecnorm(residual, 2, 1) / sqrt(count - J);
             end
 
+            % Row norms give sqrt(diag(invFactor*invFactor.')) without
+            % forming a covariance matrix when only standard errors are needed.
             fit.coeffStds(:, fields) = vecnorm(invFactor, 2, 2) .* noiseStd;
 
             if wantCov
@@ -309,7 +425,28 @@ function [C, V, N, fit, design] = xyzs2slep(vals, grid, lat, domain, L, options)
 end
 
 function [coeffs, rnk, cond, invFactor] = solveMask(B, rhs, field, tol, wantStd)
+    %% SOLVEMASK - Solves all fields sharing one transformed design matrix.
+    %
+    % Input arguments
+    %   B - Weighted or whitened design. Size: (nObs, J).
+    %   rhs - Matching transformed observations. Size: (nObs, nField).
+    %   field - Original field index used in errors and warnings. Size: scalar.
+    %   tol - Relative singular-value cutoff, or [] for max(nObs, J)*eps.
+    %   wantStd - Whether to construct the coefficient covariance factor.
+    %
+    % Output arguments
+    %   coeffs - Fitted coefficients in field units. Size: (J, nField).
+    %   rnk, cond - Numerical rank and 2-norm condition number of B.
+    %   invFactor - Q*diag(1./s), where Q contains right singular vectors.
+    %       invFactor*invFactor.' is the coefficient covariance for unit
+    %       transformed observation variance. Size: (J, J), or [] if unused.
+    %
+    % Notes
+    %   Rank-deficient fits raise an error instead of dropping basis modes.
+
     [count, J] = size(B);
+    % Solve with the SVD directly rather than forming B.'*B, which would
+    % square the condition number and obscure the rank check.
     [U, S, Q] = svd(B, 'econ');
     s = diag(S);
 
@@ -341,6 +478,17 @@ function [coeffs, rnk, cond, invFactor] = solveMask(B, rhs, field, tol, wantStd)
 end
 
 function [lon, lat] = coordinates(lon, lat)
+    %% COORDINATES - Validates paired coordinates and returns column vectors.
+    %
+    % Input arguments
+    %   lon, lat - Real coordinate vectors of equal length, in degrees.
+    %       Either orientation is accepted. NaNs are left for missingPolicy
+    %       to handle; Inf and latitudes outside [-90, 90] are invalid.
+    %
+    % Output arguments
+    %   lon, lat - Double column vectors in degrees. Size: (nPts, 1).
+    %       Longitude is wrapped to [0, 360); point order is preserved.
+
     validateattributes(lon, {'numeric'}, {'real', 'vector'});
     validateattributes(lat, {'numeric'}, {'real', 'vector'});
 
@@ -357,6 +505,17 @@ function [lon, lat] = coordinates(lon, lat)
 end
 
 function validateBasis(GVN)
+    %% VALIDATEBASIS - Checks the structure and dimensions of a supplied basis.
+    %
+    % Input arguments
+    %   GVN - Three-element cell {G, V, N}. G is a finite real harmonic
+    %       coefficient matrix with (L+1)^2 rows and at most that many columns.
+    %       V has one finite real eigenvalue per column; N is a finite,
+    %       nonnegative scalar Shannon number. All entries are dimensionless.
+    %
+    % Notes
+    %   This checks representation only, not orthogonality, concentration,
+    %   or whether the basis belongs to the requested geographical domain.
 
     if ~iscell(GVN) || numel(GVN) ~= 3
         error('ULMO:xyzs2slep:InvalidBasis', 'Supply {G, V, N}.');
@@ -374,6 +533,21 @@ function validateBasis(GVN)
 end
 
 function basis = selectBasis(domain, L, options)
+    %% SELECTBASIS - Constructs or accepts a basis and retains its leading modes.
+    %
+    % Input arguments
+    %   domain, L - Region and maximum degree accepted by XYZS2SLEP.
+    %   options - Validated options structure; uses GVN and truncation.
+    %
+    % Output arguments
+    %   basis - Cell {G, V, N} for J retained modes. G is ((L+1)^2, J),
+    %       V is (J, 1), and N is the full scalar Shannon number.
+    %
+    % Notes
+    %   Computed modes are sorted by descending concentration. Supplied
+    %   columns keep their order and signs so coefficients remain comparable
+    %   across calls that use the same basis.
+
     validateattributes(L, {'numeric'}, {'real', 'scalar', 'integer', 'nonnegative', 'finite'});
     J = options.truncation;
 
@@ -402,6 +576,8 @@ function basis = selectBasis(domain, L, options)
         [V, order] = sort(V(:), 'descend');
     end
 
+    % A full basis defaults to the rounded Shannon count. A supplied subset
+    % is treated as an intentional selection and retained in full by default.
     if isempty(J)
         J = size(G, 2);
 
@@ -421,14 +597,29 @@ function basis = selectBasis(domain, L, options)
 end
 
 function A = sampleBasis(lon, lat, G, L, blockSize)
+    %% SAMPLEBASIS - Evaluates retained Slepian functions at paired coordinates.
+    %
+    % Input arguments
+    %   lon, lat - Paired column vectors in degrees. Size: (nPts, 1).
+    %   G - Retained real harmonic coefficients. Size: ((L+1)^2, J).
+    %   L - Nonnegative maximum harmonic degree. Size: scalar.
+    %   blockSize - Positive integer limit on points per harmonic evaluation.
+    %
+    % Output arguments
+    %   A - Dimensionless sampled basis. Size: (nPts, J).
+    %       Preserves point order; undefined coordinate rows remain NaN.
+
     A = nan(numel(lon), size(G, 2));
     points = find(~isnan(lon) & ~isnan(lat));
     orders = addmout(L);
+    % Convert YLM's unit-normalised harmonics and order-dependent phase to
+    % the 4*pi real-harmonic convention used by the Slepian coefficients.
     scale = sqrt(4 * pi) * (-1) .^ orders(:);
 
     for first = 1:blockSize:numel(points)
         rows = points(first:min(first + blockSize - 1, end));
 
+        % The degree-zero harmonic is one in this convention.
         if L == 0
             A(rows, :) = G;
         else
@@ -441,6 +632,26 @@ function A = sampleBasis(lon, lat, G, L, blockSize)
 end
 
 function [sigma, cov, fac, src] = prepareUncertainty(sigma, cov, estimate, cnt)
+    %% PREPAREUNCERTAINTY - Validates the observation error model on the full grid.
+    %
+    % Input arguments
+    %   sigma - Absolute standard-deviation vector in field units, or [].
+    %   cov - Absolute covariance in squared field units, or [].
+    %       Size: (cnt, cnt) when supplied.
+    %   estimate - Whether to estimate iid residual variance for each field.
+    %   cnt - Number of original coordinate pairs. Size: scalar.
+    %
+    % Output arguments
+    %   sigma - Validated full double column vector. Size: (cnt, 1), or [].
+    %   cov - Validated full double covariance, with roundoff asymmetry removed.
+    %   fac - Lower Cholesky factor satisfying cov = fac*fac.', or [].
+    %   src - Error source: "none", "dataStd", "dataCovariance", or "estimatedIid".
+    %
+    % Notes
+    %   The caller checks that sources are mutually exclusive. Validation
+    %   includes points omitted from the fit; missing data do not excuse
+    %   invalid uncertainties. No jitter or residual rescaling is applied.
+
     fac = [];
     src = "none";
 
@@ -477,7 +688,8 @@ function [sigma, cov, fac, src] = prepareUncertainty(sigma, cov, estimate, cnt)
             'dataCovariance must be positive definite.');
         end
 
-        % Make sure the covariance matrix is symmetric
+        % Scale before the Frobenius-norm comparison to avoid overflow while
+        % applying the same relative symmetry tolerance at every error scale.
         normedCov = cov / maxCov;
 
         if norm(normedCov - normedCov.', 'fro') > 100 * eps * norm(normedCov, 'fro')
@@ -485,6 +697,8 @@ function [sigma, cov, fac, src] = prepareUncertainty(sigma, cov, estimate, cnt)
             'dataCovariance must be symmetric within 100*eps relative Frobenius tolerance.');
         end
 
+        % Average roundoff asymmetry without overflowing the sum of entries.
+        % Cholesky then checks positive definiteness without regularisation.
         cov = cov / 2 + cov.' / 2;
         [fac, flag] = chol(cov, 'lower');
 
