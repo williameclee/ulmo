@@ -9,32 +9,24 @@
 %
 % Input arguments
 %   vals - Observations to fit, with one field per column.
-%       Rows follow the supplied coordinate order. A vector matching the
-%       coordinate count is treated as one field, in either orientation.
 %       Size: (nPts, nField), or a vector of length nPts for one field.
 %       Unit: field units.
 %   lon (optional) - Paired longitudes, wrapped to [0, 360).
 %       Supply lon, lat, domain, and L together to build a design.
 %       Size: (nPts, 1) or (1, nPts).
 %       Unit: degrees east.
-%       Default value: [].
 %   lat (optional) - Paired latitudes in [-90, 90].
 %       Required with lon; omit when supplying design.
 %       Size: (nPts, 1) or (1, nPts).
 %       Unit: degrees north.
-%       Default value: [].
 %   domain (optional) - Region used to construct the Slepian basis.
 %       Accepts a scalar GeoDomain, region name/cell, closed [lon, lat]
 %       polygon, or scalar north-polar cap radius in (0, 180]. Required
 %       with lon; omit when supplying design.
 %       Unit: degrees for polygon coordinates and cap radius.
-%       Default value: [].
 %   L (optional) - Nonnegative integer maximum harmonic degree.
 %       Required with lon; omit when supplying design.
-%       Size: scalar.
-%       Unit: dimensionless.
-%       Default value: [].
-%   design (name-value) - Fifth output of an earlier call on the same grid.
+%   design (name-value) - Unweighted sampled basis for reuse on the same ordered grid.
 %       Pass design = d to reuse its coordinates and retained basis. Omit
 %       positional geometry, GVN, and truncation. Supply weights or errors
 %       for the current observations. See the output fields below.
@@ -43,14 +35,12 @@
 %   GVN (name-value) - Supplied {G, V, N} for the requested domain and L.
 %       G contains real harmonic coefficients in ADDMOUT order. V contains
 %       their concentration eigenvalues; N is the full Shannon number.
-%       Supplied columns retain their order and signs. A supplied basis
-%       bypasses domain construction; its geographical origin is not checked.
+%       Supplied columns retain their order and signs.
 %       Size: three-element cell; G is ((L+1)^2, nBasis), V has nBasis
 %       elements, and N is scalar.
 %       Unit: dimensionless.
 %       Default basis: {}, computed from domain and L.
 %   truncation (name-value) - Positive integer number J of leading modes.
-%       Cannot exceed the available basis columns. A reused design fixes J.
 %       Size: scalar or empty.
 %       Default count: [], using min(nBasis, max(1, round(N))) for a full
 %       basis with (L+1)^2 columns, or all columns of a supplied subset.
@@ -89,18 +79,14 @@
 %       "none" returns neither array; "std" returns standard deviations;
 %       "covariance" returns both standard deviations and covariance.
 %       Requires an error model and the fourth output to produce arrays.
-%       Size: text scalar.
 %       Default output: "none".
 %   rankTolerance (name-value) - Relative singular-value cutoff in [0, 1).
 %       Singular values must exceed this fraction of the largest value.
 %       Applied after weighting or whitening; rank deficiency is an error.
-%       Size: scalar or empty.
-%       Unit: dimensionless.
 %       Default tolerance: [], using max(nObs, J)*eps for each usable mask.
 %   blockSize (name-value) - Maximum points per basis evaluation block.
-%       Must be a finite positive integer. Limits harmonic evaluation
-%       storage; the sampled Slepian matrix is still retained for the fit.
-%       Size: scalar.
+%       Limits harmonic evaluation storage; the sampled Slepian matrix is
+%       still retained for the fit.
 %       Default count: 1024.
 %
 % Output arguments
@@ -112,10 +98,7 @@
 %       Computed modes are sorted in descending concentration. Supplied
 %       modes retain the order in GVN.
 %       Size: (J, 1).
-%       Unit: dimensionless.
 %   N - Full Shannon number, before truncation.
-%       Size: scalar.
-%       Unit: dimensionless.
 %   fit - Diagnostics and optional coefficient uncertainties.
 %       nObs, rank, and condNum: (1, nField) usable counts, numerical ranks,
 %           and 2-norm condition numbers of the weighted/whitened matrices.
@@ -126,34 +109,25 @@
 %       coeffCov: (J, J, nField), in squared field units, or [] when not
 %           requested. Each slice is a marginal covariance for one field.
 %       Both uncertainty arrays are [] when no error model is selected.
-%       Size: scalar structure.
 %   design - Unweighted sampled basis for reuse on the same ordered grid.
 %       A: (nPts, J) dimensionless matrix, including points unused by this
 %           fit. Rows with NaN coordinates are NaN.
 %       lon, lat: (nPts, 1) coordinate vectors in degrees.
 %       GVN: {G, V, N} for the retained basis.
-%       Size: scalar structure.
 %
 % Notes
 %   Select at most one of weight, dataStd, dataCovariance, or
 %   estimateNoiseVariance. Supplied uncertainties are absolute and are not
-%   rescaled by residual variance. Errors are conditional on the retained
-%   basis and the selected observation error model; cross-field covariance
-%   is not computed.
-%   Fields with identical usable rows share one SVD. Insufficient coverage
-%   or rank deficiency fails the call and identifies an affected column.
-%   Without the fifth output, only rows used by at least one field are
-%   sampled. Requesting design samples every defined coordinate so later
-%   calls can use observations or positive weights at previously unused rows.
+%   rescaled by residual variance.
 %
 % See also
-%   GLMALPHA_NEW, PLM2SLEP_NEW, SLEP2PLM_NEW
+%   GLMALPHA_NEW
 %
 % Created by
 %   2026/10/06, En-Chi Lee (williameclee@arizona.edu)
 %
 % Last modified
-%   2026/11/07, En-Chi Lee (williameclee@arizona.edu)
+%   2026/11/07, En-Chi Lee (williameclee@gmail.com)
 
 function [coeffs, V, N, fit, design] = xyzs2slep(vals, lon, lat, domain, L, options)
 
