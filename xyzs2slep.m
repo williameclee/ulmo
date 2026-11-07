@@ -3,21 +3,21 @@
 % share coordinates, a retained basis, and any weights or observation errors.
 %
 % Syntax
-%   [C, V, N, fit, design] = xyzs2slep(vals, lon, lat, domain, L)
-%   [C, V, N, fit] = xyzs2slep(vals, design)
+%   [coeffs, V, N, fit, design] = xyzs2slep(vals, lon, lat, domain, L)
+%   [coeffs, V, N, fit] = xyzs2slep(vals, design = d)
 %   [__] = xyzs2slep(__, "Name", Value)
 %
 % Input arguments
-%   vals - Real observations, with one field per column.
+%   vals - Observations to fit, with one field per column.
 %       Rows follow the supplied coordinate order. A vector matching the
 %       coordinate count is treated as one field, in either orientation.
 %       Size: (nPts, nField), or a vector of length nPts for one field.
 %       Unit: field units.
-%   lon - Paired longitudes, supplied as the second argument (grid).
-%       Longitudes are wrapped to [0, 360). Supply design instead to reuse
-%       an earlier sampled basis.
+%   lon (optional) - Paired longitudes, wrapped to [0, 360).
+%       Supply lon, lat, domain, and L together to build a design.
 %       Size: (nPts, 1) or (1, nPts).
 %       Unit: degrees east.
+%       Default value: [].
 %   lat (optional) - Paired latitudes in [-90, 90].
 %       Required with lon; omit when supplying design.
 %       Size: (nPts, 1) or (1, nPts).
@@ -26,8 +26,7 @@
 %   domain (optional) - Region used to construct the Slepian basis.
 %       Accepts a scalar GeoDomain, region name/cell, closed [lon, lat]
 %       polygon, or scalar north-polar cap radius in (0, 180]. Required
-%       with lon; omit when supplying design. Does not clip observations.
-%       Size: scalar, region specification, or (nVertex, 2) polygon.
+%       with lon; omit when supplying design.
 %       Unit: degrees for polygon coordinates and cap radius.
 %       Default value: [].
 %   L (optional) - Nonnegative integer maximum harmonic degree.
@@ -35,11 +34,12 @@
 %       Size: scalar.
 %       Unit: dimensionless.
 %       Default value: [].
-%   design - Sampled basis returned by an earlier call, supplied as grid.
-%       Reuses the same ordered coordinates and retained basis. Omit lat,
-%       domain, L, GVN, and truncation. Supply weights/errors again on each
-%       call; they are not stored in design. See the output fields below.
+%   design (name-value) - Fifth output of an earlier call on the same grid.
+%       Pass design = d to reuse its coordinates and retained basis. Omit
+%       positional geometry, GVN, and truncation. Supply weights or errors
+%       for the current observations. See the output fields below.
 %       Size: scalar structure.
+%       Default design: omitted (evaluated from lon, lat, domain, and L).
 %   GVN (name-value) - Supplied {G, V, N} for the requested domain and L.
 %       G contains real harmonic coefficients in ADDMOUT order. V contains
 %       their concentration eigenvalues; N is the full Shannon number.
@@ -104,7 +104,7 @@
 %       Default count: 1024.
 %
 % Output arguments
-%   C - Coefficients in the retained Slepian basis.
+%   coeffs - Coefficients in the retained Slepian basis.
 %       Uses real spherical harmonics with squared norm 4*pi on the sphere.
 %       Size: (J, nField).
 %       Unit: field units.
@@ -155,14 +155,15 @@
 % Last modified
 %   2026/11/07, En-Chi Lee (williameclee@arizona.edu)
 
-function [C, V, N, fit, design] = xyzs2slep(vals, grid, lat, domain, L, options)
+function [coeffs, V, N, fit, design] = xyzs2slep(vals, lon, lat, domain, L, options)
 
     arguments (Input)
         vals (:, :) {mustBeNumeric, mustBeReal}
-        grid
+        lon = []
         lat = []
         domain = []
         L = []
+        options.design (1, 1) struct
         options.GVN cell = {}
         options.truncation double {mustBeScalarOrEmpty, mustBeFinite, mustBeInteger, mustBePositive} = []
         options.rankTolerance double ...
@@ -178,36 +179,36 @@ function [C, V, N, fit, design] = xyzs2slep(vals, grid, lat, domain, L, options)
     end
 
     %% Resolve coordinates or reuse a sampled design
-    % Optional geometry arguments allow both signatures to use one arguments
-    % block. A returned design already fixes the coordinates and basis.
-    reuseDesign = isstruct(grid);
+    % With an arguments block, nargin counts only supplied positional inputs.
+    reuseDesign = isfield(options, 'design');
 
     if reuseDesign
-        design = grid;
 
-        if ~isempty(lat) || ~isempty(domain) || ~isempty(L)
-            error('ULMO:xyzs2slep:InvalidDesign', 'Do not supply geometry when reusing a design.');
+        if nargin ~= 1 || ~isempty(options.GVN) || ~isempty(options.truncation)
+            error('ULMO:xyzs2slep:InvalidDesign', ...
+            'A saved design fixes the coordinates, basis, and truncation.');
         end
 
-        if ~isscalar(design) || ~all(isfield(design, {'A', 'GVN', 'lon', 'lat'})) || ...
-                ~isempty(options.GVN) || ~isempty(options.truncation)
-            error('ULMO:xyzs2slep:InvalidDesign', 'Supply a returned design without GVN or truncation.');
+        design = options.design;
+
+        if ~all(isfield(design, {'A', 'GVN', 'lon', 'lat'}))
+            error('ULMO:xyzs2slep:InvalidDesign', ...
+            'Supply the design returned by xyzs2slep. It must contain the fields ''A'', ''GVN'', ''lon'', and ''lat''.');
         end
 
-        [lon, lat] = coordinates(design.lon, design.lat);
-    else
-
-        if isempty(L)
-            error('ULMO:xyzs2slep:MissingGeometry', 'Supply longitude, latitude, domain, and L.');
-        end
-
-        design = [];
-        [lon, lat] = coordinates(grid, lat);
+        lon = design.lon;
+        lat = design.lat;
+    elseif any([isempty(lon), isempty(lat), isempty(domain), isempty(L)])
+        error('ULMO:xyzs2slep:MissingGeometry', ...
+        'When a fit design is not provided for reuse, lon, lat, domain, and L must all be provided.');
     end
 
-    %% Validate observations and construct each field's usable mask
+    [lon, lat] = preparecoords(lon, lat);
+
+    %% Validating observations and construct each field's usable mask
     nPts = numel(lon);
 
+    % Validate values
     if isvector(vals) && numel(vals) == nPts
         vals = vals(:);
     end
@@ -220,15 +221,16 @@ function [C, V, N, fit, design] = xyzs2slep(vals, grid, lat, domain, L, options)
         error('ULMO:xyzs2slep:InvalidObservation', 'Infinite observations are invalid.');
     end
 
-    wght = double(options.weight(:));
+    % Validating weights
+    wghts = double(options.weight(:));
 
-    if ~isempty(wght) && (~isvector(options.weight) || numel(wght) ~= nPts || ...
-            any(~isfinite(wght) | wght < 0))
+    if ~isempty(wghts) && (~isvector(options.weight) || numel(wghts) ~= nPts || ...
+            any(~isfinite(wghts) | wghts < 0))
         error('ULMO:xyzs2slep:InvalidWeight', 'Supply one finite nonnegative weight per point.');
     end
 
-    if sum([~isempty(wght), ~isempty(options.dataStd), ...
-                ~isempty(options.dataCovariance), options.estimateNoiseVariance]) > 1
+    % Using prescribed weights and defining weights from data uncertainties are mutually exclusive
+    if sum([~isempty(wghts), ~isempty(options.dataStd), ~isempty(options.dataCovariance), options.estimateNoiseVariance]) > 1
         error('ULMO:xyzs2slep:ConflictingUncertainty', ...
         'Select only one weight or uncertainty model.');
     end
@@ -236,8 +238,8 @@ function [C, V, N, fit, design] = xyzs2slep(vals, grid, lat, domain, L, options)
     % Coordinate validity is shared; missing values can differ by field.
     valid = ~isnan(vals) & ~isnan(lon) & ~isnan(lat);
 
-    if ~isempty(wght)
-        actv = wght > 0;
+    if ~isempty(wghts)
+        actv = wghts > 0;
     else
         actv = true(nPts, 1);
     end
@@ -245,7 +247,9 @@ function [C, V, N, fit, design] = xyzs2slep(vals, grid, lat, domain, L, options)
     % Zero-weight rows are excluded even under the strict missing policy.
     if strcmpi(options.missingPolicy, "error") && any(~valid & actv, 'all')
         error('ULMO:xyzs2slep:MissingObservation', ...
-        'NaN values or coordinates require missingPolicy="omit".');
+            ['NaN are detected in the values or coordinates, ', ...
+             'which are prohibited under the selected missing policy ''error''. ', ...
+         'Use missingPolicy=''omit'' instead.']);
     end
 
     valid = valid & actv;
@@ -254,53 +258,57 @@ function [C, V, N, fit, design] = xyzs2slep(vals, grid, lat, domain, L, options)
     if ~isempty(find(nObs == 0, 1))
         emptyField = find(nObs == 0, 1);
         error('ULMO:xyzs2slep:ObservationSize', ...
-            'Field %d has no usable observations.', emptyField);
+            'Field number %d has no usable observations.', emptyField);
     end
 
-    %% Select the retained basis and check coverage before sampling
+    %% Selecting the retained basis and check coverage before sampling
     sampleRows = true(nPts, 1);
 
     if reuseDesign
         validateattributes(design.A, {'double'}, {'real', '2d', 'nrows', nPts, 'nonempty'});
-        validateBasis(design.GVN);
+        mustBeGVN(design.GVN);
 
         if size(design.A, 2) ~= numel(design.GVN{2})
             error('ULMO:xyzs2slep:InvalidDesign', ...
             'Design columns must match the retained basis.');
         end
 
-        basis = design.GVN;
+        GVN = design.GVN;
         sampled = design.A;
     else
-        basis = selectBasis(domain, L, options);
+        GVN = prepareGVN(domain, L, options);
     end
 
-    [G, V, N] = basis{:};
+    [G, V, N] = GVN{:};
     J = numel(V);
-    field = find(nObs < J, 1);
 
-    if ~isempty(field)
+    invalidFieldId = find(nObs < J, 1);
+
+    if ~isempty(invalidFieldId)
         error('ULMO:xyzs2slep:InvalidTruncation', ...
-            'Field %d has %d usable points for %d coefficients.', field, nObs(field), J);
+            'Field number %d has only %d usable points, which cannot be used to fit %d coefficients.', ...
+            invalidFieldId, nObs(invalidFieldId), J);
     end
 
     % Residual variance needs positive degrees of freedom; supplied absolute
     % errors can also be propagated for an exactly determined fit.
     if options.estimateNoiseVariance
-        field = find(nObs == J, 1);
+        invalidFieldId = find(nObs == J, 1);
 
-        if ~isempty(field)
+        if ~isempty(invalidFieldId)
             error('ULMO:xyzs2slep:NoiseDegreesOfFreedom', ...
-                'Field %d needs positive residual degrees of freedom.', field);
+                ['Field number %d needs positive residual degrees of freedom, ', ...
+             'but the number of observations is equal to the number of coefficients.'], ...
+                invalidFieldId);
         end
 
     end
 
     % Validate the full error model before selecting any field's submatrix.
-    [sigma, cov, fullFactor, source] = prepareUncertainty(options.dataStd, ...
+    [sigma, cov, fsqrtCov, source] = prepareUncertainty(options.dataStd, ...
         options.dataCovariance, options.estimateNoiseVariance, nPts);
 
-    %% Sample the basis and allocate requested outputs
+    %% Sampling the basis and allocate requested outputs
     if ~reuseDesign
 
         % A reusable design must include rows that later fields may activate.
@@ -312,27 +320,27 @@ function [C, V, N, fit, design] = xyzs2slep(vals, grid, lat, domain, L, options)
         sampled = sampleBasis(lon(sampleRows), lat(sampleRows), G, L, options.blockSize);
 
         if nargout >= 5
-            design = struct('A', sampled, 'lon', lon, 'lat', lat, 'GVN', {basis});
+            design = struct('A', sampled, 'lon', lon, 'lat', lat, 'GVN', {GVN});
         end
 
     end
 
-    nField = size(vals, 2);
-    C = zeros(J, nField);
-    fit = struct('nObs', nObs, 'rank', zeros(1, nField), 'condNum', zeros(1, nField), ...
-        'residualRms', zeros(1, nField), 'uncSrc', source, 'coeffStds', [], 'coeffCov', []);
-    wantStd = nargout >= 4 && options.uncertaintyOutput ~= "none" && source ~= "none";
-    wantCov = wantStd && options.uncertaintyOutput == "covariance";
+    nFields = size(vals, 2);
+    coeffs = zeros(J, nFields);
+    fit = struct('nObs', nObs, 'rank', zeros(1, nFields), 'condNum', zeros(1, nFields), ...
+        'residualRms', zeros(1, nFields), 'uncSrc', source, 'coeffStds', [], 'coeffCov', []);
+    wantStd = nargout >= 4 && ~strcmpi(options.uncertaintyOutput, "none") && ~strcmpi(source, "none");
+    wantCov = wantStd && strcmpi(options.uncertaintyOutput, "covariance");
 
     if wantStd
-        fit.coeffStds = zeros(J, nField);
+        fit.coeffStds = zeros(J, nFields);
     end
 
     if wantCov
-        fit.coeffCov = zeros(J, J, nField);
+        fit.coeffCov = zeros(J, J, nFields);
     end
 
-    %% Fit fields with identical masks together
+    %% Fitting fields with identical masks together
     % Shared weights/errors make one factorisation sufficient for each mask.
     [masks, ~, group] = unique(valid.', 'rows');
 
@@ -351,15 +359,15 @@ function [C, V, N, fit, design] = xyzs2slep(vals, grid, lat, domain, L, options)
         % Apply the same transformation to A and data. Standard deviations
         % or a Cholesky factor whiten errors to unit covariance; geometric
         % weights instead define the least-squares objective without errors.
-        if ~isempty(wght)
-            rowScale = sqrt(wght(rows));
+        if ~isempty(wghts)
+            rowScale = sqrt(wghts(rows));
             B = A .* rowScale;
             rhs = data .* rowScale;
         elseif ~isempty(sigma)
             B = A ./ sigma(rows);
             rhs = data ./ sigma(rows);
-        elseif ~isempty(fullFactor)
-            factor = fullFactor;
+        elseif ~isempty(fsqrtCov)
+            factor = fsqrtCov;
 
             % A subset of a Cholesky factor is generally not the factor of
             % the corresponding covariance submatrix, so refactor the subset.
@@ -375,7 +383,7 @@ function [C, V, N, fit, design] = xyzs2slep(vals, grid, lat, domain, L, options)
             error('ULMO:xyzs2slep:WhiteningOverflow', 'Nonfinite scaled values in field %d.', fields(1));
         end
 
-        [C(:, fields), rnk, condition, invFactor] = solveMask(B, rhs, ...
+        [coeffs(:, fields), rnk, condition, invFactor] = solveMask(B, rhs, ...
             fields(1), options.rankTolerance, wantStd);
 
         if nargout < 4
@@ -384,12 +392,12 @@ function [C, V, N, fit, design] = xyzs2slep(vals, grid, lat, domain, L, options)
 
         % Report residuals in field units, before whitening. Only geometric
         % weights enter the reported RMS; observation errors do not.
-        residual = data - A * C(:, fields);
+        res = data - A * coeffs(:, fields);
 
-        if isempty(wght)
-            rms = vecnorm(residual, 2, 1) / sqrt(count);
+        if isempty(wghts)
+            rms = vecnorm(res, 2, 1) / sqrt(count);
         else
-            rms = vecnorm(rowScale .* residual, 2, 1) / norm(rowScale);
+            rms = vecnorm(rowScale .* res, 2, 1) / norm(rowScale);
         end
 
         fit.residualRms(fields) = rms;
@@ -402,7 +410,7 @@ function [C, V, N, fit, design] = xyzs2slep(vals, grid, lat, domain, L, options)
             noiseStd = ones(1, numel(fields));
 
             if options.estimateNoiseVariance
-                noiseStd = vecnorm(residual, 2, 1) / sqrt(count - J);
+                noiseStd = vecnorm(res, 2, 1) / sqrt(count - J);
             end
 
             % Row norms give sqrt(diag(invFactor*invFactor.')) without
@@ -424,25 +432,23 @@ function [C, V, N, fit, design] = xyzs2slep(vals, grid, lat, domain, L, options)
 
 end
 
+%% SOLVEMASK - Solves all fields sharing one transformed design matrix.
+% Solves B * coeffs = rhs.
+%
+% Input arguments
+%   B - Weighted or whitened design. Size: (nObs, J).
+%   rhs - Matching transformed observations. Size: (nObs, nField).
+%   field - Original field index used in errors and warnings. Size: scalar.
+%   tol - Relative singular-value cutoff, or [] for max(nObs, J)*eps.
+%   wantStd - Whether to construct the coefficient covariance factor.
+%
+% Output arguments
+%   coeffs - Fitted coefficients in field units. Size: (J, nField).
+%   rnk, cond - Numerical rank and 2-norm condition number of B.
+%   invFactor - Q*diag(1./s), where Q contains right singular vectors.
+%       invFactor*invFactor.' is the coefficient covariance for unit
+%       transformed observation variance. Size: (J, J), or [] if unused.
 function [coeffs, rnk, cond, invFactor] = solveMask(B, rhs, field, tol, wantStd)
-    %% SOLVEMASK - Solves all fields sharing one transformed design matrix.
-    %
-    % Input arguments
-    %   B - Weighted or whitened design. Size: (nObs, J).
-    %   rhs - Matching transformed observations. Size: (nObs, nField).
-    %   field - Original field index used in errors and warnings. Size: scalar.
-    %   tol - Relative singular-value cutoff, or [] for max(nObs, J)*eps.
-    %   wantStd - Whether to construct the coefficient covariance factor.
-    %
-    % Output arguments
-    %   coeffs - Fitted coefficients in field units. Size: (J, nField).
-    %   rnk, cond - Numerical rank and 2-norm condition number of B.
-    %   invFactor - Q*diag(1./s), where Q contains right singular vectors.
-    %       invFactor*invFactor.' is the coefficient covariance for unit
-    %       transformed observation variance. Size: (J, J), or [] if unused.
-    %
-    % Notes
-    %   Rank-deficient fits raise an error instead of dropping basis modes.
 
     [count, J] = size(B);
     % Solve with the SVD directly rather than forming B.'*B, which would
@@ -477,23 +483,32 @@ function [coeffs, rnk, cond, invFactor] = solveMask(B, rhs, field, tol, wantStd)
 
 end
 
-function [lon, lat] = coordinates(lon, lat)
-    %% COORDINATES - Validates paired coordinates and returns column vectors.
-    %
-    % Input arguments
-    %   lon, lat - Real coordinate vectors of equal length, in degrees.
-    %       Either orientation is accepted. NaNs are left for missingPolicy
-    %       to handle; Inf and latitudes outside [-90, 90] are invalid.
-    %
-    % Output arguments
-    %   lon, lat - Double column vectors in degrees. Size: (nPts, 1).
-    %       Longitude is wrapped to [0, 360); point order is preserved.
+%% PREPARECOORDS - Validates paired coordinates and returns column vectors.
+%
+% Input arguments
+%   lon, lat - Coordinate vectors of equal length, in degrees.
+%       Either orientation is accepted. NaNs are left for missingPolicy
+%       to handle; Inf and latitudes outside [-90, 90] are invalid.
+%
+% Output arguments
+%   lon, lat - Double column vectors in degrees. Size: (nPts, 1).
+%       Longitude is wrapped to [0, 360); point order is preserved.
+function [lon, lat] = preparecoords(lon, lat)
 
-    validateattributes(lon, {'numeric'}, {'real', 'vector'});
-    validateattributes(lat, {'numeric'}, {'real', 'vector'});
+    arguments (Input)
+        lon {mustBeNumeric, mustBeReal, mustBeVector}
+        lat {mustBeNumeric, mustBeReal, mustBeVector}
+    end
+
+    arguments (Output)
+        lon {mustBeNumeric, mustBeReal, mustBeColumn}
+        lat {mustBeNumeric, mustBeReal, mustBeColumn}
+    end
 
     if numel(lat) ~= numel(lon)
-        error('ULMO:xyzs2slep:ObservationSize', 'Supply paired longitude and latitude vectors.');
+        error('ULMO:xyzs2slep:ObservationSize', ...
+            'Length of longitude and latitude vectors must agree, but got lengths %d and %d, respectively.', ...
+            numel(lon), numel(lat));
     end
 
     if any(isinf(lon)) || any(abs(lat) > 90)
@@ -504,65 +519,35 @@ function [lon, lat] = coordinates(lon, lat)
     lat = double(lat(:));
 end
 
-function validateBasis(GVN)
-    %% VALIDATEBASIS - Checks the structure and dimensions of a supplied basis.
-    %
-    % Input arguments
-    %   GVN - Three-element cell {G, V, N}. G is a finite real harmonic
-    %       coefficient matrix with (L+1)^2 rows and at most that many columns.
-    %       V has one finite real eigenvalue per column; N is a finite,
-    %       nonnegative scalar Shannon number. All entries are dimensionless.
-    %
-    % Notes
-    %   This checks representation only, not orthogonality, concentration,
-    %   or whether the basis belongs to the requested geographical domain.
-
-    if ~iscell(GVN) || numel(GVN) ~= 3
-        error('ULMO:xyzs2slep:InvalidBasis', 'Supply {G, V, N}.');
-    end
-
-    [G, V, N] = GVN{:};
-    validateattributes(G, {'double', 'single'}, {'real', 'finite', '2d', 'nonempty'});
-    validateattributes(V, {'numeric'}, {'real', 'finite', 'vector', 'numel', size(G, 2)});
-    validateattributes(N, {'numeric'}, {'real', 'finite', 'scalar', 'nonnegative'});
-
-    if mod(sqrt(size(G, 1)), 1) ~= 0 || size(G, 2) > size(G, 1)
-        error('ULMO:xyzs2slep:InvalidBasis', 'G must have (L+1)^2 rows and at most that many columns.');
-    end
-
-end
-
-function basis = selectBasis(domain, L, options)
-    %% SELECTBASIS - Constructs or accepts a basis and retains its leading modes.
-    %
-    % Input arguments
-    %   domain, L - Region and maximum degree accepted by XYZS2SLEP.
-    %   options - Validated options structure; uses GVN and truncation.
-    %
-    % Output arguments
-    %   basis - Cell {G, V, N} for J retained modes. G is ((L+1)^2, J),
-    %       V is (J, 1), and N is the full scalar Shannon number.
-    %
-    % Notes
-    %   Computed modes are sorted by descending concentration. Supplied
-    %   columns keep their order and signs so coefficients remain comparable
-    %   across calls that use the same basis.
+%% PREPAREGVN - Constructs or accepts a basis and retains its leading modes.
+%
+% Input arguments
+%   domain, L - Region and maximum degree accepted by XYZS2SLEP.
+%   options - Validated options structure; uses GVN and truncation.
+%
+% Output arguments
+%   GVN - Cell {G, V, N} for J retained modes. G is ((L+1)^2, J),
+%       V is (J, 1), and N is the full scalar Shannon number.
+function GVN = prepareGVN(domain, L, options)
 
     validateattributes(L, {'numeric'}, {'real', 'scalar', 'integer', 'nonnegative', 'finite'});
     J = options.truncation;
 
     if ~isempty(options.GVN)
-        validateBasis(options.GVN);
+        mustBeGVN(options.GVN);
         [G, V, N] = options.GVN{:};
 
         if size(G, 1) ~= (L + 1) ^ 2
-            error('ULMO:xyzs2slep:InvalidBasis', 'Supplied basis degree differs from L.');
+            error('ULMO:xyzs2slep:InvalidBasis', ...
+                'Supplied basis degree differs from L. For L = %d, the basis must have %d rows, but the received array has %d.', ...
+                L, (L + 1) ^ 2, size(G, 1));
         end
 
         order = 1:size(G, 2);
     else
 
         if isnumeric(domain) && isscalar(domain)
+            % Use the slepian_alpha routine for polar cap
             validateattributes(domain, {'numeric'}, {'real', 'finite', '>', 0, '<=', 180});
             [G, V, ~, ~, N] = glmalpha(domain, L);
         elseif (isa(domain, 'GeoDomain') && isscalar(domain)) || ischar(domain) || ...
@@ -588,42 +573,46 @@ function basis = selectBasis(domain, L, options)
     end
 
     if J > size(G, 2)
-        error('ULMO:xyzs2slep:InvalidTruncation', 'Truncation exceeds the available basis columns.');
+        error('ULMO:xyzs2slep:InvalidTruncation', ...
+            'Truncation exceeds the available basis columns. The provided basis only contains %d functions, but %d are requested.', ...
+            size(G, 2), J);
     end
 
     G = double(G(:, order(1:J)));
     V = V(:);
-    basis = {G, V(1:J), N};
+    GVN = {G, V(1:J), N};
 end
 
+%% SAMPLEBASIS - Evaluates retained Slepian functions at paired coordinates.
+%
+% Input arguments
+%   lon, lat - Paired column vectors in degrees.
+%       Size: (nPts, 1).
+%   G - Retained real harmonic coefficients.
+%       Size: ((L+1)^2, J).
+%   L - Nonnegative maximum harmonic degree.
+%   blockSize - Positive integer limit on points per harmonic evaluation.
+%
+% Output arguments
+%   A - Dimensionless sampled basis.
+%       Size: (nPts, J).
 function A = sampleBasis(lon, lat, G, L, blockSize)
-    %% SAMPLEBASIS - Evaluates retained Slepian functions at paired coordinates.
-    %
-    % Input arguments
-    %   lon, lat - Paired column vectors in degrees. Size: (nPts, 1).
-    %   G - Retained real harmonic coefficients. Size: ((L+1)^2, J).
-    %   L - Nonnegative maximum harmonic degree. Size: scalar.
-    %   blockSize - Positive integer limit on points per harmonic evaluation.
-    %
-    % Output arguments
-    %   A - Dimensionless sampled basis. Size: (nPts, J).
-    %       Preserves point order; undefined coordinate rows remain NaN.
 
     A = nan(numel(lon), size(G, 2));
-    points = find(~isnan(lon) & ~isnan(lat));
+    pts = find(~isnan(lon) & ~isnan(lat));
     orders = addmout(L);
     % Convert YLM's unit-normalised harmonics and order-dependent phase to
     % the 4*pi real-harmonic convention used by the Slepian coefficients.
     scale = sqrt(4 * pi) * (-1) .^ orders(:);
 
-    for first = 1:blockSize:numel(points)
-        rows = points(first:min(first + blockSize - 1, end));
+    for first = 1:blockSize:numel(pts)
+        rows = pts(first:min(first + blockSize - 1, end));
 
         % The degree-zero harmonic is one in this convention.
         if L == 0
             A(rows, :) = G;
         else
-            Y = ylm([0 L], [], deg2rad(90 - lat(rows)), deg2rad(lon(rows)), [], [], 0, 1);
+            Y = ylm([0, L], [], deg2rad(90 - lat(rows)), deg2rad(lon(rows)), [], [], 0, 1);
             A(rows, :) = (Y .* scale).' * G;
         end
 
@@ -631,26 +620,26 @@ function A = sampleBasis(lon, lat, G, L, blockSize)
 
 end
 
+%% PREPAREUNCERTAINTY - Validates the observation error model on the full grid.
+%
+% Input arguments
+%   sigma - Absolute standard-deviation vector in field units, or [].
+%   cov - Absolute covariance in squared field units, or [].
+%       Size: (cnt, cnt) when supplied.
+%   estimate - Whether to estimate iid residual variance for each field.
+%   cnt - Number of original coordinate pairs. Size: scalar.
+%
+% Output arguments
+%   sigma - Validated full double column vector. Size: (cnt, 1), or [].
+%   cov - Validated full double covariance, with roundoff asymmetry removed.
+%   fac - Lower Cholesky factor satisfying cov = fac*fac.', or [].
+%   src - Error source: "none", "dataStd", "dataCovariance", or "estimatedIid".
+%
+% Notes
+%   The caller checks that sources are mutually exclusive. Validation
+%   includes points omitted from the fit; missing data do not excuse
+%   invalid uncertainties. No jitter or residual rescaling is applied.
 function [sigma, cov, fac, src] = prepareUncertainty(sigma, cov, estimate, cnt)
-    %% PREPAREUNCERTAINTY - Validates the observation error model on the full grid.
-    %
-    % Input arguments
-    %   sigma - Absolute standard-deviation vector in field units, or [].
-    %   cov - Absolute covariance in squared field units, or [].
-    %       Size: (cnt, cnt) when supplied.
-    %   estimate - Whether to estimate iid residual variance for each field.
-    %   cnt - Number of original coordinate pairs. Size: scalar.
-    %
-    % Output arguments
-    %   sigma - Validated full double column vector. Size: (cnt, 1), or [].
-    %   cov - Validated full double covariance, with roundoff asymmetry removed.
-    %   fac - Lower Cholesky factor satisfying cov = fac*fac.', or [].
-    %   src - Error source: "none", "dataStd", "dataCovariance", or "estimatedIid".
-    %
-    % Notes
-    %   The caller checks that sources are mutually exclusive. Validation
-    %   includes points omitted from the fit; missing data do not excuse
-    %   invalid uncertainties. No jitter or residual rescaling is applied.
 
     fac = [];
     src = "none";
