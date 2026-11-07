@@ -6,8 +6,9 @@ function mustBeTimeStep(timeStep)
     end
 
     if (ischar(timeStep) || isstring(timeStep))
+        mustBeTextScalar(timeStep)
 
-        if ~any(strcmpi(timeStep, {'midmonth', 'GRACE'}))
+        if ~strcmpi(timeStep, {'midmonth', 'GRACE'})
             error(eid, 'Time step string must be ''midmonth'' or ''GRACE''. Got "%s".', timeStep);
         end
 
