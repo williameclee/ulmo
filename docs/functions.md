@@ -79,6 +79,7 @@ The ultimate goal is to drop the `_new` suffixes and replace the original functi
 
 | Function name | Description | Package dependencies | Data dependencies |
 | :--- | :--- | :--- | :--- |
+| `ssh2slept` | Fits NASA monthly sea surface height anomalies to a regional Slepian basis and caches the full time series in NetCDF. | | |
 | `ssh2lonlatt` | Reads and converts altimetric SSH data from different missions to gridded data. | | |
 | `steric2lonlatt` | Reads and pre-processed steric sea level data from different datasets to gridded data. | | |
 
