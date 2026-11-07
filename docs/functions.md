@@ -82,6 +82,7 @@ The ultimate goal is to drop the `_new` suffixes and replace the original functi
 | `ssh2slept` | Fits NASA monthly sea surface height anomalies to a regional Slepian basis and caches the full time series in NetCDF. | | |
 | `ssh2lonlatt` | Reads and converts altimetric SSH data from different missions to gridded data. | | |
 | `steric2lonlatt` | Returns steric component grids and optional requested-depth halosteric GMSL on the same dates. | | |
+| `steric2slept` | Fits temporally processed raw steric fields, caches all supported components/depths in NetCDF, and returns separate halosteric GMSL and unit-C00 projection coefficients. | | |
 | `steric2gmsl` | Returns one native global mean steric sea level series for a selected component and depth; caches all supported means. | | |
 
 #### Data Pre-Processing
