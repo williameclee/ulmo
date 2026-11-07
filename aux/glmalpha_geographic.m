@@ -21,16 +21,19 @@
 %       function supports the argument 'rotated'.
 %   ldim - The dimension of the kernel
 %   bp - is a band-pass L
+%   saveData (optional) - Whether to save kernel and quadrature cache files.
+%       Default flag: true.
 %
 % See also
 %   GLMALPHA, KERNELC, KERNELCP, LOCALIZATION
 %
-% Last modified by
-% 	2025/11/03, williameclee@arizona.edu
+% Last modified
+%   2026/11/05, En-Chi Lee (williameclee@gmail.com)
 
 function [G, V, N] = glmalpha_geographic( ...
         L, domain, upscale, isAntiDomain, rotateBack, ldim, isBp, ...
-        EL, EM, xver, beQuiet, forceNew, mesg, callChain)
+        EL, EM, xver, forceNew, saveData, beQuiet, mesg, callChain)
+
     %% Computing the kernel
     % See if we can run this calculation in parallel
     canRunParallel = license('test', 'distrib_computing_toolbox') && ...
@@ -38,9 +41,9 @@ function [G, V, N] = glmalpha_geographic( ...
         parpool('processes').NumWorkers > 0 || ...
         ~verLessThan('matlab', '8.2'));
     % Actually computing the kernel
-    if canRunParallel
-        Kernel = kernelcp_new(L, domain, upscale, "ForceNew", forceNew, ...
-            "BeQuiet", beQuiet, "CallChain", callChain);
+    if canRunParallel || ~saveData
+        Kernel = kernelcp_new(L, domain, upscale, ...
+            "ForceNew", forceNew, "SaveData", saveData, "BeQuiet", beQuiet, "CallChain", callChain);
     else
         Kernel = kernelc(L, domain, upscale);
     end

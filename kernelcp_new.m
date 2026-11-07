@@ -46,6 +46,8 @@
 %           have to apply counterrotation after diagonalizing in
 %           LOCALIZATION.
 %       The default value is 0.
+%   SaveData (name-value) - Whether to save kernel and quadrature cache files.
+%       Default flag: true.
 %
 % Output arguments
 %   Kernel - The localization kernel whose eigenfunctions we want,
@@ -75,7 +77,7 @@
 %   PLOTSLEP, PLM2AVG, KERNELC, LEGENDREPRODINT, DLMLMP
 %
 % Last modified by
-%   2026/09/25, williameclee@arizona.edu (@williameclee)
+%   2026/11/05, En-Chi Lee (williameclee@gmail.com)
 %   2023/11/11, fjsimons@alum.mit.edu (@fjsimons)
 %   2017/05/26, plattner@alumni.ethz.ch (@AlainPlattner)
 %   2016/09/23, charig@princeton.edu (@harig00)
@@ -127,8 +129,8 @@ function varargout = kernelcp_new(varargin)
         data = load(outputPath1, vars{:});
 
         if beQuiet <= 1
-            fprintf('[ULMO>%s] Loaded <a href="matlab: fprintf(''%s\\n'');open(''%s'')">localisation kernel</a>.\n', ...
-                callchaintext(callChain), outputPath1, outputPath1);
+            fprintf('[ULMO>%s] Loaded %s.\n', ...
+                callchaintext(callChain), filehref(outputPath1, 'localisation kernel'));
         end
 
         varargout = {data.Klmlmp, data.XY, data.K1, data.K};
@@ -140,8 +142,8 @@ function varargout = kernelcp_new(varargin)
         data = load(outputPath2, vars{:});
 
         if beQuiet <= 1
-            fprintf('[ULMO>%s] Loaded <a href="matlab: fprintf(''%s\\n'');open(''%s'')">localisation kernel</a>.\nConsider moving your kernel files back to the KERNELC directory\n', ...
-                callchaintext(callChain), outputPath1, outputPath1);
+            fprintf('[ULMO>%s] Loaded %s.\nConsider moving your kernel files back to the KERNELC directory\n', ...
+                callchaintext(callChain), filehref(outputPath1, 'localisation kernel'));
         end
 
         varargout = {data.Klmlmp, data.XY, data.K1, data.K};
@@ -152,8 +154,8 @@ function varargout = kernelcp_new(varargin)
     if beQuiet == 0
         t = tic;
         templine = 'this may take a while...';
-        fprintf('[ULMO><a href="matlab: open(''%s'')">%s</a>] Computing localisation kernel, %s\n', ...
-            mfilename("fullpath"), mfilename, templine);
+        fprintf('[ULMO>%s] Computing localisation kernel, %s\n', ...
+            callchaintext(callChain), templine);
     end
 
     if strcmp(domain, 'patch')
@@ -310,7 +312,11 @@ function varargout = kernelcp_new(varargin)
         nGL = max(ngl, 2 * Lmax);
         % These are going to be the required colatitudes - forget XY
         [w, x, N] = gausslegendrecof(nGL, [], intv);
-        save(fullfile(getenv('IFILES'), 'gausslegendrecof.mat'), 'w', 'x', 'N')
+
+        if saveData
+            save(fullfile(getenv('IFILES'), 'gausslegendrecof.mat'), 'w', 'x', 'N')
+        end
+
         % fprintf('%s calculated %i Gauss-Legendre points and weights\n', upper(mfilename), N)
 
         % First calculate the Legendre functions themselves
@@ -462,7 +468,7 @@ function varargout = kernelcp_new(varargin)
         elseif isa(domain, 'GeoDomain')
             [XY, lonc, latc] = feval(domain.Domain, "Upscale", domain.Upscale, "Buffer", domain.Buffer);
         else
-            error(sprintf('ULMO:%s:CannotRotate', upper(mfilename)), ...
+            error('ULMO:kernelcp_new:CannotRotate', ...
                 'Domain type %s not recognised for rotation', upper(class(domain)))
         end
 
@@ -490,8 +496,8 @@ function varargout = kernelcp_new(varargin)
         'lonc', 'latc', 'K1', 'K', '-v7.3')
 
     if beQuiet <= 1
-        fprintf('[ULMO>%s] Saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">localisation kernel</a>.\n', ...
-            callchaintext(callChain), outputPath1, outputPath1);
+        fprintf('[ULMO>%s] Saved %s.\n', ...
+            callchaintext(callChain), filehref(outputPath1, 'localisation kernel'));
     end
 
 end
