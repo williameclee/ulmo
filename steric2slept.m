@@ -147,6 +147,9 @@
 %
 % Created by
 %   2026/11/05, En-Chi Lee
+%
+% Last modified
+%   2026/11/07, En-Chi Lee
 
 function [stericSlept, dates, fit, GVN, halostericGmsl, constantSlept] = ...
         steric2slept(product, domain, L, timestep, timeRange, options)
@@ -433,7 +436,7 @@ function [coefficients, fits, buffer, weighting] = fitRecord(fields, dates, lon,
                 [c, ~, ~, stats, design] = xyzs2slep(values(:, epochs), gridLon(points), gridLat(points), ...
                     domain, L, GVN=basis, truncation=J, weight=weights, missingPolicy="omit");
             else
-                [c, ~, ~, stats] = xyzs2slep(values(:, epochs), design, weight=weights, missingPolicy="omit");
+                [c, ~, ~, stats] = xyzs2slep(values(:, epochs), design = design, weight=weights, missingPolicy="omit");
             end
         catch cause
             field = regexpi(cause.message, '\bfield (\d+)\b', 'tokens', 'once');
