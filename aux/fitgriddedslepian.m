@@ -121,7 +121,7 @@ function [coefficients, fits, buffer, weighting] = fitgriddedslepian(fields, dat
                 [c, ~, ~, stats, design] = xyzs2slep(values(:, epochs), gridLon(points), gridLat(points), ...
                     domain, L, GVN=basis, truncation=J, weight=weights, missingPolicy="omit");
             else
-                [c, ~, ~, stats] = xyzs2slep(values(:, epochs), design, weight=weights, missingPolicy="omit");
+                [c, ~, ~, stats] = xyzs2slep(values(:, epochs), design = design, weight=weights, missingPolicy="omit");
             end
         catch cause
             field = regexpi(cause.message, '\bfield (\d+)\b', 'tokens', 'once');
