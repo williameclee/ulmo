@@ -48,6 +48,22 @@ classdef epochAveragingTest < matlab.unittest.TestCase
             testCase.verifyEqual(averages(:), single([-0.5; NaN]));
         end
 
+        function testPlainMeansKeepNativeSamples(testCase)
+            % Grid means accept duplicate, out-of-order and zoned timestamps.
+            start = datetime(2020, 1, 1, 'TimeZone', 'UTC');
+            dates = start + days([1, 0, 1, 2]);
+            data = reshape([2, 5, 8, Inf], 1, 1, []);
+            epochs = start + days([0, 2; 1, 3; 3, 4]);
+            testCase.verifyWarningFree(@() averageepochs(dates, data, epochs));
+            [values, midpoints] = averageepochs(dates, data, epochs);
+            testCase.verifyEqual(values(:), [5; Inf; NaN]);
+            testCase.verifyEqual(midpoints, mean(epochs, 2));
+            testCase.verifyError(@() averageepochs(dates, data, fliplr(epochs)), ...
+                'ULMO:Epochs:InvalidWindows');
+            testCase.verifyError(@() averageepochs(dates, 1, epochs), ...
+                'ULMO:Epochs:DimensionMismatch');
+        end
+
         function testMonthlyMeanWindows(testCase)
             % Selecting a midpoint keeps the entire leap-year February window.
             dates = datetime(2020, 1, 1) + days(0:90);
