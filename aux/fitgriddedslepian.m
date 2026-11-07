@@ -1,12 +1,12 @@
-%% FITGRIDDEDSLEPIAN - Fit named rectangular-grid fields to a retained basis.
+%% FITGRIDDEDSLEPIAN - Fits named rectangular-grid fields to a retained basis.
 %
 % Syntax
-%   [coefficients, fits, buffer, weighting] = FITGRIDDEDSLEPIAN( ...
-%       fields, dates, lon, lat, domain, L, basis, SaveData=false)
+%   [coeffs, fits, buffer, weighting] = FITGRIDDEDSLEPIAN( ...
+%       fields, dates, lon, lat, domain, L, GVN, SaveData=false)
 %
 % Input arguments
-%   fields - Scalar structure of real single/double grids. Each field must
-%       use (longitude, latitude, time) ordering, including square grids.
+%   fields - Scalar structure of real single/double grids.
+%       Each field must use (longitude, latitude, time) ordering, including square grids.
 %       Missing observations are NaN. Field names have no physical meaning
 %       here. Arrays share coordinates and dates, but may have different masks.
 %   dates - Strictly increasing datetime vector, one date per epoch.
@@ -15,7 +15,7 @@
 %   domain - Target domain accepted by DOMAINMASK.
 %   L - Nonnegative integer harmonic degree. Positive degrees use a 90/L
 %       degree spherical exterior buffer; degree zero uses only the target.
-%   basis - Retained {G,V,N} prepared by PREPARESLEPIANBASIS.
+%   GVN - Retained {G,V,N} prepared by PREPARESLEPIANBASIS.
 %   SaveData (name-value) - Whether exterior-mask caches may be saved.
 %       Default flag: true.
 %   ForceNew (name-value) - Whether exterior masks must be recalculated.
@@ -24,7 +24,7 @@
 %       is required by the caller. Default flag: false.
 %
 % Output arguments
-%   coefficients - Structure with the input field names, each (nTime, J).
+%   coeffs - Structure with the input field names, each (nTime, J).
 %       Unit: same as the corresponding input field.
 %   fits - Structure of per-field tables with nObs, areaFraction, condNum
 %       and residualRms. Counts include positive-area buffer observations;
@@ -45,100 +45,115 @@
 %   preparegridcoordinates, prepareslepianbasis, xyzs2slep, domainmask
 %
 % Created by
-%   2026/11/06, En-Chi Lee
-%
-% Last modified
-%   2026/11/07, En-Chi Lee
+%   2026/11/07, En-Chi Lee (williameclee@gmail.com)
 
-function [coefficients, fits, buffer, weighting] = fitgriddedslepian(fields, dates, lon, lat, domain, L, basis, options)
+function [coeffs, fits, buf, wghtMthd] = fitgriddedslepian( ...
+        fields, dates, lon, lat, domain, L, GVN, options)
+
     arguments (Input)
         fields (1, 1) struct
-        dates datetime
+        dates datetime {mustBeVector, mustBeNonempty, mustBeFinite}
         lon
         lat
         domain
         L (1, 1) double {mustBeFinite, mustBeInteger, mustBeNonnegative}
-        basis cell
+        GVN cell {mustBeGVN}
+        options.RequireGlobalLongitude (1, 1) logical = false
         options.SaveData (1, 1) logical = true
         options.ForceNew (1, 1) logical = false
-        options.RequireGlobalLongitude (1, 1) logical = false
     end
-    nLon = numel(lon); nLat = numel(lat);
-    [lon, lat, keepLon, orderLat, weights, weighting] = preparegridcoordinates( ...
-        lon, lat, RequireGlobalLongitude=options.RequireGlobalLongitude);
-    assert(isvector(dates) && ~isempty(dates) && ~any(isnat(dates)) && ...
-        all(diff(dates(:)) > seconds(0)), 'ULMO:fitgriddedslepian:EmptyRecord', ...
-        'Supply nonempty strictly increasing epoch dates.');
+
+    nLon = numel(lon);
+    nLat = numel(lat);
+    [lon, lat, keepLon, orderLat, wghts, wghtMthd] = preparegridcoordinates( ...
+        lon, lat, RequireGlobalLongitude = options.RequireGlobalLongitude);
     dates = dates(:);
     names = fieldnames(fields);
     assert(~isempty(names), 'ULMO:fitgriddedslepian:EmptyRecord', 'Supply at least one field.');
-    observedAnywhere = false(nLon, nLat);
+    hasAnyObs = false(nLon, nLat);
+
     for iField = 1:numel(names)
-        values = fields.(names{iField});
-        assert((isa(values, 'double') || isa(values, 'single')) && isreal(values) && ...
-            ndims(values) <= 3 && isequal(size(values, 1:3), [nLon, nLat, numel(dates)]), ...
+        vals = fields.(names{iField});
+        assert((isa(vals, 'double') || isa(vals, 'single')) && isreal(vals) && ...
+            ndims(vals) <= 3 && isequal(size(vals, 1:3), [nLon, nLat, numel(dates)]), ...
             'ULMO:fitgriddedslepian:InvalidGrid', ...
             'Field %s must have longitude-by-latitude-by-time dimensions.', names{iField});
-        observedAnywhere = observedAnywhere | any(~isnan(values), 3);
+        hasAnyObs = hasAnyObs | any(~isnan(vals), 3);
     end
-    mask = domainmask(domain, lon, lat, Format='ndgrid', SaveData=false, BeQuiet=true);
-    buffer = 0;
-    if L > 0, buffer = 90/L; end
-    observationMask = mask;
-    if buffer > 0
-        observationMask = domainmask(domain, lon, lat, Format='ndgrid', ...
-            exteriorBuffer=buffer, SaveData=options.SaveData, ForceNew=options.ForceNew, BeQuiet=true);
+
+    mask = domainmask(domain, lon, lat, Format = 'ndgrid', SaveData = options.SaveData, BeQuiet = true);
+
+    if L > 0
+        buf = 90 / L;
+        obsMask = domainmask(domain, lon, lat, Format = 'ndgrid', ...
+            exteriorBuffer = buf, SaveData = options.SaveData, ForceNew = options.ForceNew, BeQuiet = true);
+    else
+        obsMask = mask;
     end
+
     [gridLon, gridLat] = ndgrid(lon, lat);
-    totalArea = sum(weights(mask));
+    totalArea = sum(wghts(mask));
     assert(totalArea > 0, 'ULMO:fitgriddedslepian:EmptyTarget', 'The target contains no positive-area grid cells.');
     % Retain rows used by any field, including fields fitted later. This
     % avoids sampling permanently missing cells in the single-field SSH path.
-    points = find(observationMask & weights > 0 & observedAnywhere(keepLon, orderLat));
-    weights = weights(points);
-    target = mask(points);
-    % The caller selects and validates the retained basis once. XYZS2SLEP
-    % validates it again when sampling; no columns are selected here.
-    J = size(basis{1}, 2);
+    pts = find(obsMask & wghts > 0 & hasAnyObs(keepLon, orderLat));
+    wghts = wghts(pts);
+    target = mask(pts);
+    % Implicitly assumes that the supplied basis only contains the basis functions wanted
+    J = size(GVN{1}, 2);
     nTime = numel(dates);
-    assert(nTime > 0, 'ULMO:fitgriddedslepian:EmptyRecord', 'Temporal selection produced no epochs.');
     design = [];
-    coefficients = struct();
+    coeffs = struct();
     fits = struct();
+
     for name = string(fieldnames(fields)).'
-        values = fields.(name)(keepLon, orderLat, :);
-        values = reshape(values, [], nTime);
-        values = values(points, :);
-        assert(~any(isinf(values), 'all'), 'ULMO:fitgriddedslepian:InvalidObservation', ...
+        vals = fields.(name)(keepLon, orderLat, :);
+        vals = reshape(vals, [], nTime);
+        vals = vals(pts, :);
+        assert(~any(isinf(vals), 'all'), 'ULMO:fitgriddedslepian:InvalidObservation', ...
             '%s contains infinite observations.', name);
-        observed = isfinite(values);
+        observed = isfinite(vals);
         nObs = sum(observed, 1).';
         areaFraction = zeros(nTime, 1);
+
         if any(target)
-            areaFraction = min(1, (weights(target).' * observed(target, :)).' / totalArea);
+            areaFraction = min(1, (wghts(target).' * observed(target, :)).' / totalArea);
         end
+
         epochs = find(nObs > 0);
-        assert(~isempty(epochs), 'ULMO:fitgriddedslepian:EmptyRecord', 'No observed cells for %s.', name);
+        assert(~isempty(epochs), 'ULMO:fitgriddedslepian:EmptyRecord', ...
+            'No observed cells for %s across all epochs.', name);
+
         try
+
             if isempty(design)
-                [c, ~, ~, stats, design] = xyzs2slep(values(:, epochs), gridLon(points), gridLat(points), ...
-                    domain, L, GVN=basis, truncation=J, weight=weights, missingPolicy="omit");
+                [c, ~, ~, stats, design] = xyzs2slep( ...
+                    vals(:, epochs), gridLon(pts), gridLat(pts), ...
+                    domain, L, GVN = GVN, truncation = J, weight = wghts, missingPolicy = "omit");
             else
-                [c, ~, ~, stats] = xyzs2slep(values(:, epochs), design = design, weight=weights, missingPolicy="omit");
+                [c, ~, ~, stats] = xyzs2slep(vals(:, epochs), design = design, ...
+                    weight = wghts, missingPolicy = "omit");
             end
+
         catch cause
             field = regexpi(cause.message, '\bfield (\d+)\b', 'tokens', 'once');
-            context = "Fit failed for " + name;
-            if ~isempty(field), context = context + " at " + string(dates(epochs(str2double(field{1})))); end
-            throwAsCaller(addCause(MException('ULMO:fitgriddedslepian:FitFailed', '%s: %s', context, cause.message), cause));
+            ctx = "Fit failed for " + name;
+
+            if ~isempty(field)
+                ctx = ctx + " at " + string(dates(epochs(str2double(field{1}))));
+            end
+
+            throwAsCaller(addCause(MException('ULMO:fitgriddedslepian:FitFailed', '%s: %s', ctx, cause.message), cause));
         end
+
         coeffs = nan(nTime, J);
         condNum = nan(nTime, 1);
-        residualRms = nan(nTime, 1);
+        resRms = nan(nTime, 1);
         coeffs(epochs, :) = c.';
         condNum(epochs) = stats.condNum;
-        residualRms(epochs) = stats.residualRms;
-        coefficients.(name) = coeffs;
-        fits.(name) = table(nObs, areaFraction, condNum, residualRms);
+        resRms(epochs) = stats.residualRms;
+        coeffs.(name) = coeffs;
+        fits.(name) = table(nObs, areaFraction, condNum, resRms);
     end
+
 end

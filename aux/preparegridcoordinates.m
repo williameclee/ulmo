@@ -1,7 +1,7 @@
-%% PREPAREGRIDCOORDINATES - Validate and order a rectangular geographic grid.
+%% PREPAREGRIDCOORDINATES - Validates and order a rectangular geographic grid.
 %
 % Syntax
-%   [lon, lat, iLon, iLat, weights, weighting] = PREPAREGRIDCOORDINATES(lon, lat)
+%   [lon, lat, iLon, iLat, weights, wghtMthd] = PREPAREGRIDCOORDINATES(lon, lat)
 %   [__] = PREPAREGRIDCOORDINATES(__, RequireGlobalLongitude=true)
 %
 % Input arguments
@@ -22,7 +22,7 @@
 %       orientation is inferred, and longitude values are not wrapped.
 %   weights - Relative cell areas in (longitude, latitude) order.
 %       Size: (numel(lon), numel(lat)); dimensionless.
-%   weighting - 'cosine-latitude' or 'spherical-midpoint-bands'.
+%   wghtMthd - 'cosine-latitude' or 'spherical-midpoint-bands'.
 %       Uniform latitude uses cosd(lat). Nonuniform latitude uses spherical
 %       bands between arithmetic midpoints, with half-step outer boundaries
 %       clipped at the poles. Regular longitude spacing cancels in ratios.
@@ -33,47 +33,62 @@
 % Created by
 %   2026/11/06, En-Chi Lee
 
-function [lon, lat, iLon, iLat, weights, weighting] = preparegridcoordinates(lon, lat, options)
+function [lon, lat, iLon, iLat, wghts, wghtMthd] = preparegridcoordinates(lon, lat, options)
+
     arguments (Input)
-        lon
-        lat
+        lon {mustBeReal, mustBeFinite, mustBeVector}
+        lat {mustBeReal, mustBeFinite, mustBeVector, mustBeBetween(lat, -90, 90)}
         options.RequireGlobalLongitude (1, 1) logical = false
     end
-    if ~isnumeric(lon) || ~isnumeric(lat) || ~isvector(lon) || ~isvector(lat) || ...
-            ~isreal(lon) || ~isreal(lat) || any(~isfinite(lon(:))) || ...
-            any(~isfinite(lat(:))) || numel(lon) < 2 || numel(lat) < 2 || any(abs(lat) > 90)
-        error('ULMO:preparegridcoordinates:InvalidGrid', 'Expected finite longitude/latitude coordinate vectors.');
-    end
-    lon = double(lon(:)); lat = double(lat(:));
-    tolerance = 3e-5;
-    longitudeStep = lon(2) - lon(1);
-    latitudeSteps = diff(lat);
-    if longitudeStep == 0 || any(abs(diff(lon) - longitudeStep) > tolerance) || ...
-            ~(all(diff(lon) > 0) || all(diff(lon) < 0)) || ...
-            ~(all(latitudeSteps > 0) || all(latitudeSteps < 0))
+
+    if numel(lon) < 2 || numel(lat) < 2
         error('ULMO:preparegridcoordinates:InvalidGrid', ...
-            'Longitude must be regularly spaced and latitude must be strictly monotone.');
+        'Expected longitude/latitude coordinate vectors of at least length 2.');
     end
+
+    lon = double(lon(:));
+    lat = double(lat(:));
+    tol = 3e-5;
+    lonStep = lon(2) - lon(1);
+    latSteps = diff(lat);
+
+    if lonStep == 0 || any(abs(diff(lon) - lonStep) > tol) || ...
+            ~(all(diff(lon) > 0) || all(diff(lon) < 0)) || ...
+            ~(all(latSteps > 0) || all(latSteps < 0))
+        error('ULMO:preparegridcoordinates:InvalidGrid', ...
+        'Longitude must be regularly spaced and latitude must be strictly monotone.');
+    end
+
     iLon = (1:numel(lon)).';
-    if abs(abs(lon(end) - lon(1)) - 360) <= tolerance, iLon(end) = []; end
-    if abs(lon(end) - lon(1)) > 360 + tolerance
-        error('ULMO:preparegridcoordinates:InvalidGrid', 'Longitude cannot span more than one cycle.');
+
+    if abs(abs(lon(end) - lon(1)) - 360) <= tol
+        % The first and last longitude ar the same (e.g. 0° and 360°)
+        iLon(end) = [];
+    elseif abs(lon(end) - lon(1)) > 360 + tol
+        error('ULMO:preparegridcoordinates:InvalidGrid', ...
+        'Longitude cannot span more than one cycle.');
+    elseif options.RequireGlobalLongitude && ...
+            abs(numel(iLon) * abs(lonStep) - 360) > tol * numel(lon)
+        error('ULMO:preparegridcoordinates:InvalidGrid', ...
+        'Longitude must cover one complete periodic grid.');
     end
-    if options.RequireGlobalLongitude && ...
-            abs(numel(iLon)*abs(longitudeStep) - 360) > tolerance*numel(lon)
-        error('ULMO:preparegridcoordinates:InvalidGrid', 'Longitude must cover one complete periodic grid.');
-    end
-    [lon, order] = sort(lon(iLon)); iLon = iLon(order);
+
+    [lon, order] = sort(lon(iLon));
+    iLon = iLon(order);
     [lat, iLat] = sort(lat);
-    latitudeSteps = diff(lat);
-    if all(abs(latitudeSteps - latitudeSteps(1)) <= tolerance)
-        latitudeWeights = cosd(lat);
-        weighting = 'cosine-latitude';
+    latSteps = diff(lat);
+
+    if all(abs(latSteps - latSteps(1)) <= tol)
+        latWghts = cosd(lat);
+        wghtMthd = 'cosine-latitude';
     else
-        edges = [lat(1)-latitudeSteps(1)/2; (lat(1:end-1)+lat(2:end))/2; ...
-            lat(end)+latitudeSteps(end)/2];
-        latitudeWeights = diff(sind(max(-90, min(90, edges))));
-        weighting = 'spherical-midpoint-bands';
+        edges = [lat(1) - latSteps(1) / 2; ...
+                     (lat(1:end - 1) + lat(2:end)) / 2; ...
+                     lat(end) + latSteps(end) / 2];
+        edges = max(-90, min(90, edges));
+        latWghts = diff(sind(edges));
+        wghtMthd = 'spherical-midpoint-bands';
     end
-    weights = repmat(latitudeWeights.', numel(lon), 1);
+
+    wghts = repmat(latWghts.', numel(lon), 1);
 end
