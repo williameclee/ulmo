@@ -10,7 +10,10 @@
 %   Each test writes synthetic MAT files to a temporary IFILES folder.
 %
 % Created by
-%   2026/11/08, En-Chi Lee (williameclee@gmail.com)
+%   2026/11/04, En-Chi Lee (williameclee@gmail.com)
+%
+% Last modified
+%   2026/11/08, OpenAI Codex
 
 classdef steric2gmslTest < matlab.unittest.TestCase
 
@@ -76,7 +79,7 @@ classdef steric2gmslTest < matlab.unittest.TestCase
         end
 
         function directLayersRetainZeroContributions(testCase)
-            shallow = steric2gmsl('EN4c14', "halosteric", "shallow", BeQuiet = true);
+            shallow = steric2gmsl('EN4c14', "halosteric", "shallow");
             deep = steric2gmsl('EN4c14', "halosteric", "deep", BeQuiet = true);
             full = steric2gmsl('EN4c14', "halosteric", BeQuiet = true);
             testCase.verifyEqual(shallow, 10/3 + (0:4)', AbsTol = 1e-12);
@@ -229,19 +232,36 @@ classdef steric2gmslTest < matlab.unittest.TestCase
         end
 
         function fractionalSingleLongitudeCoordinates(testCase)
-            % Single-precision rounding on a regular 1/12-degree grid must
-            % not reject equivalent negative, zero or positive origins.
+            % Rounding at the positive end of the grid also affects reversed grids.
             dates = testCase.data.dates;
-
             for lonOrigin = [-180, 0, 20]
-                testCase.data = struct('lon', single(lonOrigin + (0:4319) / 12), ...
-                    'lat', [-1; 1], 'dates', dates, ...
-                    'thermostericSl', ones(2, 4320, numel(dates), 'single'));
-                testCase.writeNative;
-                actual = steric2gmsl('EN4c14', "thermosteric", SaveData = false, BeQuiet = true);
-                testCase.verifyEqual(actual, ones(numel(dates), 1), AbsTol = 1e-12);
+                lon = single(lonOrigin + (0:4319) / 12);
+                for descending = [false, true]
+                    if descending
+                        lon = flip(lon);
+                    end
+                    testCase.data = struct('lon', lon, 'lat', [-1; 1], 'dates', dates, ...
+                        'thermostericSl', ones(2, numel(lon), numel(dates), 'single'));
+                    testCase.writeNative;
+                    actual = steric2gmsl('EN4c14', "thermosteric", SaveData = false, BeQuiet = true);
+                    testCase.verifyEqual(actual, ones(numel(dates), 1), AbsTol = 1e-12);
+                end
             end
+        end
 
+        function missingLongitudeMeridianFailsBeforeSaving(testCase)
+            % A missing meridian can lie at the wraparound or inside the grid.
+            for missingIndex = [2160, 4320]
+                lon = (0:4319) / 12;
+                lon(missingIndex) = [];
+                testCase.data = struct('lon', lon, 'lat', [-1; 1], ...
+                    'dates', datetime(2020, 1, 1), 'stericSl', ones(2, numel(lon)));
+                testCase.writeNative;
+                before = testCase.fileBytes;
+                testCase.verifyError(@() steric2gmsl('EN4c14', "total"), ...
+                    'ULMO:steric2gmsl:InvalidGrid');
+                testCase.verifyEqual(testCase.fileBytes, before);
+            end
         end
 
         function nonuniformLatitudeMidpointAreas(testCase)

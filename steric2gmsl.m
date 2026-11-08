@@ -32,7 +32,11 @@
 %
 % Input file content
 %   lon - Regular longitude coordinate vector spanning one complete cycle.
-%       A duplicated cyclic endpoint is permitted.
+%       Coordinates may ascend or descend and may repeat the cyclic endpoint.
+%       Offsets from the first meridian must match a regular 360-degree grid.
+%       The tolerance is 3e-5 degrees or one single-precision spacing at the
+%       largest absolute longitude, whichever is larger for single inputs.
+%       It is capped at 90 degrees divided by the stored longitude count.
 %       Size: vector with nLon elements.
 %       Unit: degrees east.
 %   lat - Strictly monotone latitude coordinate vector in [-90, 90].
@@ -86,7 +90,10 @@
 %   steric2lonlatt, stericfilepath
 %
 % Created by
-%   2026/11/08, En-Chi Lee (williameclee@gmail.com)
+%   2026/11/04, En-Chi Lee (williameclee@gmail.com)
+%
+% Last modified
+%   2026/11/08, OpenAI Codex
 
 function [gmsl, dates] = steric2gmsl(product, type, depth, options)
 
@@ -148,7 +155,7 @@ function [gmsl, dates] = steric2gmsl(product, type, depth, options)
             save(inPath, '-struct', 'means', '-append');
 
             if options.BeQuiet < 1
-                fprintf('[ULMO>%s] Saved native means for %s.\n', mfilename, filehref(product, inPath));
+                fprintf('[ULMO>%s] Saved native means for %s.\n', mfilename, filehref(inPath, char(product)));
             end
 
         end
@@ -302,24 +309,30 @@ function [dates, wghts, keepLon, transposeGrid] = coordinates(coord, metadata, n
         error('ULMO:steric2gmsl:InvalidGrid', 'Expected finite longitude/latitude coordinate vectors.');
     end
 
-    steps = [lon(2) - lon(1), lat(2) - lat(1)];
-    tol = 3e-5; % Allows single-precision coordinate rounding, in degrees.
+    tol = 3e-5; % Coordinate tolerance in degrees.
     latSteps = diff(lat);
-
-    if steps(1) == 0 || any(abs(diff(lon) - steps(1)) > tol) || ...
-            ~(all(latSteps > 0) || all(latSteps < 0))
-        error('ULMO:steric2gmsl:InvalidGrid', ...
-        'Longitude must be regularly spaced and latitude must be strictly monotone.');
+    if ~(all(latSteps > 0) || all(latSteps < 0))
+        error('ULMO:steric2gmsl:InvalidGrid', 'Latitude must be strictly monotone.');
     end
 
+    % Both endpoints of an offset can carry single-precision rounding.
+    lonTolerance = tol;
+    if isa(coord.lon, 'single')
+        lonTolerance = max(lonTolerance, double(eps(max(abs(coord.lon(:))))));
+    end
+    % Keep adjacent meridians distinguishable even on very fine grids.
+    lonTolerance = min(lonTolerance, 90 / numel(lon));
+    lonSpan = lon(end) - lon(1);
     keepLon = 1:numel(lon);
-
-    if abs(abs(lon(end) - lon(1)) - 360) <= tol
+    if abs(abs(lonSpan) - 360) <= lonTolerance
         keepLon(end) = [];
     end
 
-    if abs(numel(keepLon) * abs(steps(1)) - 360) > tol * numel(lon)
-        error('ULMO:steric2gmsl:InvalidGrid', 'Longitude must cover one complete periodic grid.');
+    % A complete cycle fixes the spacing independently of the first interval.
+    lonStep = sign(lonSpan) * 360 / numel(keepLon);
+    expectedOffsets = (0:numel(lon) - 1)' * lonStep;
+    if lonSpan == 0 || any(abs((lon - lon(1)) - expectedOffsets) > lonTolerance)
+        error('ULMO:steric2gmsl:InvalidGrid', 'Longitude must cover one complete regular periodic grid.');
     end
 
     dates = coord.dates;
@@ -356,7 +369,7 @@ function [dates, wghts, keepLon, transposeGrid] = coordinates(coord, metadata, n
         transposeGrid = thisTranspose;
     end
 
-    if all(abs(latSteps - steps(2)) <= tol)
+    if all(abs(latSteps - latSteps(1)) <= tol)
         latWghts = cosd(lat);
     else
         bdrys = [lat(1) - latSteps(1) / 2; ...
