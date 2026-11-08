@@ -43,7 +43,7 @@ The ultimate goal is to drop the `_new` suffixes and replace the original functi
 | `plm2xyz` | Projects spherical harmonics onto latitude-longitude grids/points. | [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git) | none | Replacement for `plm2xyz` in [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git). |
 | `slep2plm_new` | Projects Slepian functions back to spherical harmonics. | [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git) | none | Replacement for `slep2plm` in [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git), with support for `GeoDomain` objects. |
 | `xyzs2slep` | Fits one or more scalar fields on shared coordinates to a regional Slepian basis. | [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git) | | |
-| `ssh2slept` | Fits NASA monthly sea surface height anomalies to a regional Slepian basis and caches the full time series in NetCDF. | | |
+| `ssh2slept` | Fits SSH anomalies to a regional Slepian basis. | [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git) | [Prepared monthly NASA-SSH maps](nasa-ssh-processing.md#prepare-calendar-month-means) | |
 | `slep2xyz` | Projects Slepian functions onto latitude-longitude grids/points. | [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git) | none | WIP |
 | `slept2resid_new` | Fits a time series | [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git) | none | Replacement for `slept2resid` in [slepian_delta](https://github.com/csdms-contrib/slepian_delta.git), with support for `GeoDomain` objects. |
 | `sphgaussfilt` | Apply Gaussian filter to spherical harmonics | none | none | |
@@ -81,7 +81,8 @@ The ultimate goal is to drop the `_new` suffixes and replace the original functi
 | Function name | Description | Package dependencies | Data dependencies |
 | :--- | :--- | :--- | :--- |
 | `ssh2lonlatt` | Reads and converts altimetric SSH data from different missions to gridded data. | | |
-| `steric2lonlatt` | Reads and pre-processed steric sea level data from different datasets to gridded data. | | |
+| `steric2lonlatt` | Reads and interpolates prepared steric sea level grids. | | |
+| `steric2gmsl` | Computes the selected component and depth averaged over the common observed area at each native date. | | Prepared native steric MAT file |
 
 #### Data Pre-Processing
 
@@ -124,4 +125,4 @@ The ultimate goal is to drop the `_new` suffixes and replace the original functi
 
 ---
 
-Last modified: 2026/09/25, [@williameclee](mailto:williameclee@arizona.edu)
+Last modified: 2026/11/08, [@williameclee](mailto:williameclee@gmail.com)
