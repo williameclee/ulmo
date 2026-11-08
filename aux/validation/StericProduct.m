@@ -6,6 +6,10 @@ classdef StericProduct < uint8
         CMEMS (2)
         NOAA (3)
         ORAS5 (4)
+        JAMSTEC (5)
+        ISAS (6)
+        IPRC (7)
+        IAPv4 (8)
     end
 
 end

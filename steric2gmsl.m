@@ -6,7 +6,7 @@
 %   [gmsl, dates] = STERIC2GMSL(__, "Name", value)
 %
 % Input arguments
-%   product - Prepared product: SIO, EN4c14, CMEMS, NOAA, or ORAS5.
+%   product - Prepared product identifier accepted by StericProduct.
 %       The native MAT file must already exist at STERICFILEPATH(product).
 %   type - Selected component.
 %       total, thermosteric, halosteric, non-thermosteric (total minus
@@ -87,7 +87,7 @@
 %   A timestamp with no positive-weight support returns NaN.
 %
 % See also
-%   steric2lonlatt, stericfilepath
+%   steric2lonlatt, stericfilepath, stericfieldschema
 %
 % Created by
 %   2026/11/04, En-Chi Lee (williameclee@gmail.com)
@@ -112,10 +112,13 @@ function [gmsl, dates] = steric2gmsl(product, type, depth, options)
     end
 
     metadata = whos('-file', inPath);
-    [gridNames, available, precision] = fieldschema(metadata);
-    [cacheNames, supported] = cachenames(available);
-    types = ["total", "thermosteric", "halosteric", "non-thermosteric", "non-halosteric"];
-    depths = ["full", "shallow", "deep"];
+    [schema, precision] = fieldschema(metadata);
+    gridNames = schema.gridNames;
+    available = schema.available;
+    cacheNames = schema.meanNames;
+    supported = schema.supported;
+    types = schema.types;
+    depths = schema.depths;
     iType = find(strcmpi(types, type));
     iDepth = find(strcmpi(depths, depth));
 
@@ -251,48 +254,24 @@ function means = steric2gmslCore(inputPath, gridNames, available, cacheNames, su
 end
 
 %% Subfunctions
-function [names, available, precision] = fieldschema(metadata)
-    names = ["stericSl", "shallowStericSl", "deepStericSl"; ...
-                 "thermostericSl", "shallowThermostericSl", "deepThermostericSl"; ...
-                 "halostericSl", "shallowHalostericSl", "deepHalostericSl"];
-    available = false(3);
+function [schema, precision] = fieldschema(metadata)
+    schema = stericfieldschema(metadata);
+    % Numerical requirements and source precision belong to the estimator.
     precision = eps('double');
-
-    for iField = 1:numel(names)
-        entry = metadata(strcmp({metadata.name}, names(iField)));
-
-        if isempty(entry) || prod(entry.size) == 0
-            continue
-        end
-
+    for iField = find(schema.available(:))'
+        name = schema.gridNames(iField);
+        entry = metadata(strcmp({metadata.name}, name));
         if ~ismember(entry.class, {'double', 'single'}) || entry.complex || entry.sparse
-            error('ULMO:steric2gmsl:InvalidSchema', ...
-                '%s must be a real floating-point grid.', names(iField));
+            error('ULMO:steric2gmsl:InvalidSchema', '%s must be a real floating-point grid.', name);
         end
-
-        available(iField) = true;
         precision = max(precision, double(eps(entry.class)));
     end
-
-    split = any(available(:, 2:3), 2);
-
-    if any(split & ~all(available, 2))
+    if schema.incompleteSplit
         error('ULMO:steric2gmsl:InvalidSchema', 'A depth split requires explicit full, shallow and deep grids.');
     end
-
-    if available(1, 1) && available(3, 1) && split(1) ~= split(3)
+    if schema.incompatibleSplits
         error('ULMO:steric2gmsl:InvalidSchema', 'Supplied total and halosteric depth splits must agree.');
     end
-
-end
-
-function [names, supported] = cachenames(available)
-    names = ["stericGmsl", "shallowStericGmsl", "deepStericGmsl"; ...
-                 "thermostericGmsl", "shallowThermostericGmsl", "deepThermostericGmsl"; ...
-                 "halostericGmsl", "shallowHalostericGmsl", "deepHalostericGmsl"; ...
-                 "nonThermostericGmsl", "shallowNonThermostericGmsl", "deepNonThermostericGmsl"; ...
-                 "nonHalostericGmsl", "shallowNonHalostericGmsl", "deepNonHalostericGmsl"];
-    supported = [available; available(1, :) & available(2, :); available(1, :) & available(3, :)];
 end
 
 function [dates, wghts, keepLon, transposeGrid] = coordinates(coord, metadata, names)

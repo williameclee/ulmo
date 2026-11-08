@@ -6,7 +6,7 @@
 %       intpMthd, truncBeforeIntp, timelim, component)
 %
 % Input arguments
-%   product - Product name.
+%   product - Prepared product identifier accepted by StericProduct.
 %   timeStep (optional) - Temporal cache selector.
 %       Positive numeric scalar or duration, 'midmonth', or 'GRACE'.
 %       Numeric steps use the MATLAB %d format. Duration steps use their
