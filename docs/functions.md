@@ -90,6 +90,8 @@ The ultimate goal is to drop the `_new` suffixes and replace the original functi
 | Function name | Description | Package dependencies | Data dependencies |
 | :--- | :--- | :--- | :--- |
 | `download_steric_cmems` (Python script) | Downloads global monthly 3D temperature and salinity subsets from CMEMS. | `copernicusmarine` (Python) | [CMEMS](https://data.marine.copernicus.eu/product/GLOBAL_MULTIYEAR_PHY_001_030/) |
+| `processSSHDataNasa` | Converts weekly reference-mission sea level anomalies to the native ULMO grid file. | | [NASA-SSH reference-mission simple grid](https://doi.org/10.5067/NSREF-SG0V1) |
+| `processSSHMonthlyNasa` | Computes calendar-month means and coverage counts on the weekly NASA-SSH grid. | | [Prepared weekly maps](nasa-ssh-processing.md) |
 | `processStericDataCmems` | Processes steric sea level, density variations, and thermosteric/halosteric components from CMEMS ocean reanalysis data. | [Gibbs Seawater Toolbox (GSW)](https://www.teos-10.org/software.htm), MATLAB Parallel Computing Toolbox (optional) | [CMEMS](https://data.marine.copernicus.eu/product/GLOBAL_MULTIYEAR_PHY_001_030/) |
 | `processStericDataEN4` | Same as above, but for the Met Office EN4 objective analyses. | [Gibbs Seawater Toolbox (GSW)](https://www.teos-10.org/software.htm), MATLAB Parallel Computing Toolbox (optional) | [Met Office EN4](https://www.metoffice.gov.uk/hadobs/en4/) |
 
