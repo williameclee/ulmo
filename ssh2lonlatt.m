@@ -1,7 +1,7 @@
-%% SSH2LONLATT - Load sea surface height anomalies on a longitude-latitude grid.
+%% SSH2LONLATT - Loads sea surface height anomalies on a longitude-latitude grid.
 %
 % Syntax
-%   [ssh, sshSigma, dates, lon, lat] = ssh2lonlatt(product)
+%   [ssh, sshSigma, dates, lon, lat, partialMonths] = ssh2lonlatt(product)
 %   [ssh, sshSigma, dates] = ssh2lonlatt(product, timestep, meshsize, timelim)
 %   [ssh, sshSigma, dates] = ssh2lonlatt(__, "Name", value)
 %
@@ -23,6 +23,7 @@
 %       Unit: degrees.
 %       Default spacing: [] (native grid unless LonOrigin is supplied)
 %   timelim (optional) - Inclusive start and end dates as datetime or datenum.
+%       Use -Inf or Inf as a numeric endpoint for an open-ended range.
 %       Size: two elements.
 %       Default range: [] (full record)
 %   LonOrigin (name-value) - Longitude at the centre of the output grid.
@@ -49,15 +50,30 @@
 %   CallChain (name-value) - Names of calling functions for log messages.
 %       Default value: {}
 %
+% Input file content
+%   The native file is IFILES/SSH/<product>.mat. Native monthly requests
+%   can reuse an existing grid cache when partial-month flags are omitted.
+%   sshs - Sea surface height anomalies in metres.
+%       Size: (nLon, nLat, nTime).
+%   sshErrors - Optional uncertainty in metres with the same grid and dates as sshs.
+%   dates - Native sample dates, one per map.
+%   lon, lat - Native longitude and latitude axes in degrees.
+%   partialMonths - Logical flag per date in NASASSHMonthly.mat. Required
+%       when requesting the sixth output on the native monthly grid and epochs.
+%
 % Output arguments
 %   ssh - Gridded sea surface height anomalies in the requested unit.
 %       Size: (nLat, nLon, nTime) for 'meshgrid', (nLon, nLat, nTime) for 'ndgrid'.
 %   sshSigma - SSH uncertainties in the same units and grid order as ssh.
+%       Temporal means use the root mean square of the contributing uncertainties.
 %       Empty for NASA-SSH products.
 %   dates - Output epochs in the requested time format.
 %       Size: (nTime, 1).
 %   lon, lat - Longitude and latitude axes in degrees. For 'meshgrid', lon
 %       is a row and lat a column. For 'ndgrid', lon is a column and lat a row.
+%   partialMonths - Logical flags for truncated edge months, aligned with dates.
+%       Returned for NASASSHMonthly with native epochs, grid and longitude origin.
+%       Size: (nTime, 1) for native monthly maps, otherwise (0, 1).
 %
 % Data sources
 %   MEaSUREs gridded sea surface height anomalies, version 2205.
@@ -65,7 +81,7 @@
 %   NASA-SSH reference-mission simple grid, version 1. https://doi.org/10.5067/NSREF-SG0V1
 %
 % See also
-%   PROCESSSSHDATANASA, PROCESSSSHMONTHLYNASA, TEMPORALMEANEPOCHS
+%   PROCESSSSHDATANASA, PROCESSSSHMONTHLYNASA, PROCESSFIELDTIME, SSH2SLEPT
 %
 % Created by
 %   2025/05/19, En-Chi Lee (williameclee@arizona.edu)
@@ -73,7 +89,7 @@
 % Last modified
 %   2026/11/08, En-Chi Lee (williameclee@gmail.com)
 
-function [ssh, sshSigma, dates, lon, lat] = ssh2lonlatt(product, timestep, meshsize, timelim, options)
+function [ssh, sshSigma, dates, lon, lat, partialMonths] = ssh2lonlatt(product, timestep, meshsize, timelim, options)
 
     arguments (Input)
         product SSHProduct {mustBeScalarOrEmpty} = 'MEaSUREs'
@@ -97,6 +113,7 @@ function [ssh, sshSigma, dates, lon, lat] = ssh2lonlatt(product, timestep, meshs
         dates (:, 1) {mustBeVector}
         lon (:, :) {mustBeReal, mustBeVector}
         lat (:, :) {mustBeReal, mustBeVector}
+        partialMonths (:, 1) logical
     end
 
     lonOrigin = options.LonOrigin;
@@ -127,9 +144,8 @@ function [ssh, sshSigma, dates, lon, lat] = ssh2lonlatt(product, timestep, meshs
         meshsize = [];
     end
 
-    if ~isempty(timestep) && isnumeric(timestep)
-        timestep = days(timestep);
-    end
+    % Preserve the legacy path builder's method spelling.
+    [timestep, ~, useMean] = normalisetimeconfig(timestep, intpMthd);
 
     if ~isempty(timelim) && isnumeric(timelim)
         timelim = datetime(timelim, 'ConvertFrom', 'datenum');
@@ -141,23 +157,30 @@ function [ssh, sshSigma, dates, lon, lat] = ssh2lonlatt(product, timestep, meshs
     end
 
     %% Checking for existing data
-    useMean = ~isempty(timestep) && (ischar(timestep) || isstring(timestep) || strcmpi(intpMthd, 'mean'));
     spatialIntpMthd = intpMthd;
 
     if strcmpi(spatialIntpMthd, 'mean')
         spatialIntpMthd = 'linear';
     end
 
-    intpOutPath = outputpath(product, intpMthd, timestep, meshsize, lonOrigin);
     vars = {'sshs', 'dates', 'lon', 'lat'};
-
-    intpDataExists = ~forceNew && isfile(intpOutPath) && ...
-        all(ismember(vars, who('-file', intpOutPath)));
-
-    if intpDataExists
-        inPath = intpOutPath;
+    nativeMonthly = product == SSHProduct.NASASSHMonthly && isempty(timestep) && ...
+        isempty(meshsize) && isempty(lonOrigin);
+    partialMonths = false(0, 1);
+    inPath = outputpath(product);
+    readPartialMonths = nativeMonthly && nargout >= 6;
+    processSource = false;
+    if readPartialMonths
+        vars{end+1} = 'partialMonths';
     else
-        inPath = outputpath(product);
+        intpOutPath = outputpath(product, intpMthd, timestep, meshsize, lonOrigin);
+        cacheExists = isfile(intpOutPath);
+        if ~forceNew && cacheExists && all(ismember(vars, who('-file', intpOutPath)))
+            inPath = intpOutPath;
+        else
+            % Only refresh a native monthly cache when it already exists.
+            processSource = ~strcmp(intpOutPath, inPath) && (~nativeMonthly || cacheExists);
+        end
     end
 
     if ~exist(inPath, 'file')
@@ -181,29 +204,29 @@ function [ssh, sshSigma, dates, lon, lat] = ssh2lonlatt(product, timestep, meshs
         fprintf('[ULMO>%s] Loaded %s.\n', callchaintext(callChain), filehref(inPath, 'SSH product'));
     end
 
-    if ~intpDataExists
+    if processSource
         nativeDates = data.dates;
+        if isnumeric(nativeDates), nativeDates = datetime(nativeDates, 'ConvertFrom', 'datenum'); end
 
         if useMean
             data = preparegrid(data, meshsize, lonOrigin, spatialIntpMthd, beQuiet, callChain);
 
             % The cached epochs span the product. Apply timelim only to the output.
-            epochs = temporalmeanepochs(nativeDates, timestep, []);
-            [data.sshs, data.dates] = averageepochs(nativeDates, data.sshs, epochs);
-
+            fields = struct('height', data.sshs);
+            if ~isempty(data.sshErrors), fields.errorSquared = data.sshErrors.^2; end
+            [fields, data.dates] = processfieldtime(fields, nativeDates, timestep, intpMthd, []);
+            data.sshs = fields.height;
             if ~isempty(data.sshErrors)
-                % RMS of native uncertainties, without assuming independent errors.
-                data.sshErrors = sqrt(averageepochs(nativeDates, data.sshErrors .^ 2, epochs));
+                % Preserve RMS uncertainty; these are not independent errors.
+                data.sshErrors = sqrt(fields.errorSquared);
             end
         else
             if ~isempty(timestep)
-                [data.sshs, data.dates] = interptemporal(nativeDates, data.sshs, timestep, intpMthd, ...
-                    BeQuiet = (beQuiet == 2), CallChain = callChain);
-
-                if ~isempty(data.sshErrors)
-                    data.sshErrors = interptemporal(nativeDates, data.sshErrors, timestep, intpMthd, ...
-                        BeQuiet = (beQuiet == 2), CallChain = callChain);
-                end
+                fields = struct('height', data.sshs);
+                if ~isempty(data.sshErrors), fields.error = data.sshErrors; end
+                [fields, data.dates] = processfieldtime(fields, nativeDates, timestep, intpMthd, []);
+                data.sshs = fields.height;
+                if ~isempty(data.sshErrors), data.sshErrors = fields.error; end
             end
 
             data = preparegrid(data, meshsize, lonOrigin, spatialIntpMthd, beQuiet, callChain);
@@ -215,6 +238,15 @@ function [ssh, sshSigma, dates, lon, lat] = ssh2lonlatt(product, timestep, meshs
             if beQuiet <= 1
                 fprintf('[ULMO>%s] Saved %s.\n', callchaintext(callChain), filehref(intpOutPath, 'SSH product'));
             end
+        end
+    end
+
+    if readPartialMonths
+        partialMonths = logical(data.partialMonths(:));
+        assert(numel(partialMonths) == numel(data.dates), 'ULMO:ssh2lonlatt:PartialMonths', ...
+            'Expected one partial-month flag per native date.');
+        if ~isempty(timelim)
+            partialMonths = partialMonths(data.dates >= timelim(1) & data.dates <= timelim(2));
         end
     end
 
@@ -386,7 +418,9 @@ function outPath = outputpath( ...
         outPath (1, :) char
     end
 
-    outFolder = fullfile(getenv('IFILES'), 'SSH');
+    root = getenv('IFILES');
+    assert(isfolder(root), 'ULMO:ssh2lonlatt:MissingRoot', 'Set IFILES to the data directory.');
+    outFolder = fullfile(root, 'SSH');
 
     if isempty(intpMthd) && isempty(timeStep) && isempty(meshSize) && isempty(lonOrigin)
         outPath = fullfile(outFolder, sprintf('%s.mat', product));
