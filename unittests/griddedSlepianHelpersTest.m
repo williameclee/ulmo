@@ -103,6 +103,18 @@ classdef griddedSlepianHelpersTest < matlab.unittest.TestCase
             t.verifyEqual(w(1, :), cosd(double(lat)), AbsTol = 1e-15);
         end
 
+        function globalLongitudeChecksOffsets(t)
+            % Each local spacing is within tolerance but the offsets accumulate.
+            lon = (0:359)' + 1e-3 * sind((0:359)');
+            t.verifyError(@() preparegridcoordinates(lon, [-1 1], RequireGlobalLongitude = true), ...
+                'ULMO:preparegridcoordinates:InvalidGrid');
+            % Rounding can also offset adjacent meridians in opposite directions.
+            lon = (0:359)' + 2e-5 * (-1).^(0:359)';
+            lon(1) = 0;
+            x = preparegridcoordinates(lon, [-1 1], RequireGlobalLongitude = true);
+            t.verifyEqual(x, lon);
+        end
+
         function missingMeridianFailsGlobalCoverage(t, descending)
             % Removing the final meridian leaves a regional grid with a double-width seam.
             lon = single((0:4318) / 12);

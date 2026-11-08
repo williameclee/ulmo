@@ -11,6 +11,9 @@
 %
 % Created by
 %   2026/11/05, OpenAI Codex
+%
+% Last modified
+%   2026/11/08, OpenAI Codex
 
 classdef stericFieldSchemaTest < matlab.unittest.TestCase
     properties
@@ -113,7 +116,7 @@ classdef stericFieldSchemaTest < matlab.unittest.TestCase
             data = rmfield(testCase.fixtureData, {'stericSl', 'halostericSl'});
             testCase.writeSchema(data);
             testCase.verifyError(@() stericproductinfo('EN4c14'), 'ULMO:LoadData:VariableNotFound');
-            gmsl = steric2gmsl('EN4c14', Type='thermosteric', SaveData=false, BeQuiet=true);
+            gmsl = steric2gmsl('EN4c14', 'thermosteric', SaveData=false, BeQuiet=true);
             testCase.verifyEqual(gmsl, 2 * ones(3, 1), AbsTol=1e-12);
             grid = steric2lonlatt('EN4c14', Type='thermosteric', SaveData=false, BeQuiet=true);
             testCase.verifyEqual(grid, data.thermostericSl);
@@ -130,7 +133,7 @@ classdef stericFieldSchemaTest < matlab.unittest.TestCase
                 schema = testCase.writeSchema(data);
                 testCase.verifyTrue(schema.available(1, 1));
                 testCase.verifyWarningFree(@() stericproductinfo('EN4c14'));
-                testCase.verifyError(@() steric2gmsl('EN4c14', Type='total', ...
+                testCase.verifyError(@() steric2gmsl('EN4c14', 'total', ...
                     SaveData=false, BeQuiet=true), 'ULMO:steric2gmsl:InvalidSchema');
             end
         end
@@ -144,7 +147,7 @@ classdef stericFieldSchemaTest < matlab.unittest.TestCase
 
         function verifyCallerSchemaErrors(testCase)
             testCase.verifyError(@() stericproductinfo('EN4c14'), 'ULMO:stericproductinfo:InvalidSchema');
-            testCase.verifyError(@() steric2gmsl('EN4c14', Type='total', SaveData=false, ...
+            testCase.verifyError(@() steric2gmsl('EN4c14', 'total', SaveData=false, ...
                 BeQuiet=true), 'ULMO:steric2gmsl:InvalidSchema');
             testCase.verifyError(@() steric2lonlatt('EN4c14', ForceNew=true, SaveData=false, ...
                 BeQuiet=true), 'ULMO:steric2lonlatt:InvalidSchema');
