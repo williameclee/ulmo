@@ -1,4 +1,4 @@
-%% STERIC2LONLATT - Load and interpolate prepared steric sea level grids.
+%% STERIC2LONLATT - Loads and interpolates prepared steric sea level grids.
 %
 % Syntax
 %   [steric, stericSigma, dates] = STERIC2LONLATT(product)
@@ -12,16 +12,17 @@
 %       JAMSTEC, ISAS, IPRC or IAPv4.
 %       Default product: EN4c14.
 %   timestep (optional) - Temporal interpolation step or averaging convention.
-%       Positive numeric scalar or duration for fixed steps; 'midmonth' for
-%       calendar-month means; 'GRACE' for CSR RL06 degree-60 solution windows.
-%       Missing GRACE months use calendar boundaries inside the gap, with
-%       outer bounds aligned to adjacent real solutions. Dates are window
-%       midpoints. Means use native samples, without daily reconstruction.
+%       Positive numeric scalar or duration for fixed steps, 'midmonth' for
+%       calendar-month means, or 'GRACE' for CSR RL06 degree-60 solution
+%       windows. Both conventions average native samples and return window
+%       midpoints. Missing GRACE months use calendar windows adjusted to
+%       meet adjacent solutions.
 %       Unit: days for numeric values.
 %       Default step: [] (native timestamps).
 %   meshsize (optional) - Spatial interpolation spacing.
 %       A two-element [spacing, longitudeCentre] vector also sets LonOrigin
 %       when that option is empty.
+%       With LonOrigin alone, the spacing is 0.5 degrees.
 %       Unit: degrees.
 %       Default spacing: [] (no spatial interpolation unless LonOrigin is set).
 %   timelim (optional) - Inclusive output time limits as datetime or datenum.
@@ -29,8 +30,7 @@
 %       Unit: days for datenum values.
 %       Default limits: [] (full record).
 %   LonOrigin (name-value) - Longitude centre of the interpolated grid.
-%       Spatial interpolation uses centre 180 when this option is empty,
-%       and spacing 0.5 when meshsize is empty.
+%       With meshsize alone, the grid is centred on 180 degrees east.
 %       Unit: degrees east.
 %       Default centre: [] (no spatial interpolation unless meshsize is set).
 %   Interpolation (name-value) - Temporal and spatial interpolation method.
@@ -90,7 +90,7 @@
 %   steric - Selected steric sea level grid.
 %       Size: (nLat, nLon, N) for meshgrid; (nLon, nLat, N) for ndgrid.
 %       Unit: Unit.
-%   stericSigma - Zero placeholder; product uncertainties are not supplied.
+%   stericSigma - Zero placeholder for product uncertainty.
 %       Size: same as steric.
 %       Unit: Unit.
 %   dates - Returned timestamps in TimeFormat.
@@ -135,7 +135,7 @@
 %   native means. SaveData=false keeps this calculation entirely in memory.
 %   Rebuild other derived/figure caches manually after convention changes.
 %   Legacy epoch caches containing halosteric subtraction are incompatible.
-%   Calling without outputs attempts to plot the returned global mean.
+%   Calling without outputs attempts to plot the global mean of the grid.
 %
 % See also
 %   steric2gmsl, stericfilepath, stericfieldschema, interptemporal, temporalmeanepochs
@@ -144,7 +144,7 @@
 %   2025/07/22, En-Chi Lee (williameclee@arizona.edu)
 %
 % Last modified
-%   2026/11/05, OpenAI Codex
+%   2026/11/08, OpenAI Codex
 
 function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt( ...
         product, timestep, meshsize, timelim, options)
@@ -182,7 +182,7 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
     lonOrigin = options.LonOrigin;
     intpMthd = lower(options.Interpolation);
     timeFmt = lower(options.TimeFormat);
-    outputFmt = lower(options.OutputFormat);
+    outFmt = lower(options.OutputFormat);
     unit = options.Unit;
     options.BeQuiet = uint8(double(options.BeQuiet) * 2);
     saveData = options.SaveData;
@@ -243,7 +243,7 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
     if useMean
         component = sprintf('-%s-%s', options.Depth, options.Type);
     end
-    outputPath = stericfilepath(product, timestep, meshsize, lonOrigin, intpMthd, ...
+    outPath = stericfilepath(product, timestep, meshsize, lonOrigin, intpMthd, ...
         options.TruncationBeforeInterpolation, timelim, component);
     nativePath = stericfilepath(product);
     coordVars = {'lon', 'lat', 'dates'};
@@ -253,25 +253,25 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
     halostericGmsl = zeros(0, 1);
 
     % Interpret a selected epoch field only on its explicit component path.
-    cacheHit = ~options.ForceNew && isfile(outputPath) && ...
-        supportedfields(outputPath, coordVars);
-    selectedCache = cacheHit && useMean && supportedfields(outputPath, {'steric'});
-    cacheHit = cacheHit && (selectedCache || supportedfields(outputPath, vars));
+    cacheHit = ~options.ForceNew && isfile(outPath) && ...
+        supportedfields(outPath, coordVars);
+    selectedCache = cacheHit && useMean && supportedfields(outPath, {'steric'});
+    cacheHit = cacheHit && (selectedCache || supportedfields(outPath, vars));
     if cacheHit
-        inputPath = outputPath;
+        inPath = outPath;
         if selectedCache, dataVars = {'steric'}; else, dataVars = vars; end
     else
-        inputPath = nativePath;
-        if ~isfile(inputPath)
-            error('ULMO:LoadData:FileNotFound', 'Input file %s not found.', inputPath);
+        inPath = nativePath;
+        if ~isfile(inPath)
+            error('ULMO:LoadData:FileNotFound', 'Input file %s not found.', inPath);
         end
         for iVar = 1:numel(vars)
-            if ~supportedfields(inputPath, vars(iVar))
+            if ~supportedfields(inPath, vars(iVar))
                 error('ULMO:steric2lonlatt:UnsupportedField', ...
                     'Product %s does not supply %s.', char(product), vars{iVar});
             end
         end
-        metadata = whos('-file', inputPath);
+        metadata = whos('-file', inPath);
         schema = nativefields(metadata);
         % A fresh derived cache stores every supported source component, not
         % only the selected output. Explicit names exclude cached GMSL vectors.
@@ -279,12 +279,12 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
     end
     if options.BeQuiet == 0 || (cacheHit && options.BeQuiet <= 1)
         fprintf('[ULMO>%s] Loading %s steric product from %s.\n', ...
-            callchaintext(callChain), product, inputPath);
+            callchaintext(callChain), product, inPath);
     end
-    coord = load(inputPath, coordVars{:});
+    coord = load(inPath, coordVars{:});
     if isnumeric(coord.dates), coord.dates = datetime(coord.dates, 'ConvertFrom', 'datenum'); end
     coord.dates = coord.dates(:);
-    data = load(inputPath, dataVars{:});
+    data = load(inPath, dataVars{:});
     % Without early truncation, cache the full processed record and apply
     % timelim only to returned values. Both grids and means use this range.
     epochRange = [];
@@ -320,10 +320,10 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
         names = cellstr(meanNames(supported));
         % Derived diagnostics can be reused as a complete set. Native-file
         % reuse still goes through steric2gmsl, which owns its cache checks.
-        meansHit = cacheHit && ~strcmp(outputPath, nativePath) && ...
-            validmeans(outputPath, names, coord.dates);
+        meansHit = cacheHit && ~strcmp(outPath, nativePath) && ...
+            validmeans(outPath, names, coord.dates);
         if meansHit
-            means = load(outputPath, names{:});
+            means = load(outPath, names{:});
         else
             % The first saved forced call refreshes the complete native set.
             % Subsequent saved calls reuse that complete set. With saving
@@ -333,8 +333,8 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
             for iMean = find(supported(:))'
                 [meanType, meanDepth] = ind2sub(size(supported), iMean);
                 forceMean = options.ForceNew && (firstMean || ~saveData);
-                [values, nativeDates] = steric2gmsl(product, Type=types(meanType), ...
-                    Depth=depths(meanDepth), ForceNew=forceMean, SaveData=saveData, ...
+                [values, nativeDates] = steric2gmsl(product, types(meanType), depths(meanDepth), ...
+                    ForceNew=forceMean, SaveData=saveData, ...
                     BeQuiet=double(options.BeQuiet)/2);
                 % Temporal helpers expect time on axis three. This temporary
                 % shape does not make the scalar series a spatial grid.
@@ -372,7 +372,7 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
 
     % steric2gmsl alone appends native means; never overwrite the native grids
     % with processed data. A grid-cache hit lacking means needs only an append.
-    if saveData && ~strcmp(outputPath, nativePath)
+    if saveData && ~strcmp(outPath, nativePath)
         if ~cacheHit
             stored = data;
             stored.lon = coord.lon;
@@ -380,9 +380,9 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
             stored.dates = coord.dates(:);
             names = fieldnames(means);
             for iMean = 1:numel(names), stored.(names{iMean}) = means.(names{iMean}); end
-            save(outputPath, '-struct', 'stored', '-v7.3');
+            save(outPath, '-struct', 'stored', '-v7.3');
         elseif saveMeans
-            save(outputPath, '-struct', 'means', '-append');
+            save(outPath, '-struct', 'means', '-append');
         end
     end
 
@@ -398,7 +398,7 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
 
     [steric, stericSigma, dates, lon, lat] = formatoutput( ...
         steric, coord.dates, coord.lon, coord.lat, ...
-        timelim, timeFmt, outputFmt, unit);
+        timelim, timeFmt, outFmt, unit);
 
     if nargout > 0
         return
@@ -582,7 +582,7 @@ end
 
 % Format output
 function [steric, stericSigma, dates, lon, lat] = formatoutput( ...
-        steric, dates, lon, lat, timelim, timeFmt, outputFmt, unit)
+        steric, dates, lon, lat, timelim, timeFmt, outFmt, unit)
 
     if ~isempty(timelim)
         isValidTime = (dates >= timelim(1)) & (dates <= timelim(2));
@@ -594,7 +594,7 @@ function [steric, stericSigma, dates, lon, lat] = formatoutput( ...
         dates = datenum(dates); %#ok<DATNM>
     end
 
-    switch outputFmt
+    switch outFmt
         case 'meshgrid'
             lon = lon(:)';
             lat = lat(:);
