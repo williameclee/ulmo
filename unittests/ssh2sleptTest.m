@@ -173,11 +173,13 @@ classdef ssh2sleptTest < matlab.unittest.TestCase
             save(fullfile(t.Folder, 'NASASSHMonthly-Tmidmonth-mean-linear.mat'), '-struct', 'data');
             blockers = fullfile(t.Folder, 'blockers');
             mkdir(blockers);
+
             for name = ["interptemporal", "temporalmeanepochs", "averageepochs"]
                 writelines(["function varargout=" + name + "(varargin)"; ...
-                    "error('test:UnexpectedTemporalProcessing','Already monthly.');"; "end"], ...
+                                "error('test:UnexpectedTemporalProcessing','Already monthly.');"; "end"], ...
                     fullfile(blockers, name + ".m"));
             end
+
             t.applyFixture(matlab.unittest.fixtures.PathFixture(blockers));
             expected = cell(1, 6);
             actual = cell(1, 6);
@@ -208,9 +210,11 @@ classdef ssh2sleptTest < matlab.unittest.TestCase
             file = dir(fullfile(t.Folder, 'SlepianExpansions', '*.nc'));
             cache = fullfile(file.folder, file.name);
             original = readbinary(cache);
+
             if ~forceNew
                 delete(fullfile(t.Folder, 'NASASSHMonthly.mat'));
             end
+
             [actual{:}] = ssh2slept(args{:}, TimeStep = 'midmonth', truncation = 4, ...
                 unit = 'm', ForceNew = forceNew, SaveData = false);
             t.verifyEqual(actual, expected);
@@ -228,10 +232,12 @@ classdef ssh2sleptTest < matlab.unittest.TestCase
             args = {'NASASSHMonthly', t.Polygon, 1};
             ssh2slept(args{:}, truncation = 4);
             delete(fullfile(t.Folder, 'NASASSHMonthly.mat'));
+
             for step = {days(10), 10, 'GRACE'}
                 t.verifyError(@() ssh2slept(args{:}, truncation = 4, TimeStep = step{1}), ...
-                    'ULMO:ssh2slept:TimeStep');
+                'ULMO:ssh2slept:TimeStep');
             end
+
         end
 
         function serialDateLimitsSelectProjectionRows(t, forceNew)
