@@ -31,13 +31,13 @@
 %   fitgriddedslepian, domainmask
 %
 % Created by
-%   2026/11/06, En-Chi Lee
+%   2026/11/08, En-Chi Lee (williameclee@gmail.com)
 
 function [lon, lat, iLon, iLat, wghts, wghtMthd] = preparegridcoordinates(lon, lat, options)
 
     arguments (Input)
-        lon {mustBeReal, mustBeFinite, mustBeVector}
-        lat {mustBeReal, mustBeFinite, mustBeVector, mustBeBetween(lat, -90, 90)}
+        lon {mustBeCoordinateVector}
+        lat {mustBeCoordinateVector}
         options.RequireGlobalLongitude (1, 1) logical = false
     end
 
@@ -48,27 +48,30 @@ function [lon, lat, iLon, iLat, wghts, wghtMthd] = preparegridcoordinates(lon, l
 
     lon = double(lon(:));
     lat = double(lat(:));
-    tol = 3e-5;
-    lonStep = lon(2) - lon(1);
+    lonSteps = diff(lon);
+    lonSpan = abs(lon(end) - lon(1));
+    lonStep = (lon(end) - lon(1)) / (numel(lon) - 1);
     latSteps = diff(lat);
 
-    if lonStep == 0 || any(abs(diff(lon) - lonStep) > tol) || ...
-            ~(all(diff(lon) > 0) || all(diff(lon) < 0)) || ...
+    if any(abs(lonSteps - lonStep) > lonTol) || ...
+            ~(all(lonSteps > 0) || all(lonSteps < 0)) || ...
             ~(all(latSteps > 0) || all(latSteps < 0))
         error('ULMO:preparegridcoordinates:InvalidGrid', ...
         'Longitude must be regularly spaced and latitude must be strictly monotone.');
     end
 
     iLon = (1:numel(lon)).';
+    % The seam tolerance must distinguish a missing meridian from round-off.
+    seamTol = min(lonTol, abs(lonStep) / 2);
 
-    if abs(abs(lon(end) - lon(1)) - 360) <= tol
-        % The first and last longitude ar the same (e.g. 0° and 360°)
+    if abs(lonSpan - 360) <= seamTol
+        % Keep the first copy of the cyclic endpoint.
         iLon(end) = [];
-    elseif abs(lon(end) - lon(1)) > 360 + tol
+    elseif lonSpan > 360
         error('ULMO:preparegridcoordinates:InvalidGrid', ...
         'Longitude cannot span more than one cycle.');
     elseif options.RequireGlobalLongitude && ...
-            abs(numel(iLon) * abs(lonStep) - 360) > tol * numel(lon)
+            abs((360 - lonSpan) - abs(lonStep)) > seamTol
         error('ULMO:preparegridcoordinates:InvalidGrid', ...
         'Longitude must cover one complete periodic grid.');
     end
@@ -78,7 +81,7 @@ function [lon, lat, iLon, iLat, wghts, wghtMthd] = preparegridcoordinates(lon, l
     [lat, iLat] = sort(lat);
     latSteps = diff(lat);
 
-    if all(abs(latSteps - latSteps(1)) <= tol)
+    if all(abs(latSteps - latSteps(1)) <= 3e-5)
         latWghts = cosd(lat);
         wghtMthd = 'cosine-latitude';
     else
@@ -91,4 +94,15 @@ function [lon, lat, iLon, iLat, wghts, wghtMthd] = preparegridcoordinates(lon, l
     end
 
     wghts = repmat(latWghts.', numel(lon), 1);
+end
+
+%% Subfunctions
+function mustBeCoordinateVector(coords)
+
+    if ~isnumeric(coords) || ~isreal(coords) || ~isvector(coords) || ...
+            numel(coords) < 2 || any(~isfinite(coords))
+        error('ULMO:preparegridcoordinates:InvalidGrid', ...
+        'Supply a finite real numeric coordinate vector with at least two elements.');
+    end
+
 end

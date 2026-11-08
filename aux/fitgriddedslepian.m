@@ -63,11 +63,13 @@ function [coeffs, fits, buf, wghtMthd] = fitgriddedslepian( ...
         options.ForceNew (1, 1) logical = false
     end
 
+    dates = dates(:);
+    assert(all(diff(dates) > seconds(0)), 'ULMO:fitgriddedslepian:EmptyRecord', ...
+    'Supply strictly increasing epoch dates.');
     nLon = numel(lon);
     nLat = numel(lat);
     [lon, lat, keepLon, orderLat, wghts, wghtMthd] = preparegridcoordinates( ...
         lon, lat, RequireGlobalLongitude = options.RequireGlobalLongitude);
-    dates = dates(:);
     names = fieldnames(fields);
     assert(~isempty(names), 'ULMO:fitgriddedslepian:EmptyRecord', 'Supply at least one field.');
     hasAnyObs = false(nLon, nLat);
@@ -88,6 +90,7 @@ function [coeffs, fits, buf, wghtMthd] = fitgriddedslepian( ...
         obsMask = domainmask(domain, lon, lat, Format = 'ndgrid', ...
             exteriorBuffer = buf, SaveData = options.SaveData, ForceNew = options.ForceNew, BeQuiet = true);
     else
+        buf = 0;
         obsMask = mask;
     end
 
@@ -146,14 +149,14 @@ function [coeffs, fits, buf, wghtMthd] = fitgriddedslepian( ...
             throwAsCaller(addCause(MException('ULMO:fitgriddedslepian:FitFailed', '%s: %s', ctx, cause.message), cause));
         end
 
-        coeffs = nan(nTime, J);
+        fieldCoeff = nan(nTime, J);
         condNum = nan(nTime, 1);
-        resRms = nan(nTime, 1);
-        coeffs(epochs, :) = c.';
+        residualRms = nan(nTime, 1);
+        fieldCoeff(epochs, :) = c.';
         condNum(epochs) = stats.condNum;
-        resRms(epochs) = stats.residualRms;
-        coeffs.(name) = coeffs;
-        fits.(name) = table(nObs, areaFraction, condNum, resRms);
+        residualRms(epochs) = stats.residualRms;
+        coeffs.(name) = fieldCoeff;
+        fits.(name) = table(nObs, areaFraction, condNum, residualRms);
     end
 
 end

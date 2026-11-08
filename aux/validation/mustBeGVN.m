@@ -20,7 +20,7 @@ function mustBeGVN(GVN, L)
     if numel(GVN) ~= 3
         error('ULMO:xyzs2slep:InvalidBasis', ...
             'GVN must be a 3-element cell, but only received %d elements.', ...
-            numel(GVN), class(GVN));
+            numel(GVN));
     end
 
     [G, V, N] = GVN{:};
