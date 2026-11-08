@@ -1,4 +1,4 @@
-%% PUBLISHNEWFILE - Publish a completed file under a new name.
+%% PUBLISHNEWFILE - Publishes a completed file under a new name.
 % Create a hard link in one filesystem operation. An existing destination
 % remains intact even when another writer creates it during processing.
 % The caller owns the temporary file and removes its name after publication.

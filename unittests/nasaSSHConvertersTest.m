@@ -1,4 +1,4 @@
-%% NASASSHCONVERTERSTEST - Check native and monthly NASA-SSH conversion.
+%% NASASSHCONVERTERSTEST - Checks native and monthly NASA-SSH conversion.
 % Each test uses temporary NetCDF inputs and a private IFILES directory.
 %
 % Created by

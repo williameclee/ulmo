@@ -1,4 +1,4 @@
-%% DELETEFILEIFPRESENT - Delete a file if it exists.
+%% DELETEFILEIFPRESENT - Deletes a file if it exists.
 %
 % Syntax
 %   deletefileifpresent(path)

@@ -1,4 +1,4 @@
-%% PROCESSSSHDATANASA - Convert NASA-SSH weekly anomaly maps to a MAT file.
+%% PROCESSSSHDATANASA - Converts NASA-SSH weekly anomaly maps to a MAT file.
 % Preserve the native grid, central epochs and DTU21 reference surface.
 % Replace invalid cells with NaN and retain epochs with entirely missing maps.
 %

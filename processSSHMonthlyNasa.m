@@ -1,4 +1,4 @@
-%% PROCESSSSHMONTHLYNASA - Average weekly NASA-SSH maps by calendar month.
+%% PROCESSSSHMONTHLYNASA - Averages weekly NASA-SSH maps by calendar month.
 % Give each finite value equal weight and assign maps by their central epoch.
 % Accumulate in double precision. Retain empty months and partial edge months.
 %
@@ -64,7 +64,7 @@ function outPath = processSSHMonthlyNasa(inPath, outPath, options)
         options.BeQuiet (1, 1) logical = false
     end
 
-    assert(~isfile(outPath) && ~isfolder(outPath), 'ULMO:OutputExists', 'Output exists: %s', outPath);
+    assert(~isfile(outPath) && ~isfolder(outPath), 'ULMO:OutputExists', 'Output file already exists: %s', outPath);
     d = load(inPath, 'dates', 'lon', 'lat', 'metadata');
     assert(strcmp(d.metadata.product, 'NASA_SSH_REF_SIMPLE_GRID_V1'));
     assert(~isempty(d.dates) && all(diff(d.dates) > days(0)));
