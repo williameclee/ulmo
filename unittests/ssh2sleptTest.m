@@ -1,9 +1,6 @@
 %% SSH2SLEPTTEST - Checks monthly SSH fits, observation masks and projection caches.
 %
 % Created by
-%   2026/11/03, En-Chi Lee (williameclee@gmail.com)
-%
-% Last modified
 %   2026/11/08, En-Chi Lee (williameclee@gmail.com)
 
 classdef ssh2sleptTest < matlab.unittest.TestCase
@@ -171,6 +168,7 @@ classdef ssh2sleptTest < matlab.unittest.TestCase
             % Numeric limits must select the same rows on a refit and a source-free cache hit.
             args = {'NASASSHMonthly', t.Polygon, 1};
             [full, ~, diagnostics] = ssh2slept(args{:}, truncation = 4);
+
             if ~forceNew
                 delete(fullfile(t.Folder, 'NASASSHMonthly.mat'));
             end
@@ -191,7 +189,7 @@ classdef ssh2sleptTest < matlab.unittest.TestCase
             t.verifyEqual(ssh2slept("NASASSHMonthly", t.Polygon, 0), expected);
             t.verifyEqual(ssh2slept(product, t.Polygon, 0), expected);
             t.verifyError(@() ssh2slept(SSHProduct.NASASSH, t.Polygon, 0), ...
-                'MATLAB:validators:mustBeMember');
+            'MATLAB:validators:mustBeMember');
         end
 
         function readerReusesMonthlyGridCache(t)
@@ -232,7 +230,7 @@ classdef ssh2sleptTest < matlab.unittest.TestCase
             [~, ~, dates] = ssh2lonlatt(args{:}, [middle Inf], BeQuiet = true);
             t.verifyEqual(dates, t.Dates(2:end));
             t.verifyError(@() ssh2slept('NASASSHMonthly', t.Polygon, 0, [-Inf Inf]), ...
-                'ULMO:notValidTimeRange');
+            'ULMO:notValidTimeRange');
         end
 
         function degreeDependentExteriorFit(t)
