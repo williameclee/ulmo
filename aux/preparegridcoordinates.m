@@ -1,79 +1,114 @@
-%% PREPAREGRIDCOORDINATES - Validate and order a rectangular geographic grid.
+%% PREPAREGRIDCOORDINATES - Validates and orders a rectangular geographic grid.
 %
 % Syntax
-%   [lon, lat, iLon, iLat, weights, weighting] = PREPAREGRIDCOORDINATES(lon, lat)
+%   [lon, lat, iLon, iLat, wghts, wghtMthd] = PREPAREGRIDCOORDINATES(lon, lat)
 %   [__] = PREPAREGRIDCOORDINATES(__, RequireGlobalLongitude=true)
 %
 % Input arguments
-%   lon, lat - Finite real coordinate vectors with at least two elements.
-%       Longitude must be regular; latitude must be strictly monotone and
-%       within [-90, 90]. Either axis may descend. Spacing tolerance is
-%       3e-5 degrees, including single-precision coordinate rounding.
+%   lon, lat - Finite, strictly monotone coordinate vectors with at least two entries each.
+%       Longitude spacings must agree with the mean spacing to 3e-5 degrees
+%       (or one input precision step for coarser single-precision coordinates).
+%       Latitude must lie in [-90, 90] and may be unevenly spaced.
 %       Unit: degrees east and north, respectively.
 %   RequireGlobalLongitude (name-value) - Whether to require one complete
 %       periodic longitude grid after removing a duplicated endpoint.
 %       Default flag: false.
 %
 % Output arguments
-%   lon, lat - Ascending coordinate columns, with a cyclic endpoint removed.
+%   lon, lat - Ascending coordinate columns. If the original longitude
+%       endpoints differ by one cycle, the last input endpoint is dropped.
 %       Unit: degrees east and north, respectively.
-%   iLon, iLat - Indices into the original coordinate vectors. Apply them to
-%       fields already arranged as (longitude, latitude, time). No field
-%       orientation is inferred, and longitude values are not wrapped.
-%   weights - Relative cell areas in (longitude, latitude) order.
-%       Size: (numel(lon), numel(lat)); dimensionless.
-%   weighting - 'cosine-latitude' or 'spherical-midpoint-bands'.
-%       Uniform latitude uses cosd(lat). Nonuniform latitude uses spherical
-%       bands between arithmetic midpoints, with half-step outer boundaries
-%       clipped at the poles. Regular longitude spacing cancels in ratios.
+%   iLon, iLat - Indices into the original longitude and latitude vectors.
+%       Apply the same indices to the spatial dimensions of each field.
+%   wghts - Relative cell areas in longitude-by-latitude order.
+%       Size: (numel(lon), numel(lat)).
+%   wghtMthd - 'cosine-latitude' or 'spherical-midpoint-bands'.
+%       Uniform latitude uses cosd(lat). For nonuniform latitude, the
+%       band edges are the latitude midpoints, with half-step outer edges
+%       clipped at the poles. Longitude spacing cancels in area ratios.
 %
 % See also
 %   fitgriddedslepian, domainmask
 %
 % Created by
-%   2026/11/06, En-Chi Lee
+%   2026/11/08, En-Chi Lee (williameclee@gmail.com)
 
-function [lon, lat, iLon, iLat, weights, weighting] = preparegridcoordinates(lon, lat, options)
+function [lon, lat, iLon, iLat, wghts, wghtMthd] = preparegridcoordinates(lon, lat, options)
+
     arguments (Input)
-        lon
-        lat
+        lon {mustBeCoordinateVector}
+        lat {mustBeCoordinateVector}
         options.RequireGlobalLongitude (1, 1) logical = false
     end
-    if ~isnumeric(lon) || ~isnumeric(lat) || ~isvector(lon) || ~isvector(lat) || ...
-            ~isreal(lon) || ~isreal(lat) || any(~isfinite(lon(:))) || ...
-            any(~isfinite(lat(:))) || numel(lon) < 2 || numel(lat) < 2 || any(abs(lat) > 90)
-        error('ULMO:preparegridcoordinates:InvalidGrid', 'Expected finite longitude/latitude coordinate vectors.');
-    end
-    lon = double(lon(:)); lat = double(lat(:));
-    tolerance = 3e-5;
-    longitudeStep = lon(2) - lon(1);
-    latitudeSteps = diff(lat);
-    if longitudeStep == 0 || any(abs(diff(lon) - longitudeStep) > tolerance) || ...
-            ~(all(diff(lon) > 0) || all(diff(lon) < 0)) || ...
-            ~(all(latitudeSteps > 0) || all(latitudeSteps < 0))
+
+    if any(abs(lat) > 90)
         error('ULMO:preparegridcoordinates:InvalidGrid', ...
-            'Longitude must be regularly spaced and latitude must be strictly monotone.');
+        'Latitude must lie between -90 and 90 degrees.');
     end
+
+    lonTol = 3e-5;
+
+    if isa(lon, 'single')
+        lonTol = max(lonTol, double(eps(max(abs(lon)))));
+    end
+
+    lon = double(lon(:));
+    lat = double(lat(:));
+    lonSteps = diff(lon);
+    lonSpan = abs(lon(end) - lon(1));
+    lonStep = (lon(end) - lon(1)) / (numel(lon) - 1);
+    latSteps = diff(lat);
+
+    if any(abs(lonSteps - lonStep) > lonTol) || ...
+            ~(all(lonSteps > 0) || all(lonSteps < 0)) || ...
+            ~(all(latSteps > 0) || all(latSteps < 0))
+        error('ULMO:preparegridcoordinates:InvalidGrid', ...
+        'Longitude must be regularly spaced and latitude must be strictly monotone.');
+    end
+
     iLon = (1:numel(lon)).';
-    if abs(abs(lon(end) - lon(1)) - 360) <= tolerance, iLon(end) = []; end
-    if abs(lon(end) - lon(1)) > 360 + tolerance
-        error('ULMO:preparegridcoordinates:InvalidGrid', 'Longitude cannot span more than one cycle.');
+    % The seam tolerance must distinguish a missing meridian from round-off.
+    seamTol = min(lonTol, abs(lonStep) / 2);
+
+    if abs(lonSpan - 360) <= seamTol
+        % Keep the first copy of the cyclic endpoint.
+        iLon(end) = [];
+    elseif lonSpan > 360
+        error('ULMO:preparegridcoordinates:InvalidGrid', ...
+        'Longitude cannot span more than one cycle.');
+    elseif options.RequireGlobalLongitude && ...
+            abs((360 - lonSpan) - abs(lonStep)) > seamTol
+        error('ULMO:preparegridcoordinates:InvalidGrid', ...
+        'Longitude must cover one complete periodic grid.');
     end
-    if options.RequireGlobalLongitude && ...
-            abs(numel(iLon)*abs(longitudeStep) - 360) > tolerance*numel(lon)
-        error('ULMO:preparegridcoordinates:InvalidGrid', 'Longitude must cover one complete periodic grid.');
-    end
-    [lon, order] = sort(lon(iLon)); iLon = iLon(order);
+
+    [lon, order] = sort(lon(iLon));
+    iLon = iLon(order);
     [lat, iLat] = sort(lat);
-    latitudeSteps = diff(lat);
-    if all(abs(latitudeSteps - latitudeSteps(1)) <= tolerance)
-        latitudeWeights = cosd(lat);
-        weighting = 'cosine-latitude';
+    latSteps = diff(lat);
+
+    if all(abs(latSteps - latSteps(1)) <= 3e-5)
+        latWghts = cosd(lat);
+        wghtMthd = 'cosine-latitude';
     else
-        edges = [lat(1)-latitudeSteps(1)/2; (lat(1:end-1)+lat(2:end))/2; ...
-            lat(end)+latitudeSteps(end)/2];
-        latitudeWeights = diff(sind(max(-90, min(90, edges))));
-        weighting = 'spherical-midpoint-bands';
+        edges = [lat(1) - latSteps(1) / 2; ...
+                     (lat(1:end - 1) + lat(2:end)) / 2; ...
+                     lat(end) + latSteps(end) / 2];
+        edges = max(-90, min(90, edges));
+        latWghts = diff(sind(edges));
+        wghtMthd = 'spherical-midpoint-bands';
     end
-    weights = repmat(latitudeWeights.', numel(lon), 1);
+
+    wghts = repmat(latWghts.', numel(lon), 1);
+end
+
+%% Subfunctions
+function mustBeCoordinateVector(coords)
+
+    if ~isnumeric(coords) || ~isreal(coords) || ~isvector(coords) || ...
+            numel(coords) < 2 || any(~isfinite(coords))
+        error('ULMO:preparegridcoordinates:InvalidGrid', ...
+        'Supply a finite real numeric coordinate vector with at least two elements.');
+    end
+
 end

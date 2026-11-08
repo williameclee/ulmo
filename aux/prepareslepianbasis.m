@@ -1,72 +1,79 @@
-%% PREPARESLEPIANBASIS - Prepare retained harmonic Slepian basis columns.
+%% PREPARESLEPIANBASIS - Selects harmonic Slepian basis columns for a fit.
 %
 % Syntax
-%   basis = PREPARESLEPIANBASIS(domain, L)
-%   basis = PREPARESLEPIANBASIS(domain, L, truncation, supplied, SaveData=false)
+%   GVN = PREPARESLEPIANBASIS(domain, L)
+%   GVN = PREPARESLEPIANBASIS(domain, L, J, GVN, SaveData=false)
 %
 % Input arguments
 %   domain - Geographic domain accepted by GLMALPHA_NEW.
-%   L - Nonnegative integer maximum harmonic degree.
-%   truncation (optional) - Positive retained column count, or [].
-%       Default count: bounded round of N for full bases; all columns for
-%       an already truncated supplied basis.
-%   supplied (optional) - Cell array {G,V,N}, or {} to calculate the basis.
-%       G has (L+1)^2 harmonic rows; V has one value per column; N is the
-%       full Shannon number. Supplied column order and signs are preserved.
+%   L - Maximum harmonic degree.
+%   J (optional) - Number of leading functions to retain.
+%       With [], a full basis uses round(N) bounded by 1 and its column
+%       count. An already truncated basis keeps all its columns.
+%       Default count: [].
+%   GVN (optional) - Supplied basis {G, V, N}, or {} to compute the basis.
+%       G is the harmonic coefficient matrix, V contains one concentration
+%       per column, and N is the full Shannon number.
 %       Default basis: {}.
-%   SaveData (name-value) - Whether computed basis/kernel caches may be saved.
+%   SaveData (name-value) - Whether to save computed basis and kernel caches.
 %       Default flag: true.
-%   RequireOrthonormal (name-value) - Whether retained columns must be
-%       orthonormal, using the precision of the supplied harmonic matrix.
-%       Default flag: false (the XYZS2SLEP validation convention).
+%   RequireOrthonormal (name-value) - Whether to check the retained
+%       columns for orthonormality using the input precision of G.
+%       Default flag: false.
 %
 % Output arguments
-%   basis - Retained {G,V,N}; G is double, V is a column, N is unchanged.
-%       Size: G is ((L+1)^2, J), V is (J, 1), N is scalar.
-%
-% Notes
-%   Computed bases are sorted by descending concentration. This helper does
-%   not read or write projection caches. Callers own supplied-basis bypass.
+%   GVN - Retained basis {G, V, N}. G is double and N is unchanged.
+%       Computed columns are sorted by descending concentration. Supplied
+%       columns retain their input order and signs.
+%       Size: G is ((L+1)^2, J), V is (J, 1), and N is scalar.
 %
 % See also
-%   glmalpha_new, xyzs2slep, fitgriddedslepian
+%   glmalpha_new, mustBeGVN, xyzs2slep, fitgriddedslepian
 %
 % Created by
-%   2026/11/06, En-Chi Lee
+%   2026/11/08, En-Chi Lee (williameclee@gmail.com)
 
-function basis = prepareslepianbasis(domain, L, truncation, supplied, options)
+function GVN = prepareslepianbasis(domain, L, J, GVN, options)
+
     arguments (Input)
         domain
         L (1, 1) double {mustBeFinite, mustBeInteger, mustBeNonnegative}
-        truncation double {mustBeScalarOrEmpty, mustBeFinite, mustBeInteger, mustBePositive} = []
-        supplied cell = {}
+        J double {mustBeScalarOrEmpty, mustBeFinite, mustBeInteger, mustBePositive} = []
+        GVN cell = {}
         options.SaveData (1, 1) logical = true
         options.RequireOrthonormal (1, 1) logical = false
     end
-    if isempty(supplied)
-        [G, V, ~, ~, N] = glmalpha_new(domain, L, SaveData=options.SaveData, BeQuiet=true);
+
+    if isempty(GVN)
+        [G, V, ~, ~, N] = glmalpha_new(domain, L, SaveData = options.SaveData, BeQuiet = true);
         [V, order] = sort(V(:), 'descend');
         G = G(:, order);
     else
-        assert(numel(supplied) == 3, 'ULMO:prepareslepianbasis:Basis', 'Supply {G,V,N}.');
-        [G, V, N] = supplied{:};
+        mustBeGVN(GVN, L);
+        [G, V, N] = GVN{:};
     end
-    validateattributes(G, {'double', 'single'}, {'real', 'finite', '2d', 'nonempty', 'nrows', (L+1)^2});
-    validateattributes(V, {'numeric'}, {'real', 'finite', 'vector', 'numel', size(G, 2)});
-    validateattributes(N, {'numeric'}, {'real', 'finite', 'scalar', 'nonnegative'});
-    assert(size(G, 2) <= size(G, 1), 'ULMO:prepareslepianbasis:Basis', 'Too many basis columns.');
-    J = truncation;
+
     if isempty(J)
         J = size(G, 2);
-        if J == (L+1)^2, J = min(J, max(1, round(N))); end
+
+        if J == (L + 1) ^ 2
+            J = min(J, max(1, round(N)));
+        end
+
     end
+
     assert(J <= size(G, 2), 'ULMO:prepareslepianbasis:Truncation', 'Truncation exceeds basis size.');
     precision = double(eps(class(G)));
     G = double(G(:, 1:J));
+
     if options.RequireOrthonormal
-        assert(norm(G.'*G - eye(J), 'fro') <= 100*precision*max(size(G)), ...
+        % Each inner product includes input rounding and double-precision summation.
+        tol = 100 * max(precision, size(G, 1) * eps('double'));
+        % For an orthogonal matrix, G^T * G is the identity
+        assert(max(abs(G.' * G - eye(J)), [], 'all') <= tol, ...
             'ULMO:prepareslepianbasis:Basis', 'The retained harmonic basis must be orthonormal.');
     end
+
     V = V(:);
-    basis = {G, V(1:J), N};
+    GVN = {G, V(1:J), N};
 end

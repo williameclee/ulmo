@@ -71,7 +71,7 @@
 %   2026/11/03
 %
 % Last modified
-%   2026/11/06, En-Chi Lee
+%   2026/11/07, En-Chi Lee (williameclee@gmail.com)
 
 function [sshSlept, dates, fit, GVN] = ssh2slept(product, domain, L, timeRange, options)
     arguments (Input)
@@ -204,8 +204,8 @@ end
 function [coeffs, dates, fit, basis] = fitRecord(product, domain, L, options)
     [values, ~, dates, lon, lat, partialMonth] = ssh2lonlatt(product, options.TimeStep, ...
         OutputFormat='ndgrid', Unit='m', BeQuiet=true);
-    lon = double(lon(:));
-    lat = double(lat(:));
+    lon = lon(:);
+    lat = lat(:);
     nTime = numel(dates);
     assert(isdatetime(dates) && ~isempty(dates) && all(isfinite(dates)) && ...
         issorted(dates, 'strictascend') && numel(partialMonth) == nTime, ...
