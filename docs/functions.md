@@ -43,6 +43,7 @@ The ultimate goal is to drop the `_new` suffixes and replace the original functi
 | `plm2xyz` | Projects spherical harmonics onto latitude-longitude grids/points. | [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git) | none | Replacement for `plm2xyz` in [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git). |
 | `slep2plm_new` | Projects Slepian functions back to spherical harmonics. | [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git) | none | Replacement for `slep2plm` in [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git), with support for `GeoDomain` objects. |
 | `xyzs2slep` | Fits one or more scalar fields on shared coordinates to a regional Slepian basis. | [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git) | | |
+| `ssh2slept` | Fits SSH anomalies to a regional Slepian basis. | [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git) | [Prepared monthly NASA-SSH maps](nasa-ssh-processing.md#prepare-calendar-month-means) | |
 | `slep2xyz` | Projects Slepian functions onto latitude-longitude grids/points. | [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git) | none | WIP |
 | `slept2resid_new` | Fits a time series | [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git) | none | Replacement for `slept2resid` in [slepian_delta](https://github.com/csdms-contrib/slepian_delta.git), with support for `GeoDomain` objects. |
 | `sphgaussfilt` | Apply Gaussian filter to spherical harmonics | none | none | |
@@ -83,12 +84,15 @@ The ultimate goal is to drop the `_new` suffixes and replace the original functi
 | `steric2lonlatt` | Reads prepared steric fields, applies native halosteric offsets when selected, and interpolates or averages to requested epochs. | | Native steric aggregates |
 | `sterichalocorrection` | Estimates full/shallow halosteric offsets on shared native support and derives deep by subtraction; returns estimated and applied offsets in mm. | | Native steric aggregate |
 | `stericproductinfo` | Inspects native depth availability and validates fields required by the product's default correction policy. | | Native steric aggregate |
+| `steric2gmsl` | Computes the selected component and depth averaged over the common observed area at each native date. | | Prepared native steric MAT file |
 
 #### Data Pre-Processing
 
 | Function name | Description | Package dependencies | Data dependencies |
 | :--- | :--- | :--- | :--- |
 | `download_steric_cmems` (Python script) | Downloads global monthly 3D temperature and salinity subsets from CMEMS. | `copernicusmarine` (Python) | [CMEMS](https://data.marine.copernicus.eu/product/GLOBAL_MULTIYEAR_PHY_001_030/) |
+| `processSSHDataNasa` | Converts weekly reference-mission sea level anomalies to the native ULMO grid file. | | [NASA-SSH reference-mission simple grid](https://doi.org/10.5067/NSREF-SG0V1) |
+| `processSSHMonthlyNasa` | Computes calendar-month means and coverage counts on the weekly NASA-SSH grid. | | [Prepared weekly maps](nasa-ssh-processing.md) |
 | `processStericDataCmems` | Processes steric sea level, density variations, and thermosteric/halosteric components from CMEMS ocean reanalysis data. | [Gibbs Seawater Toolbox (GSW)](https://www.teos-10.org/software.htm), MATLAB Parallel Computing Toolbox (optional) | [CMEMS](https://data.marine.copernicus.eu/product/GLOBAL_MULTIYEAR_PHY_001_030/) |
 | `processStericDataEN4` | Same as above, but for the Met Office EN4 objective analyses. | [Gibbs Seawater Toolbox (GSW)](https://www.teos-10.org/software.htm), MATLAB Parallel Computing Toolbox (optional) | [Met Office EN4](https://www.metoffice.gov.uk/hadobs/en4/) |
 
@@ -123,4 +127,4 @@ The ultimate goal is to drop the `_new` suffixes and replace the original functi
 
 ---
 
-Last modified: 2026/09/25, [@williameclee](mailto:williameclee@arizona.edu)
+Last modified: 2026/11/08, [@williameclee](mailto:williameclee@gmail.com)
