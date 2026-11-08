@@ -1,102 +1,129 @@
-%% STERIC2LONLATT
-% Loads steric sea level data and interpolate to regular latitude-longitude mesh.
+%% STERIC2LONLATT - Loads and interpolates prepared steric sea level grids.
 %
 % Syntax
-%   [steric, sigma, dates] = STERIC2LONLATT(product)
-%   [steric, sigma, dates] = STERIC2LONLATT(product, timestep, meshsize)
-%   [steric, sigma, dates] = STERIC2LONLATT(product, timestep, meshsize, timelim)
-%   [steric, sigma, dates] = STERIC2LONLATT(product, timestep, meshsize, timelim)
-%   [steric, sigma, dates] = STERIC2LONLATT(__, "Name", Value)
-%   [steric, sigma, dates, lon, lat] = STERIC2LONLATT(__)
+%   [steric, stericSigma, dates] = STERIC2LONLATT(product)
+%   [steric, stericSigma, dates] = STERIC2LONLATT(product, timestep, meshsize)
+%   [steric, stericSigma, dates] = STERIC2LONLATT(product, timestep, meshsize, timelim)
+%   [steric, stericSigma, dates] = STERIC2LONLATT(__, "Name", value)
+%   [steric, stericSigma, dates, lon, lat] = STERIC2LONLATT(__)
 %
 % Input arguments
-%   product - Name of the steric sea level product
-%       - 'SIO' : Scripps Argo steric sea level, only include the upper
-%           ocean
-%       - 'EN4' : Met Office multi-mission EN4.2.2 steric sea level,
-%           includes full depth
-%       - 'CMEMS' : Copernicus Marine Environment Monitoring Service steric
-%           sea level, includes full depth
-%       - 'ORAS5' : ECMWF Ocean ReAnalysis System 5 steric sea level,
-%           includes full depth
-%       - 'NOAA' : NOAA steric sea level
-%       The default product is 'EN4'.
-%   timestep - Temporal interpolation time step
-%       - Numeric or duration scalar, in units of days.
-%       - 'midmonth': mean of native samples in each calendar month,
-%         dated at the midpoint.
-%       - 'GRACE': mean within CSR RL06 degree-60 GRACE solution windows.
-%         Missing months use calendar boundaries inside the gap, with outer
-%         bounds aligned to adjacent real solutions. Dates are window midpoints.
-%         Monthly inputs are averaged by native timestamps, not reconstructed
-%         at daily resolution.
-%       When not specified, no temporal interpolation is performed.
-%   meshsize - Spatial interpolation grid size in degrees
-%       - Real scalar, in units of degrees.
-%       When not specified, no spatial interpolation is performed.
-%   timelim - Time range of interest
-%       - Datetime or numeric vector, in units of datenum
-%       When not specified, the full time range of the data is returned.
-%   LonOrigin - Longitudinal centre of the interpolated output mesh
-%       - Real scalar, in units of degrees.
-%       When not specified, the midpoint of the input longitude range is
-%       used. This option is only relevant when spatial interpolation is
-%       performed.
-%   Interpolation - Interpolation method, for both temporal and spatial
-%       - An INTERP1 method, or 'mean' to average native samples.
-%         For 'midmonth' and 'GRACE', this option controls spatial
-%         interpolation only. Fixed-step means use
-%         half-open windows centered on the output dates. Spatial
-%         interpolation uses 'linear' when 'mean' is requested.
-%       The default interpolation method is 'linear'. This option is only
-%       relevant when temporal or spatial interpolation is performed.
-%   OutputFormat - Format of the output mesh
-%       - 'meshgrid' or 'ndgrid' for (lat, lon, t) or (lon, lat, t)
-%           ordering.
-%       The default format is 'meshgrid'.
-%   TimeFormat - Format of the output time vector
-%       - 'datetime' or 'datenum'.
-%       The default format is 'datetime'.
-%   Unit - Unit of the output steric sea level data
-%       - 'm' (metres) or 'mm' (millimetres, equivalent to kg/m^2).
-%       The default unit is 'm'.
-%   Depth - Depth range of the steric sea level data
-%       - 'full' : Full depth steric sea level
-%       - 'shallow' : Upper ocean steric sea level
-%       - 'deep' : Deep ocean steric sea level
-%       The default is 'full'.
-%	ForceNew - Logical flag to force reprocess of the data
-%		The default option is false.
-%   TruncationBeforeInterpolation - Whether to restrict interpolation to timelim.
-%       The default is false, so the cache covers the full product time range.
-%	SaveData - Logical flag to cache the spatially and temporally interpolated data
-%		The default option is true.
-%	BeQuiet - Logical flag to print messages
-%		- true: Suppress all messages.
-%		- false: Print all messages (usually for debugging).
-%		The default option is 'soft true', only printing important
-%       messages.
+%   product (optional) - Prepared product: SIO, EN4c14, CMEMS, NOAA, or ORAS5.
+%       Default product: EN4c14.
+%   timestep (optional) - Temporal interpolation step or averaging convention.
+%       Positive numeric scalar or duration for fixed steps, 'midmonth' for
+%       calendar-month means, or 'GRACE' for CSR RL06 degree-60 solution
+%       windows. Both conventions average native samples and return window
+%       midpoints. Missing GRACE months use calendar windows adjusted to
+%       meet adjacent solutions.
+%       Unit: days for numeric values.
+%       Default step: [] (native timestamps).
+%   meshsize (optional) - Spatial interpolation spacing.
+%       A two-element [spacing, longitudeCentre] vector also sets LonOrigin
+%       when that option is empty.
+%       With LonOrigin alone, the spacing is 0.5 degrees.
+%       Unit: degrees.
+%       Default spacing: [] (no spatial interpolation unless LonOrigin is set).
+%   timelim (optional) - Inclusive output time limits as datetime or datenum.
+%       Size: (1, 2) or (2, 1), or empty.
+%       Unit: days for datenum values.
+%       Default limits: [] (full record).
+%   LonOrigin (name-value) - Longitude centre of the interpolated grid.
+%       With meshsize alone, the grid is centred on 180 degrees east.
+%       Unit: degrees east.
+%       Default centre: [] (no spatial interpolation unless meshsize is set).
+%   Interpolation (name-value) - Temporal and spatial interpolation method.
+%       An INTERP1 method, or 'mean' for fixed-step averaging in half-open
+%       windows centred on output dates. For 'midmonth' and 'GRACE', this
+%       option controls spatial interpolation only. Spatial interpolation
+%       uses 'linear' when 'mean' is selected.
+%       Default method: linear.
+%   OutputFormat (name-value) - meshgrid or ndgrid spatial ordering.
+%       Default format: meshgrid.
+%   TimeFormat (name-value) - datetime or datenum output dates.
+%       Default format: datetime.
+%   Unit (name-value) - m or mm output sea level units.
+%       Default unit: m.
+%   Depth (name-value) - full, shallow, or deep, as prepared by the product.
+%       For SIO and NOAA, shallow selects the full prepared field.
+%       Default depth: full.
+%   Type (name-value) - Selected steric component or correction.
+%       total, thermosteric, halosteric, non-thermosteric (total minus
+%       thermosteric), or non-halosteric (total minus halosteric).
+%       'no halosteric drift' subtracts the global halosteric mean for the
+%       selected depth from total steric sea level. 'default' selects total
+%       for SIO and 'no halosteric drift' for every other product.
+%       Default type: default.
+%   ForceNew (name-value) - Whether to bypass the derived cache and reprocess
+%       the existing native grids. Does not regenerate native source data.
+%       Default flag: false.
+%   TruncationBeforeInterpolation (name-value) - Whether to restrict temporal
+%       processing to timelim and include the limits in the cache filename.
+%       Default flag: false (process the full record before output selection).
+%   SaveData (name-value) - Whether to save processed grids to a derived cache.
+%       Default flag: true.
+%   BeQuiet (name-value) - Whether to suppress messages.
+%       true suppresses messages; false prints all messages; 0.5 prints
+%       cache-loading and saving messages.
+%       Default level: 0.5.
+%   CallChain (name-value) - Calling function names for diagnostic messages.
+%       Default chain: {}.
+%
+% Input file content
+%   lon, lat - Longitude and latitude coordinate vectors.
+%       Size: vectors with nLon and nLat elements, respectively.
+%       Unit: degrees east and north, respectively.
+%   dates - Native or cached timestamps.
+%       Size: vector with N elements.
+%   <component>Sl - Prepared grids for the requested components/depths.
+%       Components are steric, thermosteric and halosteric, with shallow/deep
+%       prefixes when supplied, e.g. shallowHalostericSl. Residuals and drift
+%       correction also require the corresponding total steric grid.
+%       Size: (nLat, nLon, N) or (nLon, nLat, N).
+%       Unit: m.
+%   steric - Selected component in an existing epoch-mean cache.
+%       Size: (nLat, nLon, N) or (nLon, nLat, N).
+%       Unit: m.
 %
 % Output arguments
-%	ssh - SSH mesh
-%		The dimensions and units depend on the options specified.
-%       The default dimensions are (lat, lon, t) in units of metres.
-%	sigma - Uncertainty or error mesh of the SSH data
-%		The units and dimensions are the same as for SSH.
-%	dates - The time stamps of the data
-%		The data type depends on the TimeFormat option.
-%	lon - Longitude of the mesh
-%		The dimensions (i.e. row or column vector) depend on the
-%       OutputFormat option.
-%	lat - Latitude of the mesh
-%		The dimensions (i.e. row or column vector) depend on the
-%       OutputFormat option.
+%   steric - Selected steric sea level grid.
+%       Size: (nLat, nLon, N) for meshgrid; (nLon, nLat, N) for ndgrid.
+%       Unit: Unit.
+%   stericSigma - Zero placeholder for product uncertainty.
+%       Size: same as steric.
+%       Unit: Unit.
+%   dates - Returned timestamps in TimeFormat.
+%       Size: (N, 1).
+%       Unit: days for datenum output.
+%   lon - Returned longitudes.
+%       Size: (1, nLon) for meshgrid; (nLon, 1) for ndgrid.
+%       Unit: degrees east.
+%   lat - Returned latitudes.
+%       Size: (nLat, 1) for meshgrid; (1, nLat) for ndgrid.
+%       Unit: degrees north.
+%
+% Output file content
+%   lon, lat, dates - Processed coordinates and timestamps.
+%       Same conventions as the input file; saved before output formatting.
+%   <component>Sl - Processed component grids for interpolation caches.
+%       Size: as in the input file, with processed spatial/time dimensions.
+%       Unit: m.
+%   steric - Selected component for epoch-mean caches.
+%       Size: as in the input file, with processed spatial/time dimensions.
+%       Unit: m.
+%
+% Notes
+%   Files are resolved through STERICFILEPATH under IFILES/STERIC/product.
+%   Calling without outputs attempts to plot the global mean of the grid.
+%
+% See also
+%   steric2gmsl, stericfilepath, interptemporal, temporalmeanepochs
 %
 % Created by
-%	2025/07/22, En-Chi Lee (williameclee@arizona.edu)
+%   2025/07/22, En-Chi Lee (williameclee@arizona.edu)
 %
 % Last modified
-%	2026/11/01, En-Chi Lee (williameclee@gmail.com)
+%   2026/11/08, En-Chi Lee (williameclee@gmail.com)
 
 function [steric, stericSigma, dates, lon, lat] = steric2lonlatt( ...
         product, timestep, meshsize, timelim, options)
@@ -214,7 +241,7 @@ function [steric, stericSigma, dates, lon, lat] = steric2lonlatt( ...
         comp = sprintf('-%s-%s', options.Depth, strrep(options.Type, ' ', '-'));
     end
 
-    outputPath = outputpath(product, timestep, meshsize, lonOrigin, intpMthd, ...
+    outPath = stericfilepath(product, timestep, meshsize, lonOrigin, intpMthd, ...
         options.TruncationBeforeInterpolation, timelim, comp);
 
     baseStericVar = stericVar;
@@ -232,25 +259,25 @@ function [steric, stericSigma, dates, lon, lat] = steric2lonlatt( ...
         cacheVars = {'steric'};
     end
 
-    cacheHit = ~options.ForceNew && isfile(outputPath) && ...
-        all(ismember([coordVars, cacheVars], who('-file', outputPath)));
+    cacheHit = ~options.ForceNew && isfile(outPath) && ...
+        all(ismember([coordVars, cacheVars], who('-file', outPath)));
 
     if cacheHit
-        inputPath = outputPath;
+        inPath = outPath;
         dataVars = cacheVars;
     else
-        inputPath = outputpath(product);
+        inPath = stericfilepath(product);
 
-        if ~isfile(inputPath)
-            error('ULMO:LoadData:FileNotFound', 'Input file %s not found.', inputPath);
+        if ~isfile(inPath)
+            error('ULMO:LoadData:FileNotFound', 'Input file %s not found.', inPath);
         end
 
-        available = who('-file', inputPath);
+        available = who('-file', inPath);
         missing = setdiff([coordVars, vars], available);
 
         if ~isempty(missing)
             error('ULMO:LoadData:VariableNotFound', ...
-                'Variables missing from %s: %s', inputPath, strjoin(missing, ', '));
+                'Variables missing from %s: %s', inPath, strjoin(missing, ', '));
         end
 
         if useMean
@@ -263,11 +290,11 @@ function [steric, stericSigma, dates, lon, lat] = steric2lonlatt( ...
 
     if options.BeQuiet == 0 || (cacheHit && options.BeQuiet <= 1)
         fprintf('[ULMO>%s] Loading %s steric product from %s.\n', ...
-            callchaintext(callChain), product, inputPath);
+            callchaintext(callChain), product, inPath);
     end
 
-    coord = load(inputPath, coordVars{:});
-    data = load(inputPath, dataVars{:});
+    coord = load(inPath, coordVars{:});
+    data = load(inPath, dataVars{:});
 
     if ~cacheHit
         epochRange = [];
@@ -299,14 +326,14 @@ function [steric, stericSigma, dates, lon, lat] = steric2lonlatt( ...
             [data, coord] = preparegrid(data, coord, meshsize, lonOrigin, spatialIntpMthd, options.BeQuiet, callChain);
         end
 
-        if saveData && ~strcmp(inputPath, outputPath)
+        if saveData && ~strcmp(inPath, outPath)
             data.lon = coord.lon;
             data.lat = coord.lat;
             data.dates = coord.dates;
-            save(outputPath, '-struct', 'data', '-v7.3');
+            save(outPath, '-struct', 'data', '-v7.3');
 
             if options.BeQuiet <= 1
-                fprintf('[ULMO>%s] Saved %s.\n', callchaintext(callChain), filehref(outputPath, 'steric product'));
+                fprintf('[ULMO>%s] Saved %s.\n', callchaintext(callChain), filehref(outPath, 'steric product'));
             end
 
         end
@@ -480,7 +507,7 @@ end
 
 % Format output
 function [steric, stericSigma, dates, lon, lat] = formatoutput( ...
-        steric, dates, lon, lat, timelim, timeFmt, outputFmt, unit)
+        steric, dates, lon, lat, timelim, timeFmt, outFmt, unit)
 
     if ~isempty(timelim)
         isValidTime = (dates >= timelim(1)) & (dates <= timelim(2));
@@ -492,7 +519,7 @@ function [steric, stericSigma, dates, lon, lat] = formatoutput( ...
         dates = datenum(dates); %#ok<DATNM>
     end
 
-    switch outputFmt
+    switch outFmt
         case 'meshgrid'
             lon = lon(:)';
             lat = lat(:);
@@ -518,82 +545,4 @@ function [steric, stericSigma, dates, lon, lat] = formatoutput( ...
     % Currently no sigma data available
     stericSigma = zeros(size(steric), 'like', steric);
 
-end
-
-% Find output path
-function outPath = outputpath( ...
-        product, timeStep, meshSize, lonOrigin, intpMthd, truncBeforeIntp, timelim, component)
-
-    arguments (Input)
-        product StericProduct {mustBeScalarOrEmpty}
-        timeStep {mustBeTimeStep} = []
-        meshSize {mustBePositive} = []
-        lonOrigin {mustBeFinite, mustBeReal} = []
-        intpMthd {mustBeTextScalar} = ""
-        truncBeforeIntp (1, 1) {mustBeNumericOrLogical} = false
-        timelim {mustBeTimeRange} = []
-        component (1, :) char = ''
-    end
-
-    outputFolder = fullfile(getenv("IFILES"), 'STERIC', char(product));
-
-    timeStepStr = '';
-
-    if ~isempty(timeStep)
-
-        if ischar(timeStep) || isstring(timeStep)
-            timeStepStr = sprintf('-T%s', lower(timeStep));
-        elseif isduration(timeStep)
-            timeStepStr = sprintf('-T%s', erase(sprintf('%s', timeStep), ' '));
-        elseif isnumeric(timeStep)
-            timeStepStr = sprintf('-T%d', timeStep);
-        else
-            error(sprintf('ULMO:%s:InvalidTimeStep', upper(mfilename)), ...
-                'Unrecognised time step input for saving: %s', class(timeStep));
-        end
-
-        % Earlier linear fixed-step caches could contain bin averages.
-        if isduration(timeStep) && strcmpi(intpMthd, 'linear')
-            timeStepStr = [timeStepStr, '-interp'];
-        end
-
-    end
-
-    spaceIntpStr = '';
-
-    if ~isempty(meshSize) && ~isempty(lonOrigin)
-        spaceIntpStr = ['-H', num2str(meshSize), 'O', num2str(lonOrigin)];
-    elseif ~isempty(meshSize)
-        spaceIntpStr = ['-H', num2str(meshSize)];
-    elseif ~isempty(lonOrigin)
-        spaceIntpStr = ['-O', num2str(lonOrigin)];
-    end
-
-    intpMethodStr = '';
-
-    if ~(isempty(timeStepStr) && isempty(spaceIntpStr))
-        intpMethodStr = sprintf('-%s', lower(intpMthd));
-    end
-
-    timelimStr = '';
-
-    if truncBeforeIntp && ~isempty(timelim)
-
-        if isnumeric(timelim)
-            timelim = datetime(timelim, 'ConvertFrom', 'datenum');
-        end
-
-        timeFmt = 'yyyyMMdd';
-
-        if any(timeofday(timelim) ~= 0)
-            timeFmt = 'yyyyMMdd''T''HHmmssSSSSSSSSS';
-        end
-
-        timelimStr = sprintf('-%s_%s', string(timelim(1), timeFmt), string(timelim(2), timeFmt));
-    end
-
-    outputFile = sprintf('%s-StericSeaLevel%s%s%s%s%s.mat', ...
-        product, timeStepStr, spaceIntpStr, intpMethodStr, timelimStr, component);
-
-    outPath = fullfile(outputFolder, outputFile);
 end
