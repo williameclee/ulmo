@@ -1,4 +1,4 @@
-%% STERIC2LONLATT - Load and interpolate prepared steric sea level grids.
+%% STERIC2LONLATT - Loads and interpolates prepared steric sea level grids.
 %
 % Syntax
 %   [steric, stericSigma, dates] = STERIC2LONLATT(product)
@@ -11,13 +11,17 @@
 %   product (optional) - Prepared product: SIO, EN4c14, CMEMS, NOAA, or ORAS5.
 %       Default product: EN4c14.
 %   timestep (optional) - Temporal interpolation step or averaging convention.
-%       Positive numeric scalar or duration for fixed steps; 'midmonth' for
-%       calendar-month means; 'GRACE' for CSR RL06 degree-60 solution windows.
+%       Positive numeric scalar or duration for fixed steps, 'midmonth' for
+%       calendar-month means, or 'GRACE' for CSR RL06 degree-60 solution
+%       windows. Both conventions average native samples and return window
+%       midpoints. Missing GRACE months use calendar windows adjusted to
+%       meet adjacent solutions.
 %       Unit: days for numeric values.
 %       Default step: [] (native timestamps).
 %   meshsize (optional) - Spatial interpolation spacing.
 %       A two-element [spacing, longitudeCentre] vector also sets LonOrigin
 %       when that option is empty.
+%       With LonOrigin alone, the spacing is 0.5 degrees.
 %       Unit: degrees.
 %       Default spacing: [] (no spatial interpolation unless LonOrigin is set).
 %   timelim (optional) - Inclusive output time limits as datetime or datenum.
@@ -25,6 +29,7 @@
 %       Unit: days for datenum values.
 %       Default limits: [] (full record).
 %   LonOrigin (name-value) - Longitude centre of the interpolated grid.
+%       With meshsize alone, the grid is centred on 180 degrees east.
 %       Unit: degrees east.
 %       Default centre: [] (no spatial interpolation unless meshsize is set).
 %   Interpolation (name-value) - Temporal and spatial interpolation method.
@@ -84,7 +89,7 @@
 %   steric - Selected steric sea level grid.
 %       Size: (nLat, nLon, N) for meshgrid; (nLon, nLat, N) for ndgrid.
 %       Unit: Unit.
-%   stericSigma - Zero placeholder; product uncertainties are not supplied.
+%   stericSigma - Zero placeholder for product uncertainty.
 %       Size: same as steric.
 %       Unit: Unit.
 %   dates - Returned timestamps in TimeFormat.
@@ -109,7 +114,7 @@
 %
 % Notes
 %   Files are resolved through STERICFILEPATH under IFILES/STERIC/product.
-%   Calling without outputs attempts to plot the returned global mean.
+%   Calling without outputs attempts to plot the global mean of the grid.
 %
 % See also
 %   steric2gmsl, stericfilepath, interptemporal, temporalmeanepochs
@@ -118,7 +123,7 @@
 %   2025/07/22, En-Chi Lee (williameclee@arizona.edu)
 %
 % Last modified
-%   2026/11/04, En-Chi Lee (williameclee@gmail.com)
+%   2026/11/08, En-Chi Lee (williameclee@gmail.com)
 
 function [steric, stericSigma, dates, lon, lat] = steric2lonlatt( ...
         product, timestep, meshsize, timelim, options)

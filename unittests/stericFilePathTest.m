@@ -1,4 +1,4 @@
-%% STERICFILEPATHTEST - Preserve existing native and derived cache filenames.
+%% STERICFILEPATHTEST - Checks native and derived steric cache filenames.
 %
 % Syntax
 %   results = runtests('unittests/stericFilePathTest.m')
@@ -10,6 +10,9 @@
 %
 % Created by
 %   2026/11/04, En-Chi Lee (williameclee@gmail.com)
+%
+% Last modified
+%   2026/11/08, En-Chi Lee (williameclee@gmail.com)
 
 classdef stericfilepathTest < matlab.unittest.TestCase
 

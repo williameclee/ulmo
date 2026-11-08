@@ -1,6 +1,7 @@
-%% STERIC2GMSL - Computes global-mean steric sea level time series.
+%% STERIC2GMSL - Returns a native global-mean steric sea level series.
 %
 % Syntax
+%   [gmsl, dates] = STERIC2GMSL(product, type)
 %   [gmsl, dates] = STERIC2GMSL(product, type, depth)
 %   [gmsl, dates] = STERIC2GMSL(__, "Name", value)
 %
@@ -10,7 +11,7 @@
 %   type - Selected component.
 %       total, thermosteric, halosteric, non-thermosteric (total minus
 %       thermosteric), or non-halosteric (total minus halosteric).
-%       No correction is applied. There is no default selection.
+%       The returned mean uses uncorrected native fields.
 %   depth (optional) - full, shallow, or deep, as supplied by the product.
 %       Unsupported component/depth combinations raise an error.
 %       Default depth: full.
@@ -22,10 +23,11 @@
 %       native MAT file. Existing complete caches can still be read if false.
 %       Default flag: true.
 %   ForceNew (name-value) - Whether to recalculate all applicable means.
-%       With SaveData=false, no file is changed.
+%       Set true after changing source grids or the averaging convention.
+%       Combine with SaveData=false to recalculate in memory.
 %       Default flag: false.
 %   BeQuiet (name-value) - Whether to suppress messages.
-%       0 and 0.5 print calculation/save messages; 1 suppresses all messages.
+%       Levels 0 and 0.5 report calculation and saving. Level 1 is silent.
 %       Default level: 0.5.
 %
 % Input file content
@@ -56,7 +58,7 @@
 % Output arguments
 %   gmsl - Selected uncorrected global mean on common observed support.
 %       Size: (N, 1).
-%       Unit: Unit.
+%       Unit: m or mm, as selected by Unit.
 %   dates - Native timestamps in the selected TimeFormat.
 %       Size: (N, 1).
 %       Unit: days for datenum output.
@@ -72,11 +74,19 @@
 %       Size: (1, 1).
 %       Reusing a cache or setting SaveData=false leaves this value unchanged.
 %
+% Notes
+%   The fixed mask uses the first available full-depth field in priority
+%   order: halosteric, total, then thermosteric. A cell must have finite,
+%   nonzero reference values at 80% or more of the native timestamps.
+%   Each timestamp uses cells that also have finite values in every supplied
+%   component and layer. Zero layer values contribute on this common support.
+%   A timestamp with no positive-weight support returns NaN.
+%
 % See also
 %   steric2lonlatt, stericfilepath
 %
 % Created by
-%   2026/11/04, En-Chi Lee (williameclee@gmail.com)
+%   2026/11/08, En-Chi Lee (williameclee@gmail.com)
 
 function [gmsl, dates] = steric2gmsl(product, type, depth, options)
 
@@ -138,7 +148,7 @@ function [gmsl, dates] = steric2gmsl(product, type, depth, options)
             save(inPath, '-struct', 'means', '-append');
 
             if options.BeQuiet < 1
-                fprintf('[ULMO>%s] Saved native means for %s.\n', mfilename, char(product));
+                fprintf('[ULMO>%s] Saved native means for %s.\n', mfilename, filehref(product, inPath));
             end
 
         end

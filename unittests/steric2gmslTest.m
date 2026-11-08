@@ -1,4 +1,4 @@
-%% STERIC2GMSLTEST - Native mean, schema and cache tests using temporary files.
+%% STERIC2GMSLTEST - Tests native steric means, field availability and cache reuse.
 %
 % Syntax
 %   results = runtests('unittests/steric2gmslTest.m')
@@ -7,11 +7,10 @@
 %   Exercises component/layer means on uniform and nonuniform latitude grids,
 %   finite support, native schemas, output formats and cache reuse/rebuilding.
 %   Latitude cases include descending order and clipped polar boundaries.
-%   Each test uses a temporary IFILES folder; production files are not read
-%   or changed.
+%   Each test writes synthetic MAT files to a temporary IFILES folder.
 %
 % Created by
-%   2026/11/04, En-Chi Lee (williameclee@gmail.com)
+%   2026/11/08, En-Chi Lee (williameclee@gmail.com)
 
 classdef steric2gmslTest < matlab.unittest.TestCase
 

@@ -1,4 +1,4 @@
-%% STERICFILEPATH - Generates steric product paths.
+%% STERICFILEPATH - Builds the filename for a native or derived steric product.
 %
 % Syntax
 %   outPath = STERICFILEPATH(product)
@@ -9,7 +9,8 @@
 %   product - Product name.
 %   timeStep (optional) - Temporal cache selector.
 %       Positive numeric scalar or duration, 'midmonth', or 'GRACE'.
-%       Numeric values are encoded as integers; durations retain their units.
+%       Numeric steps use the MATLAB %d format. Duration steps use their
+%       displayed value and unit with spaces removed.
 %       Unit: days for numeric values.
 %       Default selector: [] (native timestamps).
 %   meshSize (optional) - Spatial grid spacing.
@@ -31,13 +32,13 @@
 %       Default suffix: '' (empty text).
 %
 % Output arguments
-%   outPath - MAT filename under the IFILES/STERIC/product directory.
+%   outPath - MAT file path under the product folder in IFILES/STERIC.
 %
 % See also
 %   steric2lonlatt, steric2gmsl
 %
 % Created by
-%   2026/11/04, En-Chi Lee (williameclee@gmail.com)
+%   2026/11/08, En-Chi Lee (williameclee@gmail.com)
 
 function outPath = stericfilepath( ...
         product, timeStep, meshSize, lonOrigin, intpMthd, truncBeforeIntp, timelim, component)
