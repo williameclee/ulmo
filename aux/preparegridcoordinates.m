@@ -41,9 +41,15 @@ function [lon, lat, iLon, iLat, wghts, wghtMthd] = preparegridcoordinates(lon, l
         options.RequireGlobalLongitude (1, 1) logical = false
     end
 
-    if numel(lon) < 2 || numel(lat) < 2
+    if any(abs(lat) > 90)
         error('ULMO:preparegridcoordinates:InvalidGrid', ...
-        'Expected longitude/latitude coordinate vectors of at least length 2.');
+        'Latitude must lie between -90 and 90 degrees.');
+    end
+
+    lonTol = 3e-5;
+
+    if isa(lon, 'single')
+        lonTol = max(lonTol, double(eps(max(abs(lon)))));
     end
 
     lon = double(lon(:));
