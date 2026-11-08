@@ -1,18 +1,18 @@
-%% STERIC2GMSL - Read or cache one native global-mean steric time series.
+%% STERIC2GMSL - Returns a native global-mean steric sea level series.
 %
 % Syntax
-%   [gmsl, dates] = STERIC2GMSL(product, Type="halosteric")
-%   [gmsl, dates] = STERIC2GMSL(product, Type="thermosteric", Depth="shallow")
+%   [gmsl, dates] = STERIC2GMSL(product, "halosteric")
+%   [gmsl, dates] = STERIC2GMSL(product, "thermosteric", "shallow")
 %   [gmsl, dates] = STERIC2GMSL(__, SaveData=false, ForceNew=true)
 %
 % Input arguments
 %   product - Prepared product identifier accepted by StericProduct.
 %       The native MAT file must already exist at STERICFILEPATH(product).
-%   Type (name-value, required) - Selected component.
+%   type - Selected component.
 %       total, thermosteric, halosteric, non-thermosteric (total minus
 %       thermosteric), or non-halosteric (total minus halosteric).
 %       No correction is applied. There is no default selection.
-%   Depth (name-value) - full, shallow, or deep, as supplied by the product.
+%   depth (optional) - full, shallow, or deep, as supplied by the product.
 %       Unsupported component/depth combinations raise an error.
 %       Default depth: full.
 %   Unit (name-value) - m or mm, for the returned series only.
@@ -31,7 +31,11 @@
 %
 % Input file content
 %   lon - Regular longitude coordinate vector spanning one complete cycle.
-%       A duplicated cyclic endpoint is permitted.
+%       Coordinates may ascend or descend and may repeat the cyclic endpoint.
+%       Offsets from the first meridian must match a regular 360-degree grid.
+%       The tolerance is 3e-5 degrees or one single-precision spacing at the
+%       largest absolute longitude, whichever is larger for single inputs.
+%       It is capped at 90 degrees divided by the stored longitude count.
 %       Size: vector with nLon elements.
 %       Unit: degrees east.
 %   lat - Strictly monotone latitude coordinate vector in [-90, 90].
@@ -81,8 +85,8 @@
 %   all supplied components/layers. Uniform latitude grids use cosine-latitude
 %   weights. Nonuniform grids use spherical band areas between arithmetic
 %   latitude midpoints: abs(diff(sind(boundaries))). Outer boundaries extend
-%   half the adjacent spacing, clipped to [-90, 90]. Spacing differences
-%   within 3e-5 degrees are treated as coordinate rounding. A duplicated
+%   half the adjacent spacing, clipped to [-90, 90]. Latitude spacing
+%   differences within 3e-5 degrees are treated as coordinate rounding. A duplicated
 %   longitude endpoint is excluded. No supported area gives NaN. Valid zero
 %   layers remain in the denominator. Residuals are differences on this
 %   common support; total need not equal thermosteric plus halosteric.
@@ -101,23 +105,18 @@
 %   2026/11/04, En-Chi Lee (williameclee@gmail.com)
 %
 % Last modified
-%   2026/11/05, OpenAI Codex
+%   2026/11/08, OpenAI Codex
 
-function [gmsl, dates] = steric2gmsl(product, options)
+function [gmsl, dates] = steric2gmsl(product, type, depth, options)
     arguments (Input)
         product (1, 1) StericProduct
-        options.Type (1, 1) string {mustBeMember(options.Type, ...
-            ["total", "thermosteric", "halosteric", "non-thermosteric", "non-halosteric"])}
-        options.Depth (1, 1) string {mustBeMember(options.Depth, ["full", "shallow", "deep"])} = "full"
+        type {mustBeTextScalar, mustBeMember(type, ["total", "thermosteric", "halosteric", "non-thermosteric", "non-halosteric"])}
+        depth {mustBeTextScalar, mustBeMember(depth, ["full", "shallow", "deep"])} = "full"
         options.Unit {mustBeTextScalar, mustBeMember(options.Unit, ["m", "mm"])} = "m"
         options.TimeFormat {mustBeTextScalar, mustBeMember(options.TimeFormat, ["datetime", "datenum"])} = "datetime"
         options.SaveData (1, 1) logical = true
         options.ForceNew (1, 1) logical = false
         options.BeQuiet (1, 1) double {mustBeMember(options.BeQuiet, [0, 0.5, 1])} = 0.5
-    end
-
-    if ~isfield(options, 'Type')
-        error('ULMO:steric2gmsl:TypeRequired', 'Specify Type explicitly.');
     end
 
     inputPath = stericfilepath(product);
@@ -132,11 +131,11 @@ function [gmsl, dates] = steric2gmsl(product, options)
     supported = schema.supported;
     types = schema.types;
     depths = schema.depths;
-    iType = find(types == options.Type);
-    iDepth = find(depths == options.Depth);
+    iType = find(strcmpi(types, type));
+    iDepth = find(strcmpi(depths, depth));
     if ~supported(iType, iDepth)
         error('ULMO:steric2gmsl:UnsupportedField', ...
-            'Product %s does not supply Type=%s, Depth=%s.', char(product), options.Type, options.Depth);
+            'Product %s does not supply Type=%s, Depth=%s.', char(product), type, depth);
     end
     if ~all(ismember({'lon', 'lat', 'dates'}, {metadata.name}))
         error('ULMO:steric2gmsl:InvalidSchema', 'Native lon, lat and dates are required.');
@@ -201,21 +200,32 @@ function [dates, weights, keepLon, transposeGrid] = coordinates(coord, metadata,
             numel(lon) < 2 || numel(lat) < 2 || any(abs(lat) > 90)
         error('ULMO:steric2gmsl:InvalidGrid', 'Expected finite longitude/latitude coordinate vectors.');
     end
-    steps = [lon(2) - lon(1), lat(2) - lat(1)];
-    tolerance = 3e-5; % Allows single-precision coordinate rounding, in degrees.
+    tolerance = 3e-5; % Coordinate tolerance in degrees.
     latitudeSteps = diff(lat);
-    if steps(1) == 0 || any(abs(diff(lon) - steps(1)) > tolerance) || ...
-            ~(all(latitudeSteps > 0) || all(latitudeSteps < 0))
-        error('ULMO:steric2gmsl:InvalidGrid', ...
-            'Longitude must be regularly spaced and latitude must be strictly monotone.');
+    if ~(all(latitudeSteps > 0) || all(latitudeSteps < 0))
+        error('ULMO:steric2gmsl:InvalidGrid', 'Latitude must be strictly monotone.');
     end
+
+    % Both endpoints of an offset can carry single-precision rounding.
+    lonTolerance = tolerance;
+    if isa(coord.lon, 'single')
+        lonTolerance = max(lonTolerance, double(eps(max(abs(coord.lon(:))))));
+    end
+    % Keep adjacent meridians distinguishable even on very fine grids.
+    lonTolerance = min(lonTolerance, 90 / numel(lon));
+    lonSpan = lon(end) - lon(1);
     keepLon = 1:numel(lon);
-    if abs(abs(lon(end) - lon(1)) - 360) <= tolerance
+    if abs(abs(lonSpan) - 360) <= lonTolerance
         keepLon(end) = [];
     end
-    if abs(numel(keepLon) * abs(steps(1)) - 360) > tolerance * numel(lon)
-        error('ULMO:steric2gmsl:InvalidGrid', 'Longitude must cover one complete periodic grid.');
+
+    % A complete cycle fixes the spacing independently of the first interval.
+    lonStep = sign(lonSpan) * 360 / numel(keepLon);
+    expectedOffsets = (0:numel(lon) - 1)' * lonStep;
+    if lonSpan == 0 || any(abs((lon - lon(1)) - expectedOffsets) > lonTolerance)
+        error('ULMO:steric2gmsl:InvalidGrid', 'Longitude must cover one complete regular periodic grid.');
     end
+
     dates = coord.dates;
     if isnumeric(dates) && isreal(dates) && all(isfinite(dates(:)))
         dates = datetime(dates, 'ConvertFrom', 'datenum');
@@ -241,7 +251,7 @@ function [dates, weights, keepLon, transposeGrid] = coordinates(coord, metadata,
         end
         transposeGrid = thisTranspose;
     end
-    if all(abs(latitudeSteps - steps(2)) <= tolerance)
+    if all(abs(latitudeSteps - latitudeSteps(1)) <= tolerance)
         latitudeWeights = cosd(lat);
     else
         boundaries = [lat(1) - latitudeSteps(1) / 2; ...

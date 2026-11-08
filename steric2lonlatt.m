@@ -144,7 +144,7 @@
 %   2025/07/22, En-Chi Lee (williameclee@arizona.edu)
 %
 % Last modified
-%   2026/11/05, OpenAI Codex
+%   2026/11/08, OpenAI Codex
 
 function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt( ...
         product, timestep, meshsize, timelim, options)
@@ -333,8 +333,8 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
             for iMean = find(supported(:))'
                 [meanType, meanDepth] = ind2sub(size(supported), iMean);
                 forceMean = options.ForceNew && (firstMean || ~saveData);
-                [values, nativeDates] = steric2gmsl(product, Type=types(meanType), ...
-                    Depth=depths(meanDepth), ForceNew=forceMean, SaveData=saveData, ...
+                [values, nativeDates] = steric2gmsl(product, types(meanType), depths(meanDepth), ...
+                    ForceNew=forceMean, SaveData=saveData, ...
                     BeQuiet=double(options.BeQuiet)/2);
                 % Temporal helpers expect time on axis three. This temporary
                 % shape does not make the scalar series a spatial grid.
