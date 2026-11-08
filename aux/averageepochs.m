@@ -1,39 +1,53 @@
-%% AVERAGEEPOCHS
-% Averages 3D gridded temporal samples within specified solution or epoch
-% windows [start, end).
-%
-% Overlapping solution windows deliberately share samples without temporal
-% interpolation. If no native samples fall within a window, the output grid
-% for that epoch will contain NaNs.
+%% AVERAGEEPOCHS - Averages data and estimates mean uncertainties over epoch windows.
+% Overlapping windows share samples. Time is the third array dimension.
 %
 % Syntax
-%   avgs = AVERAGEEPOCHS(nativeDates, data, epochs)
-%   [avgs, dates] = AVERAGEEPOCHS(nativeDates, data, epochs)
+%   [avgs, dates] = averageepochs(inDates, data, epochs)
+%   [avgs, dates, uncs] = averageepochs(__, expTimestep, ...
+%       "CheckCompleteness", true, "SampleStd", sampleStd)
 %
 % Input arguments
-%   nativeDates - Timestamps corresponding to the time dimension of data
-%       Data type: DATETIME | DOUBLE (datenum)
-%       Dimension: [M x 1] | [1 x M]
-%   data - 3D numeric array of gridded spatial data over time
-%       The first two dimensions are spatial dimensions and the third
-%       dimension corresponds to nativeDates.
-%       Data type: NUMERIC
-%       Dimension: [nX x nY x M]
-%   epochs - Start and end timestamps defining each averaging window [start, end)
-%       Data type: DATETIME | DOUBLE (datenum)
-%       Dimension: [N x 2]
+%   inDates - Timestamps or MATLAB datenums. Statistics calls require finite,
+%       sorted, unique timestamps and unzoned datetime inputs.
+%       Size: (N, 1) or (1, N).
+%   data - Numeric samples. Plain means omit missing values and return double
+%       for integer inputs. Statistics calls require real floating-point data
+%       with finite values or NaN.
+%       Size: (A, B, N).
+%   epochs - Start and exclusive end of each window, in datetime or datenum.
+%       Size: (K, 2).
+%   expTimestep (optional) - Positive sampling interval as duration or days.
+%       Required only when CheckCompleteness is true.
+%       Default interval: NaN.
+%   CheckCompleteness (name-value) - Whether to require the entire expected
+%       timestamp grid and finite data for every element in each epoch.
+%       Default option: false (average available nonmissing values).
+%   SamplingOrigin (name-value) - Timestamp defining the sampling grid phase.
+%       Used only for checking.
+%       Default origin: [] (first native timestamp).
+%   SampleStd (name-value) - Formal one-sigma uncertainties for input samples.
+%       NaN means unknown.
+%       Size: same as data.
+%       Default uncertainties: [].
 %
 % Output arguments
-%   avgs - 3D array of time-averaged grids for each epoch window
-%       Integer data produces double averages. Floating-point data keeps its precision.
-%       Dimension: [nX x nY x N]
-%   dates - Midpoint timestamps of each epoch window
-%       Data type: DATETIME
-%       Dimension: [N x 1]
+%   avgs - Arithmetic means within each [start, end) window.
+%       Size: (A, B, K).
+%   dates - Exact epoch midpoints, size (K, 1), datetime.
+%   uncs - One-sigma uncertainty estimate of each mean, in data units.
+%       With known formal errors for every included sample, returns
+%       sqrt(sum(sigma_i^2))/n. Otherwise estimates std(samples,0)/sqrt(n)
+%       from the same n samples (sample variance normalisation n-1).
+%       Rejected/empty means have NaN uncertainty. A single sample retains its
+%       supplied formal sigma. Both estimates assume independent samples.
+%
+% Notes
+%   With three inputs and up to two outputs, empty windows quietly return NaN.
+%   Request the third output or supply a sampling interval or statistics options
+%   to use the sampling checks and incomplete-epoch warning.
 %
 % See also
-%   GRACEEPOCHS, FILLGRACEEPOCHS, SSH2LONLATT, STERIC2LONLATT,
-%   INTERPTEMPORAL
+%   SSH2LONLATT, STERIC2LONLATT, ESM2PLMT, GRACEEPOCHS
 %
 % Created by
 %   2026/09/25, En-Chi Lee (williameclee@arizona.edu)
@@ -41,52 +55,206 @@
 % Last modified
 %   2026/11/01, En-Chi Lee (williameclee@gmail.com)
 
-function [avgs, dates] = averageepochs(nativeDates, data, epochs)
+function [avgs, dates, stds] = averageepochs(inDates, data, epochs, expTimestep, options)
 
     arguments (Input)
-        nativeDates {mustBeA(nativeDates, {'datetime', 'numeric'}), mustBeVector}
+        inDates {mustBeA(inDates, {'datetime', 'numeric'}), mustBeVector}
         data {mustBeNumeric}
         epochs (:, 2) {mustBeA(epochs, {'datetime', 'numeric'})}
+        expTimestep (1, 1) ...
+            {mustBeA(expTimestep, {'duration', 'numeric'})} = NaN
+        options.CheckCompleteness (1, 1) logical = false
+        options.SamplingOrigin = []
+        options.SampleStd {mustBeFloat, mustBeReal} = []
     end
 
     arguments (Output)
-        avgs {mustBeNumeric}
+        avgs (:, :, :) {mustBeFloat}
         dates (:, 1) datetime
+        stds (:, :, :) {mustBeFloat}
     end
 
-    if isnumeric(nativeDates)
-        nativeDates = datetime(nativeDates, 'ConvertFrom', 'datenum');
+    statistics = nargout >= 3 || nargin > 3 || options.CheckCompleteness || ...
+        ~isempty(options.SampleStd) || ~isempty(options.SamplingOrigin);
+    if statistics
+        mustBeFloat(data);
+        mustBeReal(data);
+        assert(ndims(data) <= 3, 'ULMO:averageepochs:DimensionMismatch', ...
+            'Use two spatial dimensions and one time dimension.');
+        [inDates, epochs, dataStd, expTimestep, origin] = validatePreprocessInputs( ...
+            inDates, epochs, data, options.SampleStd, ...
+            options.CheckCompleteness, expTimestep, options.SamplingOrigin);
+    else
+        inDates = todatetime(inDates(:));
+        epochs = todatetime(epochs);
+        assert(~any(isnat(epochs), 'all') && all(epochs(:, 2) > epochs(:, 1)), ...
+            'ULMO:Epochs:InvalidWindows', ...
+            'Epochs must be N-by-2 finite start/end times with end > start.');
+        assert(size(data, 3) == numel(inDates), 'ULMO:Epochs:DimensionMismatch', ...
+            'Mesh time dimension must match native dates.');
     end
 
-    if isnumeric(epochs)
-        epochs = datetime(epochs, 'ConvertFrom', 'datenum');
-    end
-
-    if any(isnat(epochs), 'all') || any(epochs(:, 2) <= epochs(:, 1))
-        error('ULMO:Epochs:InvalidWindows', ...
-        'Epochs must be N-by-2 finite start/end times with end > start.');
-    end
-
-    if size(data, 3) ~= numel(nativeDates)
-        error('ULMO:Epochs:DimensionMismatch', ...
-        'Mesh time dimension must match native dates.');
-    end
-
+    % Use window midpoints as output timestamps, even for rejected windows.
     dates = epochs(:, 1) + (epochs(:, 2) - epochs(:, 1)) / 2;
+
+    % Preallocate arrays
     outputSize = [size(data, 1), size(data, 2), size(epochs, 1)];
     if isinteger(data)
         avgs = nan(outputSize);
     else
         avgs = nan(outputSize, 'like', data);
     end
+    if nargout >= 3
+        stds = avgs;
+    end
+    incompl = false(size(epochs, 1), 1);
 
-    for k = 1:size(epochs, 1)
-        selected = nativeDates(:) >= epochs(k, 1) & nativeDates(:) < epochs(k, 2);
+    % Populate each epoch's value
+    for iEpoch = 1:size(epochs, 1)
+        epochStart = epochs(iEpoch, 1);
+        epochEnd = epochs(iEpoch, 2);
+        % Exclude the end boundary so adjacent windows do not share that sample.
+        isInEpoch = inDates >= epochStart & inDates < epochEnd;
 
-        if any(selected)
-            avgs(:, :, k) = mean(data(:, :, selected), 3, 'omitmissing');
+        if ~any(isInEpoch)
+            incompl(iEpoch) = true;
+            continue
         end
 
+        if options.CheckCompleteness
+            % Build the exact grid inside [start, finish), including shifted origins.
+            % Matching counts alone would not detect missing or off-grid timestamps.
+            firstIdx = ceil((epochStart - origin) / expTimestep);
+            lastIdx = ceil((epochEnd - origin) / expTimestep) - 1;
+            expdDates = origin + (firstIdx:lastIdx)' * expTimestep;
+
+            if ~isequal(inDates(isInEpoch), expdDates)
+                incompl(iEpoch) = true;
+                continue
+            end
+
+        end
+
+        epochData = data(:, :, isInEpoch);
+        avgs(:, :, iEpoch) = mean(epochData, 3, 'omitmissing');
+        if ~statistics
+            continue
+        end
+
+        valid = ~isnan(epochData);
+        validCnt = sum(valid, 3);
+        rejected = validCnt == 0;
+        if options.CheckCompleteness
+            rejected = validCnt ~= nnz(isInEpoch);
+            means = avgs(:, :, iEpoch);
+            means(rejected) = NaN;
+            avgs(:, :, iEpoch) = means;
+        end
+        incompl(iEpoch) = any(rejected, 'all');
+        if nargout < 3
+            continue
+        end
+        % Estimate the standard error under sample independence.
+        % One sample cannot provide an empirical variance.
+        epochStd = std(epochData, 0, 3, 'omitmissing') ./ sqrt(validCnt);
+        epochStd(validCnt < 2) = NaN;
+
+        if ~isempty(dataStd)
+            % Use formal propagation only when every contributing sample has an error.
+            % Missing data contribute neither variance nor sample count; unknown errors
+            % for valid data retain the empirical estimate above.
+            sigmas = dataStd(:, :, isInEpoch);
+            sigmas(~valid) = 0;
+            formal = sqrt(sum(sigmas .^ 2, 3)) ./ validCnt;
+            known = all(~isnan(sigmas), 3);
+            epochStd(known) = formal(known);
+        end
+
+        epochStd(rejected) = NaN;
+        stds(:, :, iEpoch) = epochStd;
+    end
+
+    % Report rejected windows once, after all output slices have been filled
+    if statistics && any(incompl)
+        warning('ULMO:averageepochs:IncompleteEpoch', ...
+            '%d epochs contain empty or incomplete averages.', nnz(incompl));
+    end
+
+end
+
+%% Subfunctions
+function dates = todatetime(dates)
+    if isnumeric(dates)
+        dates = datetime(dates, 'ConvertFrom', 'datenum');
+    end
+end
+
+% Reject zoned or invalid dates before checking sampling or uncertainty.
+function dates = parsedates(dates)
+
+    if isnumeric(dates)
+        assert(all(isfinite(dates), 'all'), ...
+            'ULMO:averageepochs:InvalidDates', 'Dates must be finite.');
+    end
+    dates = todatetime(dates);
+
+    assert(isdatetime(dates) && ~any(isnat(dates) | isinf(dates), 'all') && ...
+        isempty(dates.TimeZone), ...
+        'ULMO:averageepochs:InvalidDates', ...
+    'Use finite, unzoned timestamps or datenums.');
+end
+
+function [inDates, epochs, dataStd, expTimestep, origin] = validatePreprocessInputs( ...
+        inDates, epochs, data, dataStd, checkComplet, expTimestep, origin)
+    % Normalise dates before checking alignment with the third data dimension
+    inDates = parsedates(inDates);
+    inDates = inDates(:);
+    epochs = parsedates(epochs);
+
+    assert(~isempty(inDates) && size(data, 3) == numel(inDates), ...
+        'ULMO:averageepochs:DimensionMismatch', ...
+    'Data time dimension must match nonempty native dates.');
+    assert(all(diff(inDates) > seconds(0)), ...
+        'ULMO:averageepochs:InvalidDates', ...
+    'Input dates must be sorted and unique.');
+    assert(all(epochs(:, 2) > epochs(:, 1)), ...
+        'ULMO:averageepochs:InvalidEpochs', ...
+    'Epoch ends must be later than their starts.');
+    assert(~any(isinf(data), 'all'), ...
+        'ULMO:averageepochs:InvalidData', ...
+    'Infinite value(s) detected; data must be finite or NaN.');
+
+    % Validate formal errors separately; NaN marks an unknown uncertainty
+    if ~isempty(dataStd)
+        assert(isequal(size(dataStd), size(data)), ...
+            'ULMO:averageepochs:DimensionMismatch', ...
+        'SampleStd must have the same dimensions as data.');
+        assert(all(isnan(dataStd) | (isfinite(dataStd) & dataStd >= 0), 'all'), ...
+            'ULMO:averageepochs:InvalidUncertainty', ...
+        'SampleStd must be nonnegative and finite, or NaN.');
+    end
+
+    % Resolve the expected sampling interval and grid phase only when required
+    if ~checkComplet
+        expTimestep = NaN;
+        origin = NaT;
+        return
+    end
+
+    if isnumeric(expTimestep)
+        expTimestep = days(expTimestep);
+    end
+
+    assert(isfinite(expTimestep) && expTimestep > seconds(0), ...
+        'ULMO:averageepochs:InvalidTimeStep', ...
+    'Checking data completeness requires supplying a valid expected time step.');
+
+    if isempty(origin)
+        origin = inDates(1);
+    else
+        origin = parsedates(origin);
+        assert(isscalar(origin), 'ULMO:averageepochs:InvalidOrigin', ...
+        'SamplingOrigin must be a single timestamp.');
     end
 
 end
