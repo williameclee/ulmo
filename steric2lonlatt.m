@@ -8,7 +8,8 @@
 %   [steric, stericSigma, dates, lon, lat] = STERIC2LONLATT(__)
 %
 % Input arguments
-%   product (optional) - Prepared product: SIO, EN4c14, CMEMS, NOAA, or ORAS5.
+%   product (optional) - Prepared product: SIO, EN4c14, CMEMS, NOAA, ORAS5,
+%       JAMSTEC, ISAS, IPRC, or IAPv4.
 %       Default product: EN4c14.
 %   timestep (optional) - Temporal interpolation step or averaging convention.
 %       Positive numeric scalar or duration for fixed steps, 'midmonth' for
@@ -45,14 +46,18 @@
 %   Unit (name-value) - m or mm output sea level units.
 %       Default unit: m.
 %   Depth (name-value) - full, shallow, or deep, as prepared by the product.
-%       For SIO and NOAA, shallow selects the full prepared field.
+%       Unavailable native fields raise UnsupportedField.
 %       Default depth: full.
 %   Type (name-value) - Selected steric component or correction.
 %       total, thermosteric, halosteric, non-thermosteric (total minus
 %       thermosteric), or non-halosteric (total minus halosteric).
 %       'no halosteric drift' subtracts the global halosteric mean for the
-%       selected depth from total steric sea level. 'default' selects total
+%       selected depth from total steric sea level using native offsets. 'default' selects total
 %       for SIO and 'no halosteric drift' for every other product.
+%       Full and shallow offsets use shared native support. Deep is their
+%       difference. Fixed-step interpolation acts separately on fields and
+%       offsets. Epoch means average corrected native fields on valid cells.
+%       Rebuild older corrected epoch caches with ForceNew.
 %       Default type: default.
 %   ForceNew (name-value) - Whether to bypass the derived cache and reprocess
 %       the existing native grids. Does not regenerate native source data.
@@ -160,7 +165,7 @@ function [steric, stericSigma, dates, lon, lat] = steric2lonlatt( ...
     lonOrigin = options.LonOrigin;
     intpMthd = lower(options.Interpolation);
     timeFmt = lower(options.TimeFormat);
-    outputFmt = lower(options.OutputFormat);
+    outFmt = lower(options.OutputFormat);
     unit = options.Unit;
     options.BeQuiet = uint8(double(options.BeQuiet) * 2);
     saveData = options.SaveData;
@@ -213,10 +218,6 @@ function [steric, stericSigma, dates, lon, lat] = steric2lonlatt( ...
             stericVar = ["steric", stericVar];
     end
 
-    if strcmpi(options.Depth, 'shallow') && ismember(product, {'SIO', 'NOAA'})
-        options.Depth = 'full';
-    end
-
     switch options.Depth
         case 'shallow'
             stericVar = ["shallow", stericVar];
@@ -252,6 +253,21 @@ function [steric, stericSigma, dates, lon, lat] = steric2lonlatt( ...
     end
 
     vars = unique({stericVar, baseStericVar});
+    if strcmpi(options.Type, 'no halosteric drift')
+        % The native helper can derive a missing halo layer from its counterpart.
+        vars = {baseStericVar};
+    end
+    nativePath = stericfilepath(product);
+    if isfile(nativePath)
+        sourceVars = unique([{'lon', 'lat', 'dates', 'stericSl'}, vars]);
+        for iVar = 1:numel(sourceVars)
+            if ~supportedfields(nativePath, sourceVars(iVar))
+                error('ULMO:steric2lonlatt:UnsupportedField', ...
+                    'Product %s does not support field %s (Depth=%s, Type=%s).', ...
+                    char(product), sourceVars{iVar}, options.Depth, options.Type);
+            end
+        end
+    end
     coordVars = {'lon', 'lat', 'dates'};
     cacheVars = vars;
 
@@ -260,13 +276,13 @@ function [steric, stericSigma, dates, lon, lat] = steric2lonlatt( ...
     end
 
     cacheHit = ~options.ForceNew && isfile(outPath) && ...
-        all(ismember([coordVars, cacheVars], who('-file', outPath)));
+        supportedfields(outPath, [coordVars, cacheVars]);
 
     if cacheHit
         inPath = outPath;
         dataVars = cacheVars;
     else
-        inPath = stericfilepath(product);
+        inPath = nativePath;
 
         if ~isfile(inPath)
             error('ULMO:LoadData:FileNotFound', 'Input file %s not found.', inPath);
@@ -295,6 +311,9 @@ function [steric, stericSigma, dates, lon, lat] = steric2lonlatt( ...
 
     coord = load(inPath, coordVars{:});
     data = load(inPath, dataVars{:});
+    emptyVars = dataVars(cellfun(@(name) isempty(data.(name)), dataVars));
+    data = rmfield(data, emptyVars);
+    supportedVars = fieldnames(data);
 
     if ~cacheHit
         epochRange = [];
@@ -305,7 +324,11 @@ function [steric, stericSigma, dates, lon, lat] = steric2lonlatt( ...
 
         if useMean
             [data, coord] = preparegrid(data, coord, meshsize, lonOrigin, spatialIntpMthd, options.BeQuiet, callChain);
-            steric = selectsteric(data, coord, stericVar, baseStericVar, options.Type);
+            offset = [];
+            if strcmpi(options.Type, 'no halosteric drift')
+                offset = nativehalocorrection(product, nativePath, coord.dates, [], timelim, options);
+            end
+            steric = selectsteric(data, stericVar, baseStericVar, options.Type, offset);
             epochs = temporalmeanepochs(coord.dates, timestep, epochRange);
             data = struct();
             [data.steric, coord.dates] = averageepochs(coord.dates, steric, epochs);
@@ -320,10 +343,17 @@ function [steric, stericSigma, dates, lon, lat] = steric2lonlatt( ...
 
                 [data, dates] = structfun(@(x) interptemporal(coord.dates, x, timestep, intpMthd, ...
                     TimeRange = epochRange, BeQuiet = true, CallChain = callChain), data, "UniformOutput", false);
-                coord.dates = dates.(dataVars{1});
+                coord.dates = dates.(supportedVars{1});
             end
 
             [data, coord] = preparegrid(data, coord, meshsize, lonOrigin, spatialIntpMthd, options.BeQuiet, callChain);
+        end
+
+        % Empty source fields remain unsupported in interpolated field caches.
+        if ~useMean
+            for iVar = 1:numel(emptyVars)
+                data.(emptyVars{iVar}) = [];
+            end
         end
 
         if saveData && ~strcmp(inPath, outPath)
@@ -343,7 +373,11 @@ function [steric, stericSigma, dates, lon, lat] = steric2lonlatt( ...
     if useMean
         steric = data.steric;
     else
-        steric = selectsteric(data, coord, stericVar, baseStericVar, options.Type);
+        offset = [];
+        if strcmpi(options.Type, 'no halosteric drift')
+            offset = nativehalocorrection(product, nativePath, coord.dates, timestep, timelim, options);
+        end
+        steric = selectsteric(data, stericVar, baseStericVar, options.Type, offset);
     end
 
     if nargout == 0
@@ -352,7 +386,7 @@ function [steric, stericSigma, dates, lon, lat] = steric2lonlatt( ...
 
     [steric, stericSigma, dates, lon, lat] = formatoutput( ...
         steric, coord.dates, coord.lon, coord.lat, ...
-        timelim, timeFmt, outputFmt, unit);
+        timelim, timeFmt, outFmt, unit);
 
     if nargout > 0
         return
@@ -369,6 +403,37 @@ function [steric, stericSigma, dates, lon, lat] = steric2lonlatt( ...
 end
 
 %% Subfunctions
+% Apply the same native correction to fresh and cached uncorrected fields.
+function offset = nativehalocorrection(product, inPath, dates, timestep, timelim, options)
+    info = stericproductinfo(char(product));
+    coord = load(inPath, 'dates');
+    h = sterichalocorrection(inPath, (1:numel(coord.dates))', info.hasDeep, true);
+    % Interpolate full and shallow together, then derive deep. This preserves
+    % correction additivity even with nonlinear methods such as pchip.
+    offsets = reshape([h.total, h.shallow]', 2, 1, []) / 1000;
+    correctionDates = coord.dates;
+
+    if ~isempty(timestep)
+        timeRange = [];
+        if options.TruncationBeforeInterpolation, timeRange = timelim; end
+        [offsets, correctionDates] = interptemporal(coord.dates, offsets, timestep, ...
+            lower(options.Interpolation), TimeRange = timeRange, BeQuiet = true);
+    end
+
+    [found, indices] = ismember(dates(:), correctionDates(:));
+    assert(all(found), 'ULMO:steric2lonlatt:CorrectionDates', ...
+        'Native halosteric correction does not cover output dates.');
+    switch options.Depth
+        case 'full'
+            offset = offsets(1, 1, indices);
+        case 'shallow'
+            offset = offsets(2, 1, indices);
+        case 'deep'
+            offset = offsets(1, 1, indices) - offsets(2, 1, indices);
+    end
+    offset = reshape(offset, 1, 1, []);
+end
+
 function [data, coord] = preparegrid(data, coord, meshsize, lonOrigin, intpMthd, beQuiet, callChain)
     allStericVars = fieldnames(data);
 
@@ -396,17 +461,12 @@ function [data, coord] = preparegrid(data, coord, meshsize, lonOrigin, intpMthd,
 
 end
 
-function steric = selectsteric(data, coord, stericVar, baseStericVar, type)
+function steric = selectsteric(data, stericVar, baseStericVar, type, offset)
 
     if ismember(type, ["non-thermosteric", "non-halosteric"])
         steric = data.(baseStericVar) - data.(stericVar);
     elseif strcmpi(type, 'no halosteric drift')
-        gridWeight = cosd(coord.lat(:));
-        tol = length(coord.dates) * 0.8;
-        lsMask = (sum(~isnan(data.(stericVar)), 3) >= tol) & (sum(data.(stericVar) ~= 0, 3) >= tol);
-        gmSteric = sum(data.(stericVar) .* lsMask .* gridWeight, [1, 2], 'omitmissing') ...
-            ./ sum(~isnan(data.(stericVar)) .* lsMask .* gridWeight, [1, 2], 'omitmissing');
-        steric = data.(baseStericVar) - gmSteric;
+        steric = data.(baseStericVar) - offset;
     else
         steric = data.(stericVar);
     end
@@ -544,5 +604,22 @@ function [steric, stericSigma, dates, lon, lat] = formatoutput( ...
 
     % Currently no sigma data available
     stericSigma = zeros(size(steric), 'like', steric);
+
+end
+
+% Check whether a specific field is saved in the .mat file
+function tf = supportedfields(path, names)
+    info = whos('-file', path);
+    tf = true;
+
+    for iName = 1:numel(names)
+        item = info(strcmp({info.name}, names{iName}));
+
+        if isempty(item) || any(item.size == 0)
+            tf = false;
+            return
+        end
+
+    end
 
 end

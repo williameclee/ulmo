@@ -81,7 +81,9 @@ The ultimate goal is to drop the `_new` suffixes and replace the original functi
 | Function name | Description | Package dependencies | Data dependencies |
 | :--- | :--- | :--- | :--- |
 | `ssh2lonlatt` | Reads and converts altimetric SSH data from different missions to gridded data. | | |
-| `steric2lonlatt` | Reads and interpolates prepared steric sea level grids. | | |
+| `steric2lonlatt` | Reads prepared steric fields, applies native halosteric offsets when selected, and interpolates or averages to requested epochs. | | Native steric aggregates |
+| `sterichalocorrection` | Estimates full/shallow halosteric offsets on shared native support and derives deep by subtraction; returns estimated and applied offsets in mm. | | Native steric aggregate |
+| `stericproductinfo` | Inspects native depth availability and validates fields required by the product's default correction policy. | | Native steric aggregate |
 | `steric2gmsl` | Computes the selected component and depth averaged over the common observed area at each native date. | | Prepared native steric MAT file |
 
 #### Data Pre-Processing
