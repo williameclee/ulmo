@@ -14,6 +14,9 @@
 %
 % Created by
 %   2026/11/05, En-Chi Lee
+%
+% Last modified
+%   2026/11/07, En-Chi Lee (williameclee@gmail.com)
 
 classdef steric2sleptTest < matlab.unittest.TestCase
     properties
@@ -203,6 +206,12 @@ classdef steric2sleptTest < matlab.unittest.TestCase
             t.verifyEqual(constant, [1;0;0;0]);
             t.verifyEqual(snapshot(t.Folder), original);
             t.verifyError(@() steric2slept(args{:}, GVN={2*eye(4),ones(4,1),4}, ...
+                SaveData=false, BeQuiet=1), 'ULMO:steric2slept:Basis');
+        end
+
+        function malformedBasisKeepsCallerError(t)
+            % A malformed supplied basis uses the public steric error identifier.
+            t.verifyError(@() steric2slept('EN4c14', t.Polygon, 1, GVN={1,1}, ...
                 SaveData=false, BeQuiet=1), 'ULMO:steric2slept:Basis');
         end
 

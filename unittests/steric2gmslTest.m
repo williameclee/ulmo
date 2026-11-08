@@ -12,6 +12,9 @@
 %
 % Created by
 %   2026/11/04, En-Chi Lee (williameclee@gmail.com)
+%
+% Last modified
+%   2026/11/07, En-Chi Lee (williameclee@gmail.com)
 
 classdef steric2gmslTest < matlab.unittest.TestCase
     properties
@@ -209,6 +212,9 @@ classdef steric2gmslTest < matlab.unittest.TestCase
 
         function invalidGeometryAndDimensions(testCase)
             testCase.data.lon = [0,110,240];
+            testCase.writeNative;
+            testCase.verifyError(@() steric2gmsl('EN4c14', Type="total"), 'ULMO:steric2gmsl:InvalidGrid');
+            testCase.data.lon = [0,NaN,240];
             testCase.writeNative;
             testCase.verifyError(@() steric2gmsl('EN4c14', Type="total"), 'ULMO:steric2gmsl:InvalidGrid');
             testCase.data.lon = [0,120,240];

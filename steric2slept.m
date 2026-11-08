@@ -149,7 +149,7 @@
 %   2026/11/05, En-Chi Lee
 %
 % Last modified
-%   2026/11/06, En-Chi Lee
+%   2026/11/07, En-Chi Lee (williameclee@gmail.com)
 
 function [stericSlept, dates, fit, GVN, halostericGmsl, constantSlept] = ...
         steric2slept(product, domain, L, timestep, timeRange, options)
@@ -172,7 +172,7 @@ function [stericSlept, dates, fit, GVN, halostericGmsl, constantSlept] = ...
         options.SaveData (1, 1) {mustBeNumericOrLogical} = true
         options.BeQuiet (1, 1) {mustBeNumericOrLogical} = 0.5
     end
-    [timestep, options.Interpolation] = normalizetimeconfig(timestep, options.Interpolation);
+    [timestep, options.Interpolation] = normalisetimeconfig(timestep, options.Interpolation);
     if ~isempty(timeRange) && isnumeric(timeRange)
         timeRange = datetime(timeRange, 'ConvertFrom', 'datenum');
     end
@@ -252,7 +252,7 @@ function [stem, configuration, domainId] = cacheStem(product, domain, L, timeste
     else
         domainId = hash(domain, 'sha1');
     end
-    [~, ~, ~, configuration] = normalizetimeconfig(timestep, method);
+    [~, ~, ~, configuration] = normalisetimeconfig(timestep, method);
     stem = fullfile(root, 'STERIC', char(product), 'SlepianExpansions', ...
         sprintf('steric2slept-%s-%s-%s-%d', char(product), configuration, domainId, L));
 end
@@ -279,9 +279,12 @@ function basis = getBasis(domain, L, J, supplied, saveData)
     catch cause
         if startsWith(cause.identifier, 'ULMO:prepareslepianbasis:')
             identifier = strrep(cause.identifier, 'prepareslepianbasis', 'steric2slept');
-            throwAsCaller(addCause(MException(identifier, '%s', cause.message), cause));
+        elseif strcmp(cause.identifier, 'ULMO:xyzs2slep:InvalidBasis')
+            identifier = 'ULMO:steric2slept:Basis';
+        else
+            rethrow(cause)
         end
-        rethrow(cause)
+        throwAsCaller(addCause(MException(identifier, '%s', cause.message), cause));
     end
 end
 
@@ -302,11 +305,11 @@ function [fields, means, dates, lon, lat] = prepareRecord(product, timestep, opt
     end
     names = cellstr(schema.gridNames(schema.available));
     data = load(stericfilepath(product), 'lon', 'lat', names{:});
-    lon = double(data.lon(:));
-    lat = double(data.lat(:));
+    lon = data.lon(:);
+    lat = data.lat(:);
     data = rmfield(data, {'lon', 'lat'});
     data = prepareDeepSupport(data, schema);
-    [~, ~, useMean] = normalizetimeconfig(timestep, options.Interpolation);
+    [~, ~, useMean] = normalisetimeconfig(timestep, options.Interpolation);
     if useMean, data = addResiduals(data, schema); end
     [data, dates] = processfieldtime(data, nativeDates, timestep, options.Interpolation, []);
     if ~useMean, data = addResiduals(data, schema); end

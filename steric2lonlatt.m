@@ -144,7 +144,7 @@
 %   2025/07/22, En-Chi Lee (williameclee@arizona.edu)
 %
 % Last modified
-%   2026/11/06, En-Chi Lee
+%   2026/11/07, En-Chi Lee (williameclee@gmail.com)
 
 function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt( ...
         product, timestep, meshsize, timelim, options)
@@ -210,7 +210,7 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
         timelim = datetime(timelim, 'ConvertFrom', 'datenum');
     end
 
-    [timestep, intpMthd, useMean] = normalizetimeconfig(timestep, intpMthd);
+    [timestep, intpMthd, useMean] = normalisetimeconfig(timestep, intpMthd);
 
     % 'default' and 'no halosteric drift' are deprecated Type values.
     schema = stericfieldschema();
