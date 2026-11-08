@@ -91,9 +91,6 @@
 %
 % Created by
 %   2026/11/04, En-Chi Lee (williameclee@gmail.com)
-%
-% Last modified
-%   2026/11/08, OpenAI Codex
 
 function [gmsl, dates] = steric2gmsl(product, type, depth, options)
 
