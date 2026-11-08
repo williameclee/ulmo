@@ -1,4 +1,4 @@
-%% STERICFILEPATH - Generate native and interpolated steric product paths.
+%% STERICFILEPATH - Generates steric product paths.
 %
 % Syntax
 %   outPath = STERICFILEPATH(product)

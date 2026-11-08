@@ -1,4 +1,4 @@
-%% STERIC2GMSL - Read or cache one native global-mean steric time series.
+%% STERIC2GMSL - Computes global-mean steric sea level time series.
 %
 % Syntax
 %   [gmsl, dates] = STERIC2GMSL(product, type, depth)
@@ -201,7 +201,7 @@ function [names, supported] = cachenames(available)
     supported = [available; available(1, :) & available(2, :); available(1, :) & available(3, :)];
 end
 
-function [dates, weights, keepLon, transposeGrid] = coordinates(coord, metadata, names)
+function [dates, wghts, keepLon, transposeGrid] = coordinates(coord, metadata, names)
     lon = double(coord.lon(:));
     lat = double(coord.lat(:));
 
@@ -213,22 +213,22 @@ function [dates, weights, keepLon, transposeGrid] = coordinates(coord, metadata,
     end
 
     steps = [lon(2) - lon(1), lat(2) - lat(1)];
-    tolerance = 3e-5; % Allows single-precision coordinate rounding, in degrees.
-    latitudeSteps = diff(lat);
+    tol = 3e-5; % Allows single-precision coordinate rounding, in degrees.
+    latSteps = diff(lat);
 
-    if steps(1) == 0 || any(abs(diff(lon) - steps(1)) > tolerance) || ...
-            ~(all(latitudeSteps > 0) || all(latitudeSteps < 0))
+    if steps(1) == 0 || any(abs(diff(lon) - steps(1)) > tol) || ...
+            ~(all(latSteps > 0) || all(latSteps < 0))
         error('ULMO:steric2gmsl:InvalidGrid', ...
         'Longitude must be regularly spaced and latitude must be strictly monotone.');
     end
 
     keepLon = 1:numel(lon);
 
-    if abs(abs(lon(end) - lon(1)) - 360) <= tolerance
+    if abs(abs(lon(end) - lon(1)) - 360) <= tol
         keepLon(end) = [];
     end
 
-    if abs(numel(keepLon) * abs(steps(1)) - 360) > tolerance * numel(lon)
+    if abs(numel(keepLon) * abs(steps(1)) - 360) > tol * numel(lon)
         error('ULMO:steric2gmsl:InvalidGrid', 'Longitude must cover one complete periodic grid.');
     end
 
@@ -266,17 +266,17 @@ function [dates, weights, keepLon, transposeGrid] = coordinates(coord, metadata,
         transposeGrid = thisTranspose;
     end
 
-    if all(abs(latitudeSteps - steps(2)) <= tolerance)
-        latitudeWeights = cosd(lat);
+    if all(abs(latSteps - steps(2)) <= tol)
+        latWghts = cosd(lat);
     else
-        boundaries = [lat(1) - latitudeSteps(1) / 2; ...
-                          (lat(1:end - 1) + lat(2:end)) / 2; ...
-                          lat(end) + latitudeSteps(end) / 2];
-        boundaries = max(-90, min(90, boundaries));
-        latitudeWeights = abs(diff(sind(boundaries)));
+        bdrys = [lat(1) - latSteps(1) / 2; ...
+                     (lat(1:end - 1) + lat(2:end)) / 2; ...
+                     lat(end) + latSteps(end) / 2];
+        bdrys = max(-90, min(90, bdrys));
+        latWghts = abs(diff(sind(bdrys)));
     end
 
-    weights = repmat(latitudeWeights, 1, numel(keepLon));
+    wghts = repmat(latWghts, 1, numel(keepLon));
 end
 
 function valid = validcache(metadata, names, nDates)
@@ -296,14 +296,14 @@ function valid = validcache(metadata, names, nDates)
 end
 
 function means = calculatemeans(inputPath, gridNames, available, cacheNames, supported, ...
-        nDates, weights, keepLon, transposeGrid, precision)
+        nDates, wghts, keepLon, transposeGrid, precision)
     source = matfile(inputPath);
     % First pass uses only the reference field to determine full-record support.
     reference = find(available([3, 1, 2], 1), 1);
     priority = [3, 1, 2];
     reference = gridNames(priority(reference), 1);
-    finiteCount = zeros(size(weights));
-    nonzeroCount = zeros(size(weights));
+    finiteCount = zeros(size(wghts));
+    nonzeroCount = zeros(size(wghts));
 
     for iDate = 1:nDates
         field = readslice(source, reference, iDate, keepLon, transposeGrid);
@@ -311,7 +311,7 @@ function means = calculatemeans(inputPath, gridNames, available, cacheNames, sup
         nonzeroCount = nonzeroCount + (isfinite(field) & field ~= 0);
     end
 
-    support = finiteCount >= 0.8 * nDates & nonzeroCount >= 0.8 * nDates & weights > 0;
+    support = finiteCount >= 0.8 * nDates & nonzeroCount >= 0.8 * nDates & wghts > 0;
     values = nan(5, 3, nDates);
 
     for iDate = 1:nDates
@@ -323,13 +323,13 @@ function means = calculatemeans(inputPath, gridNames, available, cacheNames, sup
             valid = valid & isfinite(fields{iField});
         end
 
-        denominator = sum(weights(valid));
+        totalWghts = sum(wghts(valid));
 
-        if denominator == 0
+        if totalWghts == 0
             continue
         end
 
-        w = weights(valid) / denominator;
+        w = wghts(valid) / totalWghts;
 
         for iType = 1:3
 

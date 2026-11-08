@@ -11,7 +11,7 @@
 % Created by
 %   2026/11/04, En-Chi Lee (williameclee@gmail.com)
 
-classdef stericFilePathTest < matlab.unittest.TestCase
+classdef stericfilepathTest < matlab.unittest.TestCase
 
     methods (Test)
 
