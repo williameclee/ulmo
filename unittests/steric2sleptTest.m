@@ -444,7 +444,11 @@ classdef steric2sleptTest < matlab.unittest.TestCase
         end
 
         function timeRangeUsesLoaderValidator(t)
-            for limits = {t.Data.dates([5 5]), t.Data.dates([6 5]), t.Data.dates(5)}
+            date = t.Data.dates(5);
+            [~, selected] = steric2slept('EN4c14', t.Polygon, 0, [], [date date], ...
+                GVN={1, 1, 1}, BeQuiet=1);
+            t.verifyEqual(selected, date);
+            for limits = {t.Data.dates([6 5]), date}
                 t.verifyError(@() steric2slept('EN4c14', t.Polygon, 0, [], limits{1}), ...
                     'ULMO:notValidTimeRange');
             end
