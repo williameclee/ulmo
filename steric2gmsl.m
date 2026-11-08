@@ -127,10 +127,10 @@ function [gmsl, dates] = steric2gmsl(product, type, depth, options)
     if ~cacheHit
 
         if options.BeQuiet < 1
-            fprintf('[ULMO>steric2gmsl] Calculating native means for %s.\n', char(product));
+            fprintf('[ULMO>%s] Calculating native means for %s.\n', mfilename, char(product));
         end
 
-        means = calculatemeans(inPath, gridNames, available, cacheNames, supported, ...
+        means = steric2gmslCore(inPath, gridNames, available, cacheNames, supported, ...
             numel(dates), wghts, keepLon, transposeGrid, precision);
 
         if options.SaveData
@@ -138,7 +138,7 @@ function [gmsl, dates] = steric2gmsl(product, type, depth, options)
             save(inPath, '-struct', 'means', '-append');
 
             if options.BeQuiet < 1
-                fprintf('[ULMO>steric2gmsl] Saved native means for %s.\n', char(product));
+                fprintf('[ULMO>%s] Saved native means for %s.\n', mfilename, char(product));
             end
 
         end
@@ -157,6 +157,86 @@ function [gmsl, dates] = steric2gmsl(product, type, depth, options)
 
 end
 
+function means = steric2gmslCore(inputPath, gridNames, available, cacheNames, supported, ...
+        nDates, wghts, keepLon, transposeGrid, precision)
+    source = matfile(inputPath);
+    % First pass uses only the reference field to determine full-record support.
+    reference = find(available([3, 1, 2], 1), 1);
+    priority = [3, 1, 2];
+    reference = gridNames(priority(reference), 1);
+    finiteCount = zeros(size(wghts));
+    nonzeroCount = zeros(size(wghts));
+
+    for iDate = 1:nDates
+        field = readslice(source, reference, iDate, keepLon, transposeGrid);
+        finiteCount = finiteCount + isfinite(field);
+        nonzeroCount = nonzeroCount + (isfinite(field) & field ~= 0);
+    end
+
+    support = finiteCount >= 0.8 * nDates & nonzeroCount >= 0.8 * nDates & wghts > 0;
+    values = nan(5, 3, nDates);
+
+    for iDate = 1:nDates
+        fields = cell(3);
+        valid = support;
+
+        for iField = find(available(:))'
+            fields{iField} = readslice(source, gridNames(iField), iDate, keepLon, transposeGrid);
+            valid = valid & isfinite(fields{iField});
+        end
+
+        totalWghts = sum(wghts(valid));
+
+        if totalWghts == 0
+            continue
+        end
+
+        w = wghts(valid) / totalWghts;
+
+        for iType = 1:3
+
+            for iDepth = find(available(iType, :))
+                field = fields{iType, iDepth};
+                values(iType, iDepth, iDate) = sum(w .* field(valid));
+            end
+
+            if available(iType, 2)
+                direct = values(iType, 1, iDate);
+                combined = sum(values(iType, 2:3, iDate));
+                scale = 1;
+
+                for iDepth = 1:3
+                    field = fields{iType, iDepth};
+                    scale = max(scale, sum(w .* abs(field(valid))));
+                end
+
+                if abs(direct - combined) > 32 * precision * scale
+                    error('ULMO:steric2gmsl:DepthMismatch', ...
+                        'Full and shallow+deep means disagree for %s at native sample %d.', gridNames(iType, 1), iDate);
+                end
+
+                values(iType, 1, iDate) = combined;
+            end
+
+        end
+
+        values(4, :, iDate) = values(1, :, iDate) - values(2, :, iDate);
+        values(5, :, iDate) = values(1, :, iDate) - values(3, :, iDate);
+    end
+
+    means = struct;
+
+    for iType = 1:5
+
+        for iDepth = find(supported(iType, :))
+            means.(cacheNames(iType, iDepth)) = reshape(values(iType, iDepth, :), [], 1);
+        end
+
+    end
+
+end
+
+%% Subfunctions
 function [names, available, precision] = fieldschema(metadata)
     names = ["stericSl", "shallowStericSl", "deepStericSl"; ...
                  "thermostericSl", "shallowThermostericSl", "deepThermostericSl"; ...
@@ -289,85 +369,6 @@ function valid = validcache(metadata, names, nDates)
                 entry.complex || entry.sparse || ~isequal(entry.size, [nDates, 1])
             valid = false;
             return
-        end
-
-    end
-
-end
-
-function means = calculatemeans(inputPath, gridNames, available, cacheNames, supported, ...
-        nDates, wghts, keepLon, transposeGrid, precision)
-    source = matfile(inputPath);
-    % First pass uses only the reference field to determine full-record support.
-    reference = find(available([3, 1, 2], 1), 1);
-    priority = [3, 1, 2];
-    reference = gridNames(priority(reference), 1);
-    finiteCount = zeros(size(wghts));
-    nonzeroCount = zeros(size(wghts));
-
-    for iDate = 1:nDates
-        field = readslice(source, reference, iDate, keepLon, transposeGrid);
-        finiteCount = finiteCount + isfinite(field);
-        nonzeroCount = nonzeroCount + (isfinite(field) & field ~= 0);
-    end
-
-    support = finiteCount >= 0.8 * nDates & nonzeroCount >= 0.8 * nDates & wghts > 0;
-    values = nan(5, 3, nDates);
-
-    for iDate = 1:nDates
-        fields = cell(3);
-        valid = support;
-
-        for iField = find(available(:))'
-            fields{iField} = readslice(source, gridNames(iField), iDate, keepLon, transposeGrid);
-            valid = valid & isfinite(fields{iField});
-        end
-
-        totalWghts = sum(wghts(valid));
-
-        if totalWghts == 0
-            continue
-        end
-
-        w = wghts(valid) / totalWghts;
-
-        for iType = 1:3
-
-            for iDepth = find(available(iType, :))
-                field = fields{iType, iDepth};
-                values(iType, iDepth, iDate) = sum(w .* field(valid));
-            end
-
-            if available(iType, 2)
-                direct = values(iType, 1, iDate);
-                combined = sum(values(iType, 2:3, iDate));
-                scale = 1;
-
-                for iDepth = 1:3
-                    field = fields{iType, iDepth};
-                    scale = max(scale, sum(w .* abs(field(valid))));
-                end
-
-                if abs(direct - combined) > 32 * precision * scale
-                    error('ULMO:steric2gmsl:DepthMismatch', ...
-                        'Full and shallow+deep means disagree for %s at native sample %d.', gridNames(iType, 1), iDate);
-                end
-
-                values(iType, 1, iDate) = combined;
-            end
-
-        end
-
-        values(4, :, iDate) = values(1, :, iDate) - values(2, :, iDate);
-        values(5, :, iDate) = values(1, :, iDate) - values(3, :, iDate);
-    end
-
-    means = struct;
-
-    for iType = 1:5
-
-        for iDepth = find(supported(iType, :))
-            means.(cacheNames(iType, iDepth)) = reshape(values(iType, iDepth, :), [], 1);
         end
 
     end
