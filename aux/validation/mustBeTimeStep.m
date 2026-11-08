@@ -1,3 +1,22 @@
+%% MUSTBETIMESTEP - Validates a time step for gridded sea-level data.
+%
+% Syntax
+%   MUSTBETIMESTEP(timeStep)
+%
+% Input arguments
+%   timeStep - Native sampling ([]), a positive finite scalar number of
+%       days or duration, or a text scalar naming 'midmonth' or 'GRACE'.
+%       Named steps are case-insensitive.
+%
+% See also
+%   normalisetimeconfig, processfieldtime
+%
+% Created by
+%   2025/10/01, En-Chi Lee (williameclee@gmail.com)
+%
+% Last modified
+%   2026/11/07, En-Chi Lee (williameclee@gmail.com)
+
 function mustBeTimeStep(timeStep)
     eid = 'ULMO:notValidTimeStep';
 
@@ -6,8 +25,9 @@ function mustBeTimeStep(timeStep)
     end
 
     if (ischar(timeStep) || isstring(timeStep))
+        mustBeTextScalar(timeStep)
 
-        if ~any(strcmpi(timeStep, {'midmonth', 'GRACE'}))
+        if ~strcmpi(timeStep, {'midmonth', 'GRACE'})
             error(eid, 'Time step string must be ''midmonth'' or ''GRACE''. Got "%s".', timeStep);
         end
 

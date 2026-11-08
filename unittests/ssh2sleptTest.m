@@ -4,7 +4,7 @@
 %   2026/11/03, En-Chi Lee
 %
 % Last modified
-%   2026/11/06, En-Chi Lee
+%   2026/11/07, En-Chi Lee (williameclee@gmail.com)
 
 classdef ssh2sleptTest < matlab.unittest.TestCase
     properties
@@ -72,6 +72,11 @@ classdef ssh2sleptTest < matlab.unittest.TestCase
         function invalidCoordinatesDoNotDependOnStericValidation(t)
             native = fullfile(t.Folder,'NASASSHMonthly.mat');
             data = load(native); data.lat([2 3]) = data.lat([3 2]);
+            save(native,'-struct','data');
+            t.verifyError(@() ssh2slept('NASASSHMonthly',t.Polygon,0,GVN={1,1,1}), ...
+                'ULMO:ssh2slept:SourceGrid');
+            data.lat = sort(data.lat);
+            data.lat(end) = 91;
             save(native,'-struct','data');
             t.verifyError(@() ssh2slept('NASASSHMonthly',t.Polygon,0,GVN={1,1,1}), ...
                 'ULMO:ssh2slept:SourceGrid');

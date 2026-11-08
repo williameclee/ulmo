@@ -92,7 +92,7 @@
 %	2025/05/19, En-Chi Lee (williameclee@arizona.edu)
 %
 % Last modified
-%	2026/11/06
+%	2026/11/07, En-Chi Lee (williameclee@gmail.com)
 
 function [ssh, sshSigma, dates, lon, lat, partialMonths] = ssh2lonlatt(product, timestep, meshsize, timelim, options)
 
@@ -150,7 +150,7 @@ function [ssh, sshSigma, dates, lon, lat, partialMonths] = ssh2lonlatt(product, 
     end
 
     % Preserve the legacy path builder's method spelling.
-    [timestep, ~, useMean] = normalizetimeconfig(timestep, intpMthd);
+    [timestep, ~, useMean] = normalisetimeconfig(timestep, intpMthd);
 
     if ~isempty(timelim) && isnumeric(timelim)
         timelim = datetime(timelim, 'ConvertFrom', 'datenum');
