@@ -43,11 +43,6 @@ The ultimate goal is to drop the `_new` suffixes and replace the original functi
 | `plm2xyz` | Projects spherical harmonics onto latitude-longitude grids/points. | [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git) | none | Replacement for `plm2xyz` in [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git). |
 | `slep2plm_new` | Projects Slepian functions back to spherical harmonics. | [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git) | none | Replacement for `slep2plm` in [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git), with support for `GeoDomain` objects. |
 | `xyzs2slep` | Fits one or more scalar fields on shared coordinates to a regional Slepian basis. | [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git) | | |
-| `preparegridcoordinates` | Validates rectangular coordinates, returns ascending-axis indices, removes a cyclic endpoint and computes relative area weights. | | | |
-| `prepareslepianbasis` | Prepares retained Slepian columns with explicit supplied-basis ordering, truncation and optional orthonormality checks. | | | |
-| `fitgriddedslepian` | Fits named gridded fields with shared buffered geometry and sampled designs, retaining empty epochs and target-area diagnostics. | | | |
-| `normalizetimeconfig` | Normalizes temporal requests and generates projection configuration tokens without changing legacy grid-cache names. | | | |
-| `processfieldtime` | Applies native, epoch-mean or interpolated temporal processing independently to named fields. | | | |
 | `slep2xyz` | Projects Slepian functions onto latitude-longitude grids/points. | [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git) | none | WIP |
 | `slept2resid_new` | Fits a time series | [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git) | none | Replacement for `slept2resid` in [slepian_delta](https://github.com/csdms-contrib/slepian_delta.git), with support for `GeoDomain` objects. |
 | `sphgaussfilt` | Apply Gaussian filter to spherical harmonics | none | none | |
