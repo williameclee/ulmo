@@ -1,12 +1,12 @@
-%% FIELDTIMEHELPERSTEST - Verifies temporal field processing and cache identity.
-% Tests preserve native selection, independent missing samples, calendar edges
-% and fixed-step interpolation. GRACE behavior is covered by epoch regressions.
+%% FIELDTIMEHELPERSTEST - Tests temporal field processing and projection cache tokens.
+% Covers native date handling, independent monthly means, selection by
+% window centre, fixed-step interpolation and averaging, and cache tokens.
 %
 % Syntax
 %   results = runtests('unittests/fieldTimeHelpersTest.m')
 %
 % Created by
-%   2026/11/06, En-Chi Lee
+%   2026/11/07, En-Chi Lee (williameclee@gmail.com)
 
 classdef fieldTimeHelpersTest < matlab.unittest.TestCase
 
