@@ -1,4 +1,4 @@
-%% STERICFILEPATH - Generate native and interpolated steric product paths.
+%% STERICFILEPATH - Builds the filename for a native or derived steric product.
 %
 % Syntax
 %   outPath = STERICFILEPATH(product)
@@ -9,16 +9,17 @@
 %   product - Prepared product identifier accepted by StericProduct.
 %   timeStep (optional) - Temporal cache selector.
 %       Positive numeric scalar or duration, 'midmonth', or 'GRACE'.
-%       Numeric values are encoded as integers; durations retain their units.
+%       Numeric steps use the MATLAB %d format. Duration steps use their
+%       displayed value and unit with spaces removed.
 %       Unit: days for numeric values.
 %       Default selector: [] (native timestamps).
-%   meshSize (optional) - Spatial grid spacing encoded in the filename.
+%   meshSize (optional) - Spatial grid spacing.
 %       Unit: degrees.
 %       Default spacing: [] (no spacing suffix).
-%   lonOrigin (optional) - Longitude centre encoded in the filename.
+%   lonOrigin (optional) - Longitude centre.
 %       Unit: degrees east.
 %       Default centre: [] (no origin suffix).
-%   intpMthd (optional) - Interpolation method encoded in the filename.
+%   intpMthd (optional) - Interpolation method.
 %       Used only when a temporal or spatial selector is supplied.
 %       Default method: "" (empty text).
 %   truncBeforeIntp (optional) - Whether to include timelim in the filename.
@@ -31,18 +32,13 @@
 %       Default suffix: '' (empty text).
 %
 % Output arguments
-%   outPath - MAT filename under the IFILES/STERIC/product directory.
-%
-% Notes
-%   This function only constructs a path; it does not create directories or
-%   read or write data. It preserves STERIC2LONLATT cache naming, including
-%   the extra '-interp' suffix for duration steps with linear interpolation.
+%   outPath - MAT file path under the product folder in IFILES/STERIC.
 %
 % See also
 %   steric2lonlatt, steric2gmsl
 %
 % Created by
-%   2026/11/04, En-Chi Lee (williameclee@gmail.com)
+%   2026/11/08, En-Chi Lee (williameclee@gmail.com)
 
 function outPath = stericfilepath( ...
         product, timeStep, meshSize, lonOrigin, intpMthd, truncBeforeIntp, timelim, component)
@@ -58,7 +54,7 @@ function outPath = stericfilepath( ...
         component (1, :) char = ''
     end
 
-    outputFolder = fullfile(getenv("IFILES"), 'STERIC', char(product));
+    outFolder = fullfile(getenv("IFILES"), 'STERIC', char(product));
 
     timeStepStr = '';
 
@@ -115,8 +111,8 @@ function outPath = stericfilepath( ...
         timelimStr = sprintf('-%s_%s', string(timelim(1), timeFmt), string(timelim(2), timeFmt));
     end
 
-    outputFile = sprintf('%s-StericSeaLevel%s%s%s%s%s.mat', ...
+    outFile = sprintf('%s-StericSeaLevel%s%s%s%s%s.mat', ...
         product, timeStepStr, spaceIntpStr, intpMethodStr, timelimStr, component);
 
-    outPath = fullfile(outputFolder, outputFile);
+    outPath = fullfile(outFolder, outFile);
 end

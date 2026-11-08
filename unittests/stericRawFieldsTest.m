@@ -3,6 +3,9 @@
 %
 % Created by
 %   2026/11/04, En-Chi Lee (williameclee@gmail.com)
+%
+% Last modified
+%   2026/11/08, OpenAI Codex
 classdef stericRawFieldsTest < matlab.unittest.TestCase
     properties
         fixtureData
@@ -64,7 +67,7 @@ classdef stericRawFieldsTest < matlab.unittest.TestCase
             testCase.fixtureData.deepStericSl(1, 1, 1:10) = NaN;
             testCase.writeNative;
             [raw, ~, dates, ~, ~, halo] = steric2lonlatt('EN4c14', 'midmonth', BeQuiet=true);
-            nativeHalo = steric2gmsl('EN4c14', Type='halosteric', BeQuiet=true);
+            nativeHalo = steric2gmsl('EN4c14', 'halosteric', BeQuiet=true);
             testCase.verifyEqual(dates, datetime(2020, [1; 2], [16; 15], 12, 0, 0));
             testCase.verifyEqual(raw(:, :, 1), mean(testCase.fixtureData.stericSl(:, :, 1:31), 3, 'omitmissing'));
             testCase.verifyEqual(halo(1), mean(nativeHalo(1:31)), AbsTol=1e-12);
