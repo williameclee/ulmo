@@ -1,98 +1,80 @@
-%% SSH2LONLATT
-% Loads sea surface height (SSH) anomaly data and interpolate to regular
-% latitude-longitude mesh.
+%% SSH2LONLATT - Load sea surface height anomalies on a longitude-latitude grid.
 %
 % Syntax
-%   [ssh, sigma, dates] = SSH2LONLATT(product)
-%   [ssh, sigma, dates] = SSH2LONLATT(product, timestep, meshsize)
-%   [ssh, sigma, dates] = SSH2LONLATT(product, timestep, meshsize, timelim)
-%   [ssh, sigma, dates] = SSH2LONLATT(product, timestep, meshsize, timelim)
-%   [ssh, sigma, dates] = SSH2LONLATT(__, "Name", Value)
-%   [ssh, sigma, dates, lon, lat, partialMonths] = SSH2LONLATT(__)
+%   [ssh, sshSigma, dates, lon, lat, partialMonths] = ssh2lonlatt(product)
+%   [ssh, sshSigma, dates] = ssh2lonlatt(product, timestep, meshsize, timelim)
+%   [ssh, sshSigma, dates] = ssh2lonlatt(__, "Name", value)
 %
 % Input arguments
-%	product - Name of the SSH product to load
-%		- 'MEaSUREs': The MEaSUREs Gridded Sea Surface Height Anomalies
-%           Version 2205 product.
-%       - 'NASASSH' and 'NASASSHMonthly': Native NASA-SSH maps and monthly means.
-%       Other products: 'ORAS5', 'DT2024', 'CMEMS'.
-%       The default product is 'MEaSUREs'.
-%   timestep - Temporal interpolation time step
-%       - Numeric or duration scalar, in units of days.
-%       - 'midmonth': mean of native samples in each calendar month,
-%         dated at the midpoint.
-%       - 'GRACE': mean within CSR RL06 degree-60 GRACE solution windows.
-%         Missing months use calendar boundaries inside the gap, with outer
-%         bounds aligned to adjacent real solutions. Dates are window midpoints.
-%         Monthly inputs are averaged by native timestamps, not reconstructed
-%         at daily resolution.
-%       When not specified, no temporal interpolation is performed.
-%   meshsize - Spatial interpolation grid size in degrees
-%       - Real scalar, in units of degrees.
-%       When not specified, no spatial interpolation is performed.
-%   timelim - Time range of interest
-%       - Datetime or numeric vector, in units of datenum
-%       When not specified, the full time range of the data is returned.
-%   LonOrigin - Longitudinal centre of the interpolated output mesh
-%       - Real scalar, in units of degrees.
-%       When not specified, the midpoint of the input longitude range is
-%       used. This option is only relevant when spatial interpolation is
-%       performed.
-%   Interpolation - Interpolation method, for both temporal and spatial
-%       - An INTERP1 method, or 'mean' to average native samples.
-%         For 'midmonth' and 'GRACE', this option controls spatial
-%         interpolation only. Fixed-step means use
-%         half-open windows centered on the output dates. Spatial
-%         interpolation uses 'linear' when 'mean' is requested.
-%       The default interpolation method is 'linear'. This option is only
-%       relevant when temporal or spatial interpolation is performed.
-%   OutputFormat - Format of the output mesh
-%       - 'meshgrid' or 'ndgrid' for (lat, lon, t) or (lon, lat, t)
-%           ordering.
-%       The default format is 'meshgrid'.
-%   TimeFormat - Format of the output time vector
-%       - 'datetime' or 'datenum'.
-%       The default format is 'datetime'.
-%   Unit - Unit of the output steric sea level data
-%       - 'm' (metres) or 'mm' (millimetres, equivalent to kg/m^2).
-%       The default unit is 'm'.
-%	ForceNew - Logical flag to force reprocess of the data
-%		The default option is false.
-%	SaveData - Logical flag to cache the interpolated grid over the full data time range
-%		The default option is true.
-%	BeQuiet - Logical flag to print messages
-%		- true: Suppress all messages.
-%		- false: Print all messages (usually for debugging).
-%		The default option is 'soft true', only printing important
-%       messages.
+%   product (optional) - Name of the prepared SSH product.
+%       Use 'NASASSH' for weekly reference-mission maps or 'NASASSHMonthly'
+%       for calendar-month means. Other products are 'MEaSUREs', 'ORAS5',
+%       'DT2024' and 'CMEMS'.
+%       Default product: 'MEaSUREs'
+%   timestep (optional) - Output sampling interval or averaging schedule.
+%       Specify a number of days, a duration, 'midmonth' or 'GRACE'.
+%       'midmonth' averages native samples by calendar month. 'GRACE' uses
+%       CSR RL06 degree-60 solution windows. Both return window midpoints.
+%       Missing GRACE months use calendar boundaries inside the gap, with
+%       outer boundaries aligned to the adjacent solutions. Monthly inputs
+%       contribute one sample per native timestamp.
+%       Default interval: [] (native epochs)
+%   meshsize (optional) - Angular grid spacing, or [spacing, longitude origin].
+%       Unit: degrees.
+%       Default spacing: [] (native grid unless LonOrigin is supplied)
+%   timelim (optional) - Inclusive start and end dates as datetime or datenum.
+%       Size: two elements.
+%       Default range: [] (full record)
+%   LonOrigin (name-value) - Longitude at the centre of the output grid.
+%       Unit: degrees.
+%       Default origin: [] (180 degrees when a spacing is supplied)
+%   Interpolation (name-value) - Spatial and fixed-step interpolation method.
+%       Use 'mean' for fixed-step means over half-open windows centred on
+%       the output dates. Spatial interpolation then uses 'linear'.
+%       'midmonth' and 'GRACE' always average native samples.
+%       Default method: 'linear'
+%   OutputFormat (name-value) - Grid order, 'meshgrid' or 'ndgrid'.
+%       Default format: 'meshgrid'
+%   TimeFormat (name-value) - Date representation, 'datetime' or 'datenum'.
+%       Default format: 'datetime'
+%   Unit (name-value) - SSH unit, 'm' or 'mm'.
+%       Default unit: 'm'
+%   ForceNew (name-value) - Whether to rebuild from the native product.
+%       Default value: false
+%   SaveData (name-value) - Whether to cache the processed full time series.
+%       Default value: true
+%   BeQuiet (name-value) - Whether to suppress messages. Use false for all
+%       messages, 0.5 for file messages and true for silence.
+%       Default value: 0.5
+%   CallChain (name-value) - Names of calling functions for log messages.
+%       Default value: {}
 %
 % Output arguments
-%	ssh - SSH mesh
-%		The dimensions and units depend on the options specified.
-%       The default dimensions are (lat, lon, t) in units of metres.
-%	sigma - Uncertainty or error mesh of the SSH data
-%		The units and dimensions are the same as for SSH.
-%	dates - The time stamps of the data
-%		The data type depends on the TimeFormat option.
-%	lon - Longitude of the mesh
-%		The dimensions (i.e. row or column vector) depend on the
-%       OutputFormat option.
-%	lat - Latitude of the mesh
-%		The dimensions (i.e. row or column vector) depend on the
-%       OutputFormat option.
+%   ssh - Gridded sea surface height anomalies in the requested unit.
+%       Size: (nLat, nLon, nTime) for 'meshgrid', (nLon, nLat, nTime) for 'ndgrid'.
+%   sshSigma - SSH uncertainties in the same units and grid order as ssh.
+%       Empty for NASA-SSH products.
+%   dates - Output epochs in the requested time format.
+%       Size: (nTime, 1).
+%   lon, lat - Longitude and latitude axes in degrees. For 'meshgrid', lon
+%       is a row and lat a column. For 'ndgrid', lon is a column and lat a row.
 %
 %   partialMonths - Logical column aligned with dates for native NASASSHMonthly
 %       maps. Empty for other products or interpolated grids and epochs.
 %
 % Data sources
-%	MEaSUREs Gridded Sea Surface Height Anomalies Version 2205
-% 		https://podaac.jpl.nasa.gov/dataset/SEA_SURFACE_HEIGHT_ALT_GRIDS_L4_2SATS_5DAY_6THDEG_V_JPL2205
+%   MEaSUREs gridded sea surface height anomalies, version 2205.
+%       https://podaac.jpl.nasa.gov/dataset/SEA_SURFACE_HEIGHT_ALT_GRIDS_L4_2SATS_5DAY_6THDEG_V_JPL2205
+%   NASA-SSH reference-mission simple grid, version 1. https://doi.org/10.5067/NSREF-SG0V1
+%
+% See also
+%   PROCESSSSHDATANASA, PROCESSSSHMONTHLYNASA, TEMPORALMEANEPOCHS
 %
 % Created by
-%	2025/05/19, En-Chi Lee (williameclee@arizona.edu)
+%   2025/05/19, En-Chi Lee (williameclee@arizona.edu)
 %
 % Last modified
-%	2026/11/04
+%   2026/11/08, En-Chi Lee (williameclee@gmail.com)
 
 function [ssh, sshSigma, dates, lon, lat, partialMonths] = ssh2lonlatt(product, timestep, meshsize, timelim, options)
 
