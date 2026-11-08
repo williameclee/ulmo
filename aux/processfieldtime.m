@@ -1,31 +1,38 @@
-%% PROCESSFIELDTIME - Apply the existing temporal convention to named fields.
+%% PROCESSFIELDTIME - Averages or interpolates gridded fields in time.
 %
 % Syntax
+%   [data, dates] = PROCESSFIELDTIME(data, dates, timestep, mthd)
 %   [data, dates] = PROCESSFIELDTIME(data, dates, timestep, mthd, limits)
 %
 % Input arguments
-%   data - Nonempty scalar structure of fields with time on axis three.
-%       Each field has size (nX, nY, nNativeTime); scalar series use
-%       (1, 1, nNativeTime).
-%   dates - Strictly increasing native datetime timestamps.
-%       Size: (nNativeTime, 1).
-%   timestep - Native ([]), positive duration or numeric days, 'midmonth',
-%       or 'GRACE'. Named epochs always average.
-%   mthd - Temporal interpolation method, or 'mean' for fixed-step means.
-%   limits - Inclusive datetime limits selecting processed timestamps, or [].
-%       Averaging selects window centres without clipping native samples.
+%   data - Scalar structure of fields with time on the third dimension.
+%       Size of each field: (nX, nY, nNativeTime). Spatial sizes may differ.
+%   dates - Strictly increasing datetime vector with one date per native sample.
+%   timestep - Native sampling ([]), a positive scalar number of days or
+%       duration, or one of the names 'midmonth' and 'GRACE'.
+%   mthd - Interpolation method or 'mean' for fixed-step averaging.
+%       Named steps always use epoch means. Native sampling returns all
+%       fields and dates directly, regardless of the method or limits.
+%   limits (optional) - Inclusive datetime limits for output dates.
+%       For means, limits select window centres. Each selected window
+%       uses all its available native samples.
 %       Size: two-element vector or empty.
+%       Default range: [] (full native date range).
 %
 % Output arguments
-%   data - Processed fields, retaining names, spatial dimensions and units.
+%   data - Processed fields with their original names, spatial dimensions and units.
 %       Size of each field: (nX, nY, nTime).
-%   dates - Processed datetime column, (nTime, 1).
+%   dates - Processed datetime column vector.
+%       Size: (nTime, 1).
 %
 % See also
 %   normalisetimeconfig, interptemporal, temporalmeanepochs, averageepochs
 %
 % Created by
-%   2026/11/06, En-Chi Lee
+%   2026/11/06, En-Chi Lee (williameclee@gmail.com)
+%
+% Last modified
+%   2026/11/07, En-Chi Lee (williameclee@gmail.com)
 
 function [data, dates] = processfieldtime(data, dates, timestep, mthd, limits)
 

@@ -1,38 +1,37 @@
-%% PREPARESLEPIANBASIS - Prepares retained harmonic Slepian basis columns.
+%% PREPARESLEPIANBASIS - Selects harmonic Slepian basis columns for a fit.
 %
 % Syntax
 %   GVN = PREPARESLEPIANBASIS(domain, L)
 %   GVN = PREPARESLEPIANBASIS(domain, L, J, GVN, SaveData=false)
 %
 % Input arguments
-%   domain - Geographic domain.
-%   L - Maximum harmonic degree for the basis.
-%   J (optional) - Positive retained column count.
-%       Default count: bounded round of N for full bases; all columns for
-%       an already truncated supplied basis.
-%   GVN (optional) - Cell array {G,V,N}, or {} to calculate the basis.
-%       G has (L+1)^2 harmonic rows; V has one value per column; N is the
-%       full Shannon number. Supplied column order and signs are preserved.
+%   domain - Geographic domain accepted by GLMALPHA_NEW.
+%   L - Maximum harmonic degree.
+%   J (optional) - Number of leading functions to retain.
+%       With [], a full basis uses round(N) bounded by 1 and its column
+%       count. An already truncated basis keeps all its columns.
+%       Default count: [].
+%   GVN (optional) - Supplied basis {G, V, N}, or {} to compute the basis.
+%       G is the harmonic coefficient matrix, V contains one concentration
+%       per column, and N is the full Shannon number.
 %       Default basis: {}.
-%   SaveData (name-value) - Whether computed basis/kernel caches may be saved.
+%   SaveData (name-value) - Whether to save computed basis and kernel caches.
 %       Default flag: true.
-%   RequireOrthonormal (name-value) - Whether retained columns must be
-%       orthonormal, using the precision of the supplied harmonic matrix.
-%       Default flag: false (the XYZS2SLEP validation convention).
+%   RequireOrthonormal (name-value) - Whether to check the retained
+%       columns for orthonormality using the input precision of G.
+%       Default flag: false.
 %
 % Output arguments
-%   basis - Retained {G,V,N}; G is double, V is a column, N is unchanged.
-%       Size: G is ((L+1)^2, J), V is (J, 1), N is scalar.
-%
-% Notes
-%   Computed bases are sorted by descending concentration. This helper does
-%   not read or write projection caches. Callers own supplied-basis bypass.
+%   GVN - Retained basis {G, V, N}. G is double and N is unchanged.
+%       Computed columns are sorted by descending concentration. Supplied
+%       columns retain their input order and signs.
+%       Size: G is ((L+1)^2, J), V is (J, 1), and N is scalar.
 %
 % See also
-%   glmalpha_new, xyzs2slep, fitgriddedslepian
+%   glmalpha_new, mustBeGVN, xyzs2slep, fitgriddedslepian
 %
 % Created by
-%   2026/11/07, En-Chi Lee (williameclee@gmail.com)
+%   2026/11/08, En-Chi Lee (williameclee@gmail.com)
 
 function GVN = prepareslepianbasis(domain, L, J, GVN, options)
 
@@ -68,7 +67,10 @@ function GVN = prepareslepianbasis(domain, L, J, GVN, options)
     G = double(G(:, 1:J));
 
     if options.RequireOrthonormal
-        assert(norm(G.' * G - eye(J), 'fro') <= 100 * precision * max(size(G)), ...
+        % Each inner product includes input rounding and double-precision summation.
+        tol = 100 * max(precision, size(G, 1) * eps('double'));
+        % For an orthogonal matrix, G^T * G is the identity
+        assert(max(abs(G.' * G - eye(J)), [], 'all') <= tol, ...
             'ULMO:prepareslepianbasis:Basis', 'The retained harmonic basis must be orthonormal.');
     end
 

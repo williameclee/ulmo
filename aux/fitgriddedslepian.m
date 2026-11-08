@@ -1,45 +1,42 @@
-%% FITGRIDDEDSLEPIAN - Fits named rectangular-grid fields to a retained basis.
+%% FITGRIDDEDSLEPIAN - Fits gridded fields to a retained Slepian basis.
 %
 % Syntax
-%   [coeffs, fits, buffer, weighting] = FITGRIDDEDSLEPIAN( ...
-%       fields, dates, lon, lat, domain, L, GVN, SaveData=false)
+%   [coeffs, fits, buf, wghtMthd] = FITGRIDDEDSLEPIAN(fields, dates, lon, lat, domain, L, GVN)
+%   [__] = FITGRIDDEDSLEPIAN(__, "Name", value)
 %
 % Input arguments
-%   fields - Scalar structure of real single/double grids.
-%       Each field must use (longitude, latitude, time) ordering, including square grids.
-%       Missing observations are NaN. Field names have no physical meaning
-%       here. Arrays share coordinates and dates, but may have different masks.
-%   dates - Strictly increasing datetime vector, one date per epoch.
+%   fields - Scalar structure of real fields.
+%       Fields share the same grid and dates.
+%       Size of each field: (nLon, nLat, nTime), including square grids.
+%   dates - Strictly increasing datetime vector with one date per epoch.
 %   lon, lat - Coordinate vectors accepted by PREPAREGRIDCOORDINATES.
 %       Unit: degrees east and north, respectively.
-%   domain - Target domain accepted by DOMAINMASK.
-%   L - Nonnegative integer harmonic degree. Positive degrees use a 90/L
-%       degree spherical exterior buffer; degree zero uses only the target.
-%   GVN - Retained {G,V,N} prepared by PREPARESLEPIANBASIS.
-%   SaveData (name-value) - Whether exterior-mask caches may be saved.
-%       Default flag: true.
-%   ForceNew (name-value) - Whether exterior masks must be recalculated.
+%   domain - Target domain.
+%   L - Maximum harmonic degree for the basis, used to determine the buffer zone size.
+%   GVN - Retained {G, V, N} from PREPARESLEPIANBASIS. The fit uses every column of G.
+%   RequireGlobalLongitude (name-value) - Whether to require a complete longitude cycle.
 %       Default flag: false.
-%   RequireGlobalLongitude (name-value) - Whether full longitude coverage
-%       is required by the caller. Default flag: false.
+%   SaveData (name-value) - Whether to save eligible target and exterior masks.
+%       Default flag: true.
+%   ForceNew (name-value) - Whether to recompute the exterior mask.
+%       Default flag: false.
 %
 % Output arguments
-%   coeffs - Structure with the input field names, each (nTime, J).
+%   coeffs - Structure of coefficient matrices with the same field names as the input.
+%       Size of each matrix: (nTime, J), where J is the number of columns of G.
 %       Unit: same as the corresponding input field.
-%   fits - Structure of per-field tables with nObs, areaFraction, condNum
-%       and residualRms. Counts include positive-area buffer observations;
-%       areaFraction uses the complete target-grid area as its denominator.
-%       Residual RMS has input field units; other diagnostics are dimensionless.
-%   buffer - Exterior buffer width, in degrees.
-%   weighting - Relative area convention from PREPAREGRIDCOORDINATES.
+%   fits - Structure of diagnostic tables with one row per epoch.
+%       - nObs counts positive-weight observations in the target and buffer.
+%       - areaFraction is the observed fraction of the total target area.
+%       - condNum is the fit condition number.
+%       - residualRms is the residual root mean square in the units of the input field.
+%   buf - Exterior buffer width, 90/L for positive L and zero for L = 0.
+%       Unit: degrees.
+%   wghtMthd - Relative area convention returned by PREPAREGRIDCOORDINATES.
 %
 % Notes
-%   Empty epochs retain NaN coefficients, conditioning and residual RMS,
-%   and zero counts and coverage. Entirely empty fields and underdetermined
-%   nonempty fits raise errors. The sampled design is reused across fields,
-%   including points first observed in a later field. Temporal processing,
-%   uncertainty propagation, output formatting and projection caches belong
-%   to callers. No gridded data or projection files are written here.
+%   Empty epochs have zero counts and coverage, and NaN fit outputs.
+%   Entirely empty fields and underdetermined fits raise errors.
 %
 % See also
 %   preparegridcoordinates, prepareslepianbasis, xyzs2slep, domainmask
@@ -102,7 +99,7 @@ function [coeffs, fits, buf, wghtMthd] = fitgriddedslepian( ...
     pts = find(obsMask & wghts > 0 & hasAnyObs(keepLon, orderLat));
     wghts = wghts(pts);
     target = mask(pts);
-    % Implicitly assumes that the supplied basis only contains the basis functions wanted
+    % The caller has already selected the retained columns.
     J = size(GVN{1}, 2);
     nTime = numel(dates);
     design = [];

@@ -1,11 +1,18 @@
-%% MUSTBEGVN - Checks the structure and dimensions of a supplied basis.
+%% MUSTBEGVN - Checks the structure and dimensions of a supplied Slepian basis.
+%
+% Syntax
+%   MUSTBEGVN(GVN)
+%   MUSTBEGVN(GVN, L)
 %
 % Input arguments
-%   GVN - Three-element cell {G, V, N}.
-%       G is a finite real harmonic coefficient matrix with (L+1)^2 rows
-%       and at most that many columns.
-%       V has one finite real eigenvalue per column; N is a finite,
+%   GVN - Three-element cell array {G, V, N}.
+%       G is a nonempty, finite, real single- or double-precision matrix
+%       with a square number of rows and at most that many columns.
+%       V contains one finite real eigenvalue per column. N is a finite,
 %       nonnegative scalar Shannon number. All entries are dimensionless.
+%   L (optional) - Maximum harmonic degree. When supplied, G must have
+%       exactly (L+1)^2 rows.
+%       Default degree: [] (infer from the row count).
 %
 % Created by
 %   2026/11/07, En-Chi Lee (williameclee@arizona.edu)

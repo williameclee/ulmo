@@ -1,31 +1,31 @@
-%% PREPAREGRIDCOORDINATES - Validates and order a rectangular geographic grid.
+%% PREPAREGRIDCOORDINATES - Validates and orders a rectangular geographic grid.
 %
 % Syntax
-%   [lon, lat, iLon, iLat, weights, wghtMthd] = PREPAREGRIDCOORDINATES(lon, lat)
+%   [lon, lat, iLon, iLat, wghts, wghtMthd] = PREPAREGRIDCOORDINATES(lon, lat)
 %   [__] = PREPAREGRIDCOORDINATES(__, RequireGlobalLongitude=true)
 %
 % Input arguments
-%   lon, lat - Finite real coordinate vectors with at least two elements.
-%       Longitude must be regular; latitude must be strictly monotone and
-%       within [-90, 90]. Either axis may descend. Spacing tolerance is
-%       3e-5 degrees, including single-precision coordinate rounding.
+%   lon, lat - Finite, strictly monotone coordinate vectors with at least two entries each.
+%       Longitude spacings must agree with the mean spacing to 3e-5 degrees
+%       (or one input precision step for coarser single-precision coordinates).
+%       Latitude must lie in [-90, 90] and may be unevenly spaced.
 %       Unit: degrees east and north, respectively.
 %   RequireGlobalLongitude (name-value) - Whether to require one complete
 %       periodic longitude grid after removing a duplicated endpoint.
 %       Default flag: false.
 %
 % Output arguments
-%   lon, lat - Ascending coordinate columns, with a cyclic endpoint removed.
+%   lon, lat - Ascending coordinate columns. If the original longitude
+%       endpoints differ by one cycle, the last input endpoint is dropped.
 %       Unit: degrees east and north, respectively.
-%   iLon, iLat - Indices into the original coordinate vectors. Apply them to
-%       fields already arranged as (longitude, latitude, time). No field
-%       orientation is inferred, and longitude values are not wrapped.
-%   weights - Relative cell areas in (longitude, latitude) order.
-%       Size: (numel(lon), numel(lat)); dimensionless.
+%   iLon, iLat - Indices into the original longitude and latitude vectors.
+%       Apply the same indices to the spatial dimensions of each field.
+%   wghts - Relative cell areas in longitude-by-latitude order.
+%       Size: (numel(lon), numel(lat)).
 %   wghtMthd - 'cosine-latitude' or 'spherical-midpoint-bands'.
-%       Uniform latitude uses cosd(lat). Nonuniform latitude uses spherical
-%       bands between arithmetic midpoints, with half-step outer boundaries
-%       clipped at the poles. Regular longitude spacing cancels in ratios.
+%       Uniform latitude uses cosd(lat). For nonuniform latitude, the
+%       band edges are the latitude midpoints, with half-step outer edges
+%       clipped at the poles. Longitude spacing cancels in area ratios.
 %
 % See also
 %   fitgriddedslepian, domainmask

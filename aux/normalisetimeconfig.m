@@ -1,26 +1,28 @@
-%% NORMALISETIMECONFIG - Normalises temporal processing and projection identity.
+%% NORMALISETIMECONFIG - Normalises a time step and generates its projection cache token.
 %
 % Syntax
-%   [tstep, method, useMean, config] = NORMALISETIMECONFIG(tstep, mthd)
+%   [tstep, mthd, useMean, config] = NORMALISETIMECONFIG(tstep, mthd)
 %
 % Input arguments
-%   tstep - Native ([]), positive numeric days or duration, 'midmonth',
-%       or 'GRACE'. Numeric days become durations; named steps become lower
-%       case scalar strings. Duration display formats are preserved.
-%   mthd - Temporal interpolation method or 'mean'; converted to lower
-%       case. Methods are validated by the processing function when used.
+%   tstep - Native sampling ([]), a positive scalar number of days or
+%       duration, or one of the names 'midmonth' and 'GRACE'.
+%   mthd - Interpolation method or 'mean' for fixed-step averaging.
 %
 % Output arguments
-%   tstep, mthd - Normalised arguments in the conventions above.
-%   useMean - Whether named epochs or fixed-step means are requested.
-%   config - Projection-cache token: 'native', a named step, or
-%       'T<seconds>seconds-<method>' with 17 significant digits for seconds.
+%   tstep - Normalised time step.
+%       Numeric days become a duration and named steps become lower-case scalar strings.
+%   mthd - Input method in lower case.
+%   useMean - Whether to average over named epochs or fixed-step windows.
+%   config - Projection cache name.
+%       Native sampling gives 'native'. Named epochs use their lower-case
+%       name. Fixed steps use 'T<seconds>seconds-<method>', with seconds
+%       written to 17 significant digits.
 %
 % See also
-%   processfieldtime
+%   processfieldtime, mustBeTimeStep
 %
 % Created by
-%   2026/11/06, En-Chi Lee
+%   2026/11/08, En-Chi Lee (williameclee@gmail.com)
 
 function [tstep, mthd, useMean, config] = normalisetimeconfig(tstep, mthd)
 
@@ -37,7 +39,7 @@ function [tstep, mthd, useMean, config] = normalisetimeconfig(tstep, mthd)
         tstep = lower(string(tstep));
     end
 
-    % Both 'midmonth' and 'GRACE' timesteps default to using epoch averages
+    % Both named time steps use epoch averages.
     useMean = ~isempty(tstep) && (isstring(tstep) || strcmpi(mthd, 'mean'));
 
     if isempty(tstep)
