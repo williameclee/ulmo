@@ -17,7 +17,9 @@
 %       CSR RL06 degree-60 solution windows. Both return window midpoints.
 %       Missing GRACE months use calendar boundaries inside the gap, with
 %       outer boundaries aligned to the adjacent solutions. Monthly inputs
-%       contribute one sample per native timestamp.
+%       contribute one sample per native timestamp. For NASASSHMonthly,
+%       'midmonth' uses the native epochs and the same grid cache as [],
+%       including when spatial interpolation is requested.
 %       Default interval: [] (native epochs)
 %   meshsize (optional) - Angular grid spacing, or [spacing, longitude origin].
 %       Unit: degrees.
@@ -32,7 +34,7 @@
 %   Interpolation (name-value) - Spatial and fixed-step interpolation method.
 %       Use 'mean' for fixed-step means over half-open windows centred on
 %       the output dates. Spatial interpolation then uses 'linear'.
-%       'midmonth' and 'GRACE' always average native samples.
+%       'midmonth' and 'GRACE' use means when temporal resampling is needed.
 %       Default method: 'linear'
 %   OutputFormat (name-value) - Grid order, 'meshgrid' or 'ndgrid'.
 %       Default format: 'meshgrid'
@@ -142,6 +144,12 @@ function [ssh, sshSigma, dates, lon, lat, partialMonths] = ssh2lonlatt(product, 
         warning('ULMO:InvalidMeshSize', ...
         'Mesh size is NaN, argument ignored.');
         meshsize = [];
+    end
+
+    % The prepared monthly product already contains calendar-month means.
+    if product == SSHProduct.NASASSHMonthly && (ischar(timestep) || isstring(timestep)) && ...
+            isscalar(string(timestep)) && strcmpi(timestep, 'midmonth')
+        timestep = [];
     end
 
     % Preserve the legacy path builder's method spelling.

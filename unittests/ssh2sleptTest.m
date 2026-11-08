@@ -164,6 +164,82 @@ classdef ssh2sleptTest < matlab.unittest.TestCase
             t.verifyNumElements(dir(fullfile(t.Folder, '*.mat')), 1);
         end
 
+        function monthlyReaderSkipsTemporalProcessing(t)
+            % An explicit monthly request must bypass the redundant temporal cache.
+            native = fullfile(t.Folder, 'NASASSHMonthly.mat');
+            original = readbinary(native);
+            data = load(native);
+            data.sshs(:) = 999;
+            save(fullfile(t.Folder, 'NASASSHMonthly-Tmidmonth-mean-linear.mat'), '-struct', 'data');
+            blockers = fullfile(t.Folder, 'blockers');
+            mkdir(blockers);
+
+            for name = ["interptemporal", "temporalmeanepochs", "averageepochs"]
+                writelines(["function varargout=" + name + "(varargin)"; ...
+                                "error('test:UnexpectedTemporalProcessing','Already monthly.');"; "end"], ...
+                    fullfile(blockers, name + ".m"));
+            end
+
+            t.applyFixture(matlab.unittest.fixtures.PathFixture(blockers));
+            expected = cell(1, 6);
+            actual = cell(1, 6);
+            [expected{:}] = ssh2lonlatt('NASASSHMonthly', [], [], t.Dates([2 4]), ...
+                Unit = 'mm', OutputFormat = 'ndgrid', BeQuiet = true);
+            [actual{:}] = ssh2lonlatt('NASASSHMonthly', 'MIDMONTH', [], t.Dates([2 4]), ...
+                Unit = 'mm', OutputFormat = 'ndgrid', BeQuiet = true, ForceNew = true);
+            t.verifyEqual(actual, expected);
+            t.verifyEqual(readbinary(native), original);
+            t.verifyNumElements(dir(fullfile(t.Folder, '*.mat')), 2);
+
+            % Both requests reuse the same spatial cache.
+            [expected{1:5}] = ssh2lonlatt('NASASSHMonthly', [], 1, ...
+                OutputFormat = 'ndgrid', BeQuiet = true, SaveData = true);
+            files = dir(fullfile(t.Folder, '*.mat'));
+            [actual{1:5}] = ssh2lonlatt('NASASSHMonthly', 'midmonth', 1, ...
+                OutputFormat = 'ndgrid', BeQuiet = true, SaveData = true);
+            t.verifyEqual(actual(1:5), expected(1:5));
+            t.verifyNumElements(dir(fullfile(t.Folder, '*.mat')), numel(files));
+        end
+
+        function monthlyProjectionUsesNativeCache(t, forceNew)
+            % Compare the native fit with a forced refit or a source-free cache read.
+            args = {'NASASSHMonthly', t.Polygon, 1};
+            expected = cell(1, 4);
+            actual = cell(1, 4);
+            [expected{:}] = ssh2slept(args{:}, truncation = 4, unit = 'm');
+            file = dir(fullfile(t.Folder, 'SlepianExpansions', '*.nc'));
+            cache = fullfile(file.folder, file.name);
+            original = readbinary(cache);
+
+            if ~forceNew
+                delete(fullfile(t.Folder, 'NASASSHMonthly.mat'));
+            end
+
+            [actual{:}] = ssh2slept(args{:}, TimeStep = 'midmonth', truncation = 4, ...
+                unit = 'm', ForceNew = forceNew, SaveData = false);
+            t.verifyEqual(actual, expected);
+            t.verifyEqual(readbinary(cache), original);
+            [selected, dates, fit] = ssh2slept(args{:}, t.Dates([2 4]), ...
+                TimeStep = "MIDMONTH", truncation = 4, unit = 'm', dropPartialMonths = true);
+            t.verifyEqual(selected, expected{1}(2:3, :));
+            t.verifyEqual(dates, t.Dates(2:3));
+            t.verifyFalse(any(fit.partialMonth));
+            t.verifyNumElements(dir(fullfile(t.Folder, 'SlepianExpansions', '*.nc')), 1);
+        end
+
+        function unsupportedTimestepCannotReadMonthlyCache(t)
+            % Reject other epoch selections even when a matching monthly cache exists.
+            args = {'NASASSHMonthly', t.Polygon, 1};
+            ssh2slept(args{:}, truncation = 4);
+            delete(fullfile(t.Folder, 'NASASSHMonthly.mat'));
+
+            for step = {days(10), 10, 'GRACE'}
+                t.verifyError(@() ssh2slept(args{:}, truncation = 4, TimeStep = step{1}), ...
+                'ULMO:ssh2slept:TimeStep');
+            end
+
+        end
+
         function serialDateLimitsSelectProjectionRows(t, forceNew)
             % Numeric limits must select the same rows on a refit and a source-free cache hit.
             args = {'NASASSHMonthly', t.Polygon, 1};

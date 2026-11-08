@@ -3,6 +3,7 @@
 % Syntax
 %   [sshSlept, dates, fit, GVN] = ssh2slept("NASASSHMonthly", domain, L)
 %   [__] = ssh2slept(__, timelim, unit="m", truncation=J)
+%   [__] = ssh2slept(__, TimeStep="midmonth")
 %   [__] = ssh2slept(__, GVN={G, V, N}, dropPartialMonths=true)
 %   [__] = ssh2slept(__, OutputFormat="traditional")
 %
@@ -18,6 +19,9 @@
 %       serial date numbers in chronological order. Equal bounds select one epoch.
 %       Size: two elements.
 %       Default range: [] (full record).
+%   TimeStep (name-value) - Requested epochs, [] or "midmonth". Both use
+%       the native NASASSHMonthly epochs and share the same projection cache.
+%       Default timestep: [].
 %   unit (name-value) - Height unit for coefficients and residual RMS, "mm" or "m".
 %       Default unit: "mm".
 %   OutputFormat (name-value) - Coefficient orientation, "timefirst" or "traditional".
@@ -93,6 +97,7 @@ function [sshSlept, dates, fit, GVN] = ssh2slept(product, domain, L, timelim, op
         domain
         L (1, 1) double {mustBeFinite, mustBeInteger, mustBeNonnegative}
         timelim {mustBeTimeRange} = []
+        options.TimeStep {mustBeTimeStep} = []
         options.unit ...
             {mustBeTextScalar, mustBeMember(options.unit, ["m", "mm"])} = "mm"
         options.OutputFormat ...
@@ -104,6 +109,11 @@ function [sshSlept, dates, fit, GVN] = ssh2slept(product, domain, L, timelim, op
         options.SaveData (1, 1) logical = true
         options.dropPartialMonths (1, 1) logical = false
     end
+
+    % The projection cache represents only the native monthly epochs.
+    timestep = options.TimeStep;
+    assert(isempty(timestep) || ((ischar(timestep) || isstring(timestep)) && strcmpi(timestep, 'midmonth')), ...
+        'ULMO:ssh2slept:TimeStep', 'NASASSHMonthly projections support only native ([]) or midmonth epochs.');
 
     if ~isempty(timelim)
         if isnumeric(timelim)
@@ -241,7 +251,7 @@ function [path, tmp, cacheHit] = getoutputfile(product, domain, L, J, saveData, 
 end
 
 function [coeffs, dates, fit, basis] = fitRecord(product, domain, L, options)
-    [values, ~, dates, lon, lat, partialMonth] = ssh2lonlatt(product, ...
+    [values, ~, dates, lon, lat, partialMonth] = ssh2lonlatt(product, options.TimeStep, ...
         OutputFormat = 'ndgrid', Unit = 'm', BeQuiet = true);
     lon = lon(:);
     lat = lat(:);
