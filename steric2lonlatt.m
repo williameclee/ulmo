@@ -13,9 +13,6 @@
 %   timestep (optional) - Temporal interpolation step or averaging convention.
 %       Positive numeric scalar or duration for fixed steps; 'midmonth' for
 %       calendar-month means; 'GRACE' for CSR RL06 degree-60 solution windows.
-%       Missing GRACE months use calendar boundaries inside the gap, with
-%       outer bounds aligned to adjacent real solutions. Dates are window
-%       midpoints. Means use native samples, without daily reconstruction.
 %       Unit: days for numeric values.
 %       Default step: [] (native timestamps).
 %   meshsize (optional) - Spatial interpolation spacing.
@@ -28,8 +25,6 @@
 %       Unit: days for datenum values.
 %       Default limits: [] (full record).
 %   LonOrigin (name-value) - Longitude centre of the interpolated grid.
-%       Spatial interpolation uses centre 180 when this option is empty,
-%       and spacing 0.5 when meshsize is empty.
 %       Unit: degrees east.
 %       Default centre: [] (no spatial interpolation unless meshsize is set).
 %   Interpolation (name-value) - Temporal and spatial interpolation method.
@@ -241,7 +236,7 @@ function [steric, stericSigma, dates, lon, lat] = steric2lonlatt( ...
         comp = sprintf('-%s-%s', options.Depth, strrep(options.Type, ' ', '-'));
     end
 
-    outputPath = stericfilepath(product, timestep, meshsize, lonOrigin, intpMthd, ...
+    outPath = stericfilepath(product, timestep, meshsize, lonOrigin, intpMthd, ...
         options.TruncationBeforeInterpolation, timelim, comp);
 
     baseStericVar = stericVar;
@@ -259,25 +254,25 @@ function [steric, stericSigma, dates, lon, lat] = steric2lonlatt( ...
         cacheVars = {'steric'};
     end
 
-    cacheHit = ~options.ForceNew && isfile(outputPath) && ...
-        all(ismember([coordVars, cacheVars], who('-file', outputPath)));
+    cacheHit = ~options.ForceNew && isfile(outPath) && ...
+        all(ismember([coordVars, cacheVars], who('-file', outPath)));
 
     if cacheHit
-        inputPath = outputPath;
+        inPath = outPath;
         dataVars = cacheVars;
     else
-        inputPath = stericfilepath(product);
+        inPath = stericfilepath(product);
 
-        if ~isfile(inputPath)
-            error('ULMO:LoadData:FileNotFound', 'Input file %s not found.', inputPath);
+        if ~isfile(inPath)
+            error('ULMO:LoadData:FileNotFound', 'Input file %s not found.', inPath);
         end
 
-        available = who('-file', inputPath);
+        available = who('-file', inPath);
         missing = setdiff([coordVars, vars], available);
 
         if ~isempty(missing)
             error('ULMO:LoadData:VariableNotFound', ...
-                'Variables missing from %s: %s', inputPath, strjoin(missing, ', '));
+                'Variables missing from %s: %s', inPath, strjoin(missing, ', '));
         end
 
         if useMean
@@ -290,11 +285,11 @@ function [steric, stericSigma, dates, lon, lat] = steric2lonlatt( ...
 
     if options.BeQuiet == 0 || (cacheHit && options.BeQuiet <= 1)
         fprintf('[ULMO>%s] Loading %s steric product from %s.\n', ...
-            callchaintext(callChain), product, inputPath);
+            callchaintext(callChain), product, inPath);
     end
 
-    coord = load(inputPath, coordVars{:});
-    data = load(inputPath, dataVars{:});
+    coord = load(inPath, coordVars{:});
+    data = load(inPath, dataVars{:});
 
     if ~cacheHit
         epochRange = [];
@@ -326,14 +321,14 @@ function [steric, stericSigma, dates, lon, lat] = steric2lonlatt( ...
             [data, coord] = preparegrid(data, coord, meshsize, lonOrigin, spatialIntpMthd, options.BeQuiet, callChain);
         end
 
-        if saveData && ~strcmp(inputPath, outputPath)
+        if saveData && ~strcmp(inPath, outPath)
             data.lon = coord.lon;
             data.lat = coord.lat;
             data.dates = coord.dates;
-            save(outputPath, '-struct', 'data', '-v7.3');
+            save(outPath, '-struct', 'data', '-v7.3');
 
             if options.BeQuiet <= 1
-                fprintf('[ULMO>%s] Saved %s.\n', callchaintext(callChain), filehref(outputPath, 'steric product'));
+                fprintf('[ULMO>%s] Saved %s.\n', callchaintext(callChain), filehref(outPath, 'steric product'));
             end
 
         end
@@ -507,7 +502,7 @@ end
 
 % Format output
 function [steric, stericSigma, dates, lon, lat] = formatoutput( ...
-        steric, dates, lon, lat, timelim, timeFmt, outputFmt, unit)
+        steric, dates, lon, lat, timelim, timeFmt, outFmt, unit)
 
     if ~isempty(timelim)
         isValidTime = (dates >= timelim(1)) & (dates <= timelim(2));
@@ -519,7 +514,7 @@ function [steric, stericSigma, dates, lon, lat] = formatoutput( ...
         dates = datenum(dates); %#ok<DATNM>
     end
 
-    switch outputFmt
+    switch outFmt
         case 'meshgrid'
             lon = lon(:)';
             lat = lat(:);
