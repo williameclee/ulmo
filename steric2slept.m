@@ -149,7 +149,7 @@
 %   2026/11/05, En-Chi Lee
 %
 % Last modified
-%   2026/11/07, En-Chi Lee (williameclee@gmail.com)
+%   2026/11/09, En-Chi Lee (williameclee@gmail.com)
 
 function [stericSlept, dates, fit, GVN, halostericGmsl, constantSlept] = ...
         steric2slept(product, domain, L, timestep, timeRange, options)
@@ -385,7 +385,7 @@ function writeCache(destination, coefficients, means, dates, fits, constant, pro
     folder = fileparts(destination);
     if ~isfolder(folder), mkdir(folder); end
     path = [tempname(folder), '.nc'];
-    cleanup = onCleanup(@() removePartial(path));
+    cleanup = onCleanup(@() deletefileifpresent(path));
     % Define coordinate variables before data variables attach dimension scales.
     % Replacing implicit scales after many fields can corrupt HDF5 references.
     writeVector(path, 'time', seconds(dates-datetime(2000, 1, 1)), 'time');
@@ -467,8 +467,4 @@ end
 function rows = selectDates(dates, limits)
     rows = true(size(dates));
     if ~isempty(limits), rows = dates >= limits(1) & dates <= limits(2); end
-end
-
-function removePartial(path)
-    if isfile(path), delete(path); end
 end
