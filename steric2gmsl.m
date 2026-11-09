@@ -99,7 +99,7 @@
 %   2026/11/04, En-Chi Lee (williameclee@gmail.com)
 %
 % Last modified
-%   2026/11/09
+%   2026/11/09, En-Chi Lee (williameclee@gmail.com)
 
 function [gmsl, dates] = steric2gmsl(product, type, depth, options)
 
