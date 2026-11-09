@@ -59,7 +59,7 @@
 % Special thanks to kwlewis@princeton.edu for spotting a bug.
 %
 % Last modified by
-%   2026/09/25, williameclee@arizona.edu (@williameclee)
+%   2026/11/09, williameclee@arizona.edu (@williameclee)
 %   2023/11/20, fjsimons@alum.mit.edu (@fjsimons)
 
 function varargout = plm2xyz(varargin)
@@ -188,8 +188,8 @@ function varargout = plm2xyz(varargin)
             load(outputPath) %#ok<LOAD>
 
             if ~beQuiet
-                fprintf('[ULMO>%s] Loaded <a href="matlab: fprintf(''%s\\n'');open(''%s'')">data</a>.\n', ...
-                    callchaintext(callChain), outputPath, outputPath);
+                fprintf('[ULMO>%s] Loaded %s.\n', ...
+                    callchaintext(callChain), filehref(outputPath, 'data'));
             end
 
             % AND TYPICALLY ANYTHING ELSE WOULD BE PRECOMPUTED, BUT THE GLOBAL
@@ -229,7 +229,7 @@ function varargout = plm2xyz(varargin)
             end
 
             if lup - ldown > taskmax && length(meshSize) > taskinf
-                delete(wbar)
+                deleteWaitbar(wbar);
             end
 
             if length(c11cmn) == 4 && isequal(c11cmn, [0, 90, 360, -90])
@@ -241,8 +241,8 @@ function varargout = plm2xyz(varargin)
                 end
 
                 if ~beQuiet
-                    fprintf('[ULMO>%s] Saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">data</a>.\n', ...
-                        callchaintext(callChain), outputPath, outputPath);
+                    fprintf('[ULMO>%s] Saved %s.\n', ...
+                        callchaintext(callChain), filehref(outputPath, 'data'));
                 end
 
             end

@@ -127,7 +127,7 @@
 %   2026/10/06, En-Chi Lee (williameclee@arizona.edu)
 %
 % Last modified
-%   2026/11/07, En-Chi Lee (williameclee@gmail.com)
+%   2026/11/09, En-Chi Lee (williameclee@gmail.com)
 
 function [coeffs, V, N, fit, design] = xyzs2slep(vals, lon, lat, domain, L, options)
 
@@ -508,15 +508,8 @@ function GVN = prepareGVN(domain, L, options)
     J = options.truncation;
 
     if ~isempty(options.GVN)
-        mustBeGVN(options.GVN);
+        mustBeGVN(options.GVN, L);
         [G, V, N] = options.GVN{:};
-
-        if size(G, 1) ~= (L + 1) ^ 2
-            error('ULMO:xyzs2slep:InvalidBasis', ...
-                'Supplied basis degree differs from L. For L = %d, the basis must have %d rows, but the received array has %d.', ...
-                L, (L + 1) ^ 2, size(G, 1));
-        end
-
         order = 1:size(G, 2);
     else
 

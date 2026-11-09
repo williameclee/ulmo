@@ -96,7 +96,7 @@
 %       PANGAEA, doi: 10.1594/PANGAEA.932462
 %
 % Last modified by
-%   2026/09/20, williameclee@arizona.edu (@williameclee)
+%   2026/11/09, williameclee@arizona.edu (@williameclee)
 
 function varargout = gia2plmt(varargin)
     %% Initialisation
@@ -118,8 +118,8 @@ function varargout = gia2plmt(varargin)
         data = load(inputPath, 'lmcosiM', 'lmcosiU', 'lmcosiL');
 
         if ~beQuiet
-            fprintf('[Slepian>%s] Loaded <a href="matlab: fprintf(''%s\\n'');open(''%s'')">%s GIA model</a>\n', ...
-                callchaintext(callChain), inputPath, inputPath, upper(model));
+            fprintf('[Slepian>%s] Loaded %s\n', ...
+                callchaintext(callChain), filehref(inputPath, sprintf('%s GIA model', upper(model))));
         end
 
     else
@@ -142,8 +142,8 @@ function varargout = gia2plmt(varargin)
         data = load(altInputPath, 'lmcosiM', 'lmcosiU', 'lmcosiL');
 
         if ~beQuiet
-            fprintf('[Slepian>%s] Loaded <a href="matlab: fprintf(''%s\\n'');open(''%s'')">%s GIA model</a>\n', ...
-                callchaintext(callChain), inputPath, inputPath, upper(model));
+            fprintf('[Slepian>%s] Loaded %s\n', ...
+                callchaintext(callChain), filehref(altInputPath, sprintf('%s GIA model', upper(model))));
         end
 
     end
@@ -219,39 +219,28 @@ function varargout = gia2plmt(varargin)
         end
 
         if ~beQuiet
-            fprintf('[Slepian>%s] Saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">%s GIA model</a>\n', ...
-                callchaintext(callChain), inputPath, inputPath, upper(model));
+            fprintf('[Slepian>%s] Saved %s\n', ...
+                callchaintext(callChain), filehref(inputPath, sprintf('%s GIA model', upper(model))));
         end
 
     end
 
-    % Truncate the model to the desired degree
+    % Resize the model and any supplied bounds to the requested degree.
     if ~isempty(L)
-
-        if size(data.lmcosiM, 1) < addmup(L)
-
-            if ~beQuiet
-                warning('ULMO:LoadData:InsufficientResolution', ...
-                    'Model %s resolution lower than the requested degree %d', model, L);
-            end
-
-            [data.lmcosiM(1:addmup(L), 2), data.lmcosiM(1:addmup(L), 1)] = addmon(L);
-        else
-            data.lmcosiM = data.lmcosiM(1:addmup(L), :);
+        if ~beQuiet && size(data.lmcosiM, 1) < addmup(L)
+            warning('ULMO:LoadData:InsufficientResolution', ...
+                'Model %s resolution lower than the requested degree %d', model, L);
         end
 
+        fields = "lmcosiM";
         if hasBounds
-
-            if size(data.lmcosiU, 1) < addmup(L) || size(data.lmcosiL, 1) < addmup(L)
-                [data.lmcosiU(1:addmup(L), 2), data.lmcosiU(1:addmup(L), 1)] = addmon(L);
-                [data.lmcosiL(1:addmup(L), 2), data.lmcosiL(1:addmup(L), 1)] = addmon(L);
-            else
-                data.lmcosiU = data.lmcosiU(1:addmup(L), :);
-                data.lmcosiL = data.lmcosiL(1:addmup(L), :);
-            end
-
+            fields = [fields, "lmcosiU", "lmcosiL"];
         end
 
+        for field = fields
+            source = data.(field);
+            data.(field) = cast(ensureplmdegree(source, L, 'traditional'), 'like', source);
+        end
     end
 
     % Time

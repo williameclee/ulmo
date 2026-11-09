@@ -105,6 +105,7 @@
 %   GRACE2PLMT (GRACE2PLMT_NEW), PLM2SLEP
 %
 % Last modified by
+%   2026/11/09, williameclee@arizona.edu (@williameclee)
 %   2026/02/12, williameclee@arizona.edu (@williameclee)
 %     - Added support for ALMA3 love numbers
 %   2024/08/30, williameclee@arizona.edu (@williameclee)
@@ -151,8 +152,8 @@ function varargout = grace2slept_new(varargin)
         data = load(outputPath, vars{:});
 
         if ~beQuiet
-            fprintf('[ULMO>%s] Loaded <a href="matlab: fprintf(''%s\\n'');open(''%s'')">localised GRACE data</a>.\n', ...
-                callchaintext(callChain), outputPath, outputPath);
+            fprintf('[ULMO>%s] Loaded %s.\n', ...
+                callchaintext(callChain), filehref(outputPath, 'localised GRACE data'));
         end
 
         [slept, stdSlept, dates] = ...
@@ -205,8 +206,8 @@ function varargout = grace2slept_new(varargin)
         save(outputPath, vars{:}, '-v7.3');
 
         if ~beQuiet
-            fprintf('[ULMO>%s] Saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">localised GRACE data</a>.\n', ...
-                callchaintext(callChain), outputPath, outputPath);
+            fprintf('[ULMO>%s] Saved %s.\n', ...
+                callchaintext(callChain), filehref(outputPath, 'localised GRACE data'));
         end
 
     end

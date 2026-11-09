@@ -30,7 +30,7 @@
 %   The function is not properly tested yet.
 %
 % Last modified by
-%   2025/10/16, williameclee@arizona.edu (@williameclee)
+%   2026/11/09, williameclee@arizona.edu (@williameclee)
 %   2024/08/15, williameclee@arizona.edu (@williameclee)
 %   2016/11/01, charig@email.arizona.edu (@harig00)
 
@@ -87,8 +87,8 @@ function varargout = integratebasis_new(varargin)
             load(dataFile, 'eigfunINT');
 
             if ~beQuiet
-                fprintf('[ULMO>%s] Loaded <a href="matlab: fprintf(''%s\\n'');open(''%s'')">integrated basis functions</a>.\n', ...
-                    callchaintext(callChain), dataFile, dataFile);
+                fprintf('[ULMO>%s] Loaded %s.\n', ...
+                    callchaintext(callChain), filehref(dataFile, 'integrated basis functions'));
             end
 
             if ~isempty(J)
@@ -180,8 +180,8 @@ function varargout = integratebasis_new(varargin)
         save(dataFile, 'eigfunINT');
 
         if ~beQuiet
-            fprintf('[ULMO>%s] Saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">integrated basis functions</a>.\n', ...
-                callchaintext(callChain), dataFile, dataFile);
+            fprintf('[ULMO>%s] Saved %s.\n', ...
+                callchaintext(callChain), filehref(dataFile, 'integrated basis functions'));
         end
 
     end

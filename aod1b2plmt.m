@@ -81,7 +81,7 @@
 %   GRACEDEG1, GRACEDEG2, PLM2POT, GRACE2PLMT (GRACE2PLMT_NEW)
 %
 % Last modified by
-%   2026/09/25, williameclee@arizona.edu (@williameclee)
+%   2026/11/09, williameclee@arizona.edu (@williameclee)
 %   2014/02/27, charig@princeton.edu
 %   2011/05/17, fjsimons@alum.mit.edu
 
@@ -103,8 +103,8 @@ function varargout = aod1b2plmt(varargin)
         data = load(outputPath, 'aod1bPlmt', 'aod1bStdPlmt', 'dates');
 
         if beQuiet <= 1
-            fprintf('[ULMO>%s] Loaded <a href="matlab: fprintf(''%s\\n'');open(''%s'')">%s data</a>.\n', ...
-                callchaintext(callChain), outputPath, outputPath, upper(product));
+            fprintf('[ULMO>%s] Loaded %s.\n', ...
+                callchaintext(callChain), filehref(outputPath, sprintf('%s data', upper(product))));
         end
 
         % Collect output
@@ -126,8 +126,8 @@ function varargout = aod1b2plmt(varargin)
             'aod1bPlmt', 'aod1bStdPlmt', 'dates', 'equatorRadius', 'gravityParam');
 
         if beQuiet <= 1
-            fprintf('[ULMO>%s] Saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">%s data</a>.\n', ...
-                callchaintext(callChain), outputPath, outputPath, upper(product));
+            fprintf('[ULMO>%s] Saved %s.\n', ...
+                callchaintext(callChain), filehref(outputPath, sprintf('%s data', upper(product))));
         end
 
     end
