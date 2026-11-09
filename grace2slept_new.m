@@ -105,10 +105,7 @@
 %   GRACE2PLMT (GRACE2PLMT_NEW), PLM2SLEP
 %
 % Last modified by
-%   2026/11/09, williameclee@arizona.edu (@williameclee)
-%   2026/02/12, williameclee@arizona.edu (@williameclee)
-%     - Added support for ALMA3 love numbers
-%   2024/08/30, williameclee@arizona.edu (@williameclee)
+%   2026/11/09, williameclee@gmail.com (@williameclee)
 %   2022/05/18, charig@princeton.edu (@harig00)
 %   2012/06/26, fjsimons@alum.mit.edu (@fjsimons)
 
