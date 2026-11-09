@@ -31,7 +31,6 @@
 %
 % Last modified by
 %   2026/11/09, williameclee@arizona.edu (@williameclee)
-%   2024/08/15, williameclee@arizona.edu (@williameclee)
 %   2016/11/01, charig@email.arizona.edu (@harig00)
 
 function varargout = integratebasis_new(varargin)
