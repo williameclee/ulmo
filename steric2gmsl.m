@@ -1,20 +1,25 @@
-%% STERIC2GMSL - Returns a native global-mean steric sea level series.
+%% STERIC2GMSL - Returns native global-mean steric sea level series.
 %
 % Syntax
 %   [gmsl, dates] = STERIC2GMSL(product, type)
 %   [gmsl, dates] = STERIC2GMSL(product, type, depth)
+%   [gmsl, dates] = STERIC2GMSL(product, ["total", "halosteric"], ["full", "deep"])
 %   [gmsl, dates] = STERIC2GMSL(__, "Name", value)
 %
 % Input arguments
 %   product - Prepared product: SIO, EN4c14, CMEMS, NOAA, or ORAS5.
 %       The native MAT file must already exist at STERICFILEPATH(product).
-%   type - Selected component.
+%   type - One or more components, as a character vector, string array or
+%       cell array of text scalars.
 %       total, thermosteric, halosteric, non-thermosteric (total minus
 %       thermosteric), or non-halosteric (total minus halosteric).
 %       The returned mean uses uncorrected native fields.
 %   depth (optional) - full, shallow, or deep, as supplied by the product.
 %       Unsupported component/depth combinations raise an error.
-%       Default depth: full.
+%       Accepts the same text formats as type. When supplied, depth must
+%       have the same number of elements as type. Elements are paired in
+%       MATLAB linear indexing order.
+%       Default depth: full for every requested component.
 %   Unit (name-value) - m or mm, for the returned series only.
 %       Default unit: m.
 %   TimeFormat (name-value) - datetime or datenum, for returned dates only.
@@ -60,8 +65,9 @@
 %       Unit: m.
 %
 % Output arguments
-%   gmsl - Selected uncorrected global mean on common observed support.
-%       Size: (N, 1).
+%   gmsl - Uncorrected global means on common observed support.
+%       Column k contains the series for the kth type/depth pair.
+%       Size: (N, K), where K is the number of requested pairs.
 %       Unit: m or mm, as selected by Unit.
 %   dates - Native timestamps in the selected TimeFormat.
 %       Size: (N, 1).
@@ -91,18 +97,26 @@
 %
 % Created by
 %   2026/11/04, En-Chi Lee (williameclee@gmail.com)
+%
+% Last modified
+%   2026/11/09, En-Chi Lee (williameclee@gmail.com)
 
 function [gmsl, dates] = steric2gmsl(product, type, depth, options)
 
     arguments (Input)
         product (1, 1) StericProduct
-        type {mustBeTextScalar, mustBeMember(type, ["total", "thermosteric", "halosteric", "non-thermosteric", "non-halosteric"])}
-        depth {mustBeTextScalar, mustBeMember(depth, ["full", "shallow", "deep"])} = "full"
+        type string {mustBeNonempty, mustBeMember(type, ["total", "thermosteric", "halosteric", "non-thermosteric", "non-halosteric"])}
+        depth string {mustBeMember(depth, ["full", "shallow", "deep"])} = repmat("full", size(type))
         options.Unit {mustBeTextScalar, mustBeMember(options.Unit, ["m", "mm"])} = "m"
         options.TimeFormat {mustBeTextScalar, mustBeMember(options.TimeFormat, ["datetime", "datenum"])} = "datetime"
         options.SaveData (1, 1) logical = true
         options.ForceNew (1, 1) logical = false
         options.BeQuiet (1, 1) double {mustBeMember(options.BeQuiet, [0, 0.5, 1])} = 0.5
+    end
+
+    if numel(type) ~= numel(depth)
+        error('ULMO:steric2gmsl:PairCountMismatch', ...
+            'Type and depth must have the same number of elements.');
     end
 
     inPath = stericfilepath(product);
@@ -116,12 +130,14 @@ function [gmsl, dates] = steric2gmsl(product, type, depth, options)
     [cacheNames, supported] = cachenames(available);
     types = ["total", "thermosteric", "halosteric", "non-thermosteric", "non-halosteric"];
     depths = ["full", "shallow", "deep"];
-    iType = find(strcmpi(types, type));
-    iDepth = find(strcmpi(depths, depth));
+    [~, iType] = ismember(type(:), types);
+    [~, iDepth] = ismember(depth(:), depths);
+    pairs = sub2ind(size(supported), iType, iDepth);
+    unsupported = find(~supported(pairs), 1);
 
-    if ~supported(iType, iDepth)
+    if ~isempty(unsupported)
         error('ULMO:steric2gmsl:UnsupportedField', ...
-            'Product %s does not supply Type=%s, Depth=%s.', char(product), type, depth);
+            'Product %s does not supply Type=%s, Depth=%s.', char(product), type(unsupported), depth(unsupported));
     end
 
     if ~all(ismember({'lon', 'lat', 'dates'}, {metadata.name}))
@@ -159,7 +175,10 @@ function [gmsl, dates] = steric2gmsl(product, type, depth, options)
 
     end
 
-    gmsl = double(means.(cacheNames(iType, iDepth)));
+    gmsl = zeros(numel(dates), numel(pairs));
+    for iPair = 1:numel(pairs)
+        gmsl(:, iPair) = means.(cacheNames(pairs(iPair)));
+    end
 
     if strcmp(options.Unit, 'mm')
         gmsl = 1e3 * gmsl;
