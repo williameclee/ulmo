@@ -72,7 +72,7 @@
 %   sleptRes - Residual time series for each Slepian coefficient
 %
 % Last modified by
-%   2025/10/16, williameclee@arizona.edu (@williameclee)
+%   2026/11/09, williameclee@arizona.edu (@williameclee)
 
 function varargout = grace2trend(domain, varargin)
     %% Initialisation
@@ -176,8 +176,8 @@ function varargout = grace2trend(domain, varargin)
         save(outputPath, 'G2T');
 
         if ~beQuiet
-            fprintf('[ULMO>%s] Saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">data</a>.\n', ...
-                callchaintext(callChain), outputPath, outputPath);
+            fprintf('[ULMO>%s] Saved %s.\n', ...
+                callchaintext(callChain), filehref(outputPath, 'data'));
         end
 
     end

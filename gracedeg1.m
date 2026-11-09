@@ -77,7 +77,7 @@
 %       More recent versions of the JPL may be available after the time of this documentation.
 %
 % Last modified by
-%   2025/10/16, williameclee@arizona.edu (@williameclee)
+%   2026/11/09, williameclee@arizona.edu (@williameclee)
 %   2021/11/18, charig@arizona.edu (@harig00)
 
 function varargout = gracedeg1(varargin)
@@ -99,8 +99,8 @@ function varargout = gracedeg1(varargin)
         data = load(outputPath, vars{:});
 
         if ~beQuiet
-            fprintf('[ULMO>%s] Loaded <a href="matlab: fprintf(''%s\\n'');open(''%s'')">degree-1 data</a>.\n', ...
-                callchaintext(callChain), outputPath, outputPath);
+            fprintf('[ULMO>%s] Loaded %s.\n', ...
+                callchaintext(callChain), filehref(outputPath, 'degree-1 data'));
         end
 
         [deg1Plmt, deg1StdPlmt, dates] = ...
@@ -148,8 +148,8 @@ function varargout = gracedeg1(varargin)
         save(outputPath, 'deg1Plmt', 'deg1StdPlmt', 'dates')
 
         if ~beQuiet
-            fprintf('[ULMO>%s] Saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">degree-1 data</a>.\n', ...
-                callchaintext(callChain), outputPath, outputPath);
+            fprintf('[ULMO>%s] Saved %s.\n', ...
+                callchaintext(callChain), filehref(outputPath, 'degree-1 data'));
         end
 
     end
