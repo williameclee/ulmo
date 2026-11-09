@@ -11,6 +11,9 @@
 %
 % Created by
 %   2026/11/04, En-Chi Lee (williameclee@gmail.com)
+%
+% Last modified
+%   2026/11/09
 
 classdef steric2gmslTest < matlab.unittest.TestCase
 
@@ -75,6 +78,28 @@ classdef steric2gmslTest < matlab.unittest.TestCase
             testCase.verifyNotEqual(stored.nonThermostericGmsl, stored.halostericGmsl);
         end
 
+        function pairedLayersOnColdCache(testCase)
+            % Pair by linear index across different shapes and retain duplicates.
+            types = ["halosteric", "non-thermosteric"; "total", "halosteric"];
+            depths = {'deep', "shallow", 'full', "deep"};
+            before = testCase.fileBytes;
+            [actual, dates] = steric2gmsl('EN4c14', types, depths, ...
+                SaveData = false, Unit = "mm", TimeFormat = "datenum", BeQuiet = true);
+            baseMean = 10/3 + (0:4)';
+            haloDeep = 0.5 * baseMean - 0.5;
+            expected = [haloDeep, 10 * baseMean, 8 * baseMean + 1, haloDeep];
+            testCase.verifyEqual(actual, 1000 * expected, AbsTol = 1e-8);
+            testCase.verifyEqual(dates, datenum(testCase.data.dates)); %#ok<DATNM>
+            testCase.verifyEqual(testCase.fileBytes, before);
+        end
+
+        function explicitDepthCountsMustMatch(testCase)
+            % Only an omitted depth supplies a default for every component.
+            mismatched = 'ULMO:steric2gmsl:PairCountMismatch';
+            testCase.verifyError(@() steric2gmsl('EN4c14', ["total", "halosteric"], "full"), mismatched);
+            testCase.verifyError(@() steric2gmsl('EN4c14', "total", ["full", "deep"]), mismatched);
+        end
+
         function directLayersRetainZeroContributions(testCase)
             shallow = steric2gmsl('EN4c14', "halosteric", "shallow");
             deep = steric2gmsl('EN4c14', "halosteric", "deep", BeQuiet = true);
@@ -107,14 +132,16 @@ classdef steric2gmslTest < matlab.unittest.TestCase
         end
 
         function completeCacheDoesNotReadGrids(testCase)
-            expected = steric2gmsl('EN4c14', "total", BeQuiet = true);
+            types = {'halosteric'; 'total'};
+            expected = steric2gmsl('EN4c14', types, ["full", "full"], BeQuiet = true);
             folder = testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture);
             writelines(["function out = matfile(varargin)"; ...
                             "error('test:GridRead', 'A complete cache must bypass grid reads.');"; "end"], ...
                 fullfile(folder.Folder, 'matfile.m'));
             testCase.applyFixture(matlab.unittest.fixtures.PathFixture(folder.Folder));
-            actual = steric2gmsl('EN4c14', "total", BeQuiet = true);
+            [actual, dates] = steric2gmsl('EN4c14', types, BeQuiet = true);
             testCase.verifyEqual(actual, expected);
+            testCase.verifyEqual(dates, testCase.data.dates);
             testCase.verifyError(@() steric2gmsl('EN4c14', "total", ForceNew = true, BeQuiet = true), 'test:GridRead');
         end
 
@@ -174,6 +201,10 @@ classdef steric2gmslTest < matlab.unittest.TestCase
             testCase.data = struct('lon', data.lon, 'lat', data.lat, 'dates', data.dates, ...
                 'thermostericSl', data.thermostericSl, 'deepThermostericSl', []);
             testCase.writeNative;
+            before = testCase.fileBytes;
+            testCase.verifyError(@() steric2gmsl('EN4c14', ["thermosteric", "thermosteric"], ["full", "deep"]), ...
+                'ULMO:steric2gmsl:UnsupportedField');
+            testCase.verifyEqual(testCase.fileBytes, before);
             actual = steric2gmsl('EN4c14', "thermosteric", BeQuiet = true);
             testCase.verifyEqual(actual, 11 + 3 * (0:4)', AbsTol = 1e-12);
             testCase.verifyError(@() steric2gmsl('EN4c14', "thermosteric", "deep"), 'ULMO:steric2gmsl:UnsupportedField');
