@@ -1,11 +1,22 @@
 %% graceInputFormatsTest - Synthetic input/correction fixtures.
 % Created by
 %   2026/09/26, En-Chi Lee (williameclee@azirona.edu)
+%
+% Last modified
+%   2026/11/09
 
 classdef graceInputFormatsTest < matlab.unittest.TestCase
 
     properties
         Scratch
+    end
+
+    properties (Constant, Access = private)
+        CacheName = 'CSR_RL05_alldata_nDeg1_nC20_nC30_60_GRAV.mat'
+    end
+
+    properties (TestParameter)
+        missingVariable = {'gracePlmt', 'graceStdPlmt', 'dates'}
     end
 
     methods (TestMethodSetup)
@@ -150,23 +161,47 @@ classdef graceInputFormatsTest < matlab.unittest.TestCase
             testCase.verifyEqual(p(1, 7, 3), 9.571647583412e-7 +3e-10);
         end
 
-        function bypassOldCache(testCase)
-            % Verify that legacy cache files are bypassed, new cache files (*_inputV2.mat) are created,
-            % and data can be loaded directly from the new cache in the absence of source files.
+        function cacheReuseAndForcedRefresh(testCase)
+            % Reuse the saved field, then force a refresh at the same path.
             testCase.fixture('CSR', 'RL05', 60, 1, 'legacy', 6378136.3);
-            gracePlmt = -999; graceStdPlmt = -999; dates = NaT; %#ok<NASGU>
-            oldCache = fullfile(testCase.Scratch, 'CSR_RL05_alldata_nDeg1_nC20_nC30_60_GRAV.mat');
-            save(oldCache, 'gracePlmt', 'graceStdPlmt', 'dates');
-            p = grace2plmt_new('CSR', 'RL05', 60, 'GRAV', 'ForceNew', false, ...
-                'SaveData', true, 'BeQuiet', true);
+            gracePlmt = -999; graceStdPlmt = -999; dates = NaT;
+            cachePath = fullfile(testCase.Scratch, testCase.CacheName);
+            save(cachePath, 'gracePlmt', 'graceStdPlmt', 'dates');
+            cached = grace2plmt_new('CSR', 'RL05', 60, 'GRAV', ...
+                'ForceNew', false, 'TimeFormat', 'datetime', 'BeQuiet', true);
+            testCase.verifyEqual(cached, gracePlmt);
+            [p, sigma, dates] = grace2plmt_new('CSR', 'RL05', 60, 'GRAV', ...
+                'ForceNew', true, 'SaveData', true, 'TimeFormat', 'datetime', 'BeQuiet', true);
             testCase.verifySize(p, [1, 1891, 4]);
-            cache = dir(fullfile(testCase.Scratch, '*_inputV2.mat'));
-            testCase.verifyNumElements(cache, 1);
-            % Prove that the new cache can be read without the source files.
+            stored = load(cachePath);
+            testCase.verifyEqual(stored.gracePlmt, p);
+            testCase.verifyEqual(stored.graceStdPlmt, sigma);
+            testCase.verifyEqual(stored.dates, dates);
+            testCase.verifyNumElements(dir(fullfile(testCase.Scratch, '*.mat')), 1);
             rmdir(fullfile(testCase.Scratch, 'RL05'), 's');
-            loaded = grace2plmt_new('CSR', 'RL05', 60, 'GRAV', ...
-                'ForceNew', false, 'BeQuiet', true);
+            [loaded, loadedStd, loadedDates] = grace2plmt_new('CSR', 'RL05', 60, 'GRAV', ...
+                'ForceNew', false, 'TimeFormat', 'datetime', 'BeQuiet', true);
             testCase.verifyEqual(loaded, p);
+            testCase.verifyEqual(loadedStd, sigma);
+            testCase.verifyEqual(loadedDates, dates);
+        end
+
+        function rebuildsIncompleteCache(testCase, missingVariable)
+            % Omitting any required variable triggers a rebuild from source.
+            testCase.fixture('CSR', 'RL05', 60, 1, 'legacy', 6378136.3);
+            [expected.gracePlmt, expected.graceStdPlmt, expected.dates] = ...
+                testCase.process('CSR', 'RL05', 60, 'GRAV', 'TimeFormat', 'datetime');
+
+            cachePath = fullfile(testCase.Scratch, testCase.CacheName);
+            partial = rmfield(expected, missingVariable);
+            save(cachePath, '-struct', 'partial');
+            [actual.gracePlmt, actual.graceStdPlmt, actual.dates] = ...
+                grace2plmt_new('CSR', 'RL05', 60, 'GRAV', ...
+                'ForceNew', false, 'SaveData', true, 'TimeFormat', 'datetime', 'BeQuiet', true);
+
+            testCase.verifyEqual(actual, expected);
+            saved = load(cachePath, 'gracePlmt', 'graceStdPlmt', 'dates');
+            testCase.verifyEqual(saved, expected);
         end
 
     end
