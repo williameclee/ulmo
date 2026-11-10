@@ -77,13 +77,7 @@ function ncPath = processGfzNormalEquations(sourceFolder, Loutput)
     assert(all(normalisations == normalisations(1)) && all(tideSystems == tideSystems(1)), ...
         'ULMO:gfzneq:Conventions', 'Source normalisations or tide systems differ.');
 
-    root = getenv('GRACEDATA');
-    if isempty(root)
-        root = getenv('IFILES');
-        assert(~isempty(root), 'ULMO:gfzneq:NoRoot', 'Set GRACEDATA or IFILES.');
-        root = fullfile(root, 'GRACE');
-    end
-    folder = fullfile(root, 'GFZ', 'NEQ');
+    folder = gfzneqfolder();
     if ~isfolder(folder)
         mkdir(folder);
     end

@@ -5,13 +5,16 @@
 %   dates = readshnctime(path)
 %
 % Input arguments
-%   path - NetCDF file written using CREATESHNC.
+%   path - NetCDF file written by CREATESHNC or PROCESSGFZNORMALEQUATIONS.
 %
 % Output arguments
 %   dates - UTC timestamps. Size: (N, 1), datetime.
 %
 % Created by
 %   2026/10/31, En-Chi Lee (williameclee@gmail.com)
+%
+% Last modified
+%   2026/11/10
 
 function dates = readshnctime(path)
 
@@ -25,7 +28,9 @@ function dates = readshnctime(path)
 
     % Validate the shared time encoding and ordering without loading coefficients.
     times = ncread(path, 'time');
-    assert(strcmpi(ncreadatt(path, 'time', 'units'), 'seconds since 2000-01-01 00:00:00'), ...
+    origin = "seconds since 2000-01-01 00:00:00";
+    units = ncreadatt(path, 'time', 'units');
+    assert(any(strcmpi(units, [origin, origin + " UTC"])), ...
         'ULMO:readshnc:InvalidTime', 'Unsupported time coordinate units.');
     assert(~isempty(times) && all(isfinite(times)) && all(diff(times) > 0), ...
         'ULMO:readshnc:InvalidTime', 'Time must be finite, sorted and unique.');
