@@ -3,12 +3,12 @@
 %
 % Syntax
 %   ncPath = processGfzNormalEquations(sourceFolder)
-%   ncPath = processGfzNormalEquations(sourceFolder, "Loutput", 60)
+%   ncPath = processGfzNormalEquations(sourceFolder, Loutput)
 %
 % Input arguments
 %   sourceFolder - Folder containing GFZ GRACE RL06 and/or GRACE-FO RL06.3
 %       degree-96 GSM SINEX files (.snx or .snx.gz).
-%   Loutput (name-value) - Highest retained spherical harmonic degree.
+%   Loutput (optional) - Highest retained spherical harmonic degree.
 %       Default degree: 60. Supported range: 2 through the source maximum.
 %
 % Output arguments
@@ -32,28 +32,49 @@
 %
 % Created by
 %   2026/11/10
-function ncPath = processGfzNormalEquations(sourceFolder, options)
+function ncPath = processGfzNormalEquations(sourceFolder, Loutput)
     arguments (Input)
-        sourceFolder (1, 1) string {mustBeFolder}
-        options.Loutput (1, 1) double {mustBeInteger, mustBeGreaterThanOrEqual(options.Loutput, 2)} = 60
+        sourceFolder {mustBeTextScalar, mustBeFolder}
+        Loutput (1, 1) double {mustBeInteger, mustBeGreaterThanOrEqual(Loutput, 2)} = 60
     end
 
     files = dir(fullfile(sourceFolder, 'GSM-2_*.snx*'));
     pattern = '^GSM-2_\d{7}-\d{7}_(GRAC_GFZOP_BB01_0600|GRFO_GFZOP_BB01_0603)\.snx(\.gz)?$';
-    files = files(~[files.isdir] & ~cellfun(@isempty, regexp({files.name}, pattern, 'once')));
-    assert(~isempty(files), 'ULMO:gfzneq:NoFiles', 'No GFZ normal equations in %s.', sourceFolder);
-    for iFile = 1:numel(files)
-        path = fullfile(sourceFolder, files(iFile).name);
-        months(iFile) = readHeader(path, options.Loutput); %#ok<AGROW>
+    names = {files(~[files.isdir]).name}.';
+    filenames = string(names(~cellfun(@isempty, regexp(names, pattern, 'once'))));
+    nFiles = numel(filenames);
+    assert(nFiles > 0, 'ULMO:gfzneq:NoFiles', 'No GFZ normal equations in %s.', sourceFolder);
+
+    epochs = zeros(nFiles, 3); % Reference, start and end times.
+    matrixOffsets = zeros(nFiles, 1);
+    sourceDegrees = zeros(nFiles, 1);
+    radii = zeros(nFiles, 1);
+    normalisations = strings(nFiles, 1);
+    tideSystems = strings(nFiles, 1);
+    for iFile = 1:nFiles
+        path = fullfile(sourceFolder, filenames(iFile));
+        [header, matrixOffsets(iFile)] = readHeader(path);
+        sourceDegrees(iFile) = str2double(headerField(header, 'max_degree', path));
+        radii(iFile) = str2double(headerField(header, 'radius', path));
+        assert(isfinite(radii(iFile)) && radii(iFile) > 0, ...
+            'ULMO:gfzneq:InvalidSource', 'Invalid reference radius in %s.', path);
+        normalisations(iFile) = headerField(header, 'norm', path);
+        tideSystems(iFile) = headerField(header, 'tide_system', path);
+        [epochs(iFile,:), labels, indices, sigma] = readEstimates(header, path, sourceDegrees(iFile), Loutput);
+        if iFile == 1
+            nativeIndices = zeros(numel(indices), nFiles);
+            formalStd = zeros(numel(sigma), nFiles);
+        end
+        nativeIndices(:,iFile) = indices;
+        formalStd(:,iFile) = sigma;
     end
-    [times, order] = sort([months.time]);
-    months = months(order);
+    [times, fileOrder] = sort(epochs(:,1));
     duplicate = find(diff(times) == 0, 1);
     if ~isempty(duplicate)
         error('ULMO:gfzneq:DuplicateEpoch', 'Duplicate epoch in %s and %s.', ...
-            months(duplicate).name, months(duplicate+1).name);
+            filenames(fileOrder(duplicate)), filenames(fileOrder(duplicate+1)));
     end
-    assert(all(strcmp({months.norm}, months(1).norm)) && all(strcmp({months.tide}, months(1).tide)), ...
+    assert(all(normalisations == normalisations(1)) && all(tideSystems == tideSystems(1)), ...
         'ULMO:gfzneq:Conventions', 'Source normalisations or tide systems differ.');
 
     root = getenv('GRACEDATA');
@@ -66,22 +87,26 @@ function ncPath = processGfzNormalEquations(sourceFolder, options)
     if ~isfolder(folder)
         mkdir(folder);
     end
-    ncPath = fullfile(folder, sprintf('GFZ_NEQ_L%d.nc', options.Loutput));
+    ncPath = fullfile(folder, sprintf('GFZ_NEQ_L%d.nc', Loutput));
     tmp = [tempname(folder), '.nc'];
     cleanup = onCleanup(@() deletefileifpresent(tmp));
-    createSeries(tmp, months, options.Loutput);
-    for iMonth = 1:numel(months)
-        month = months(iMonth);
-        [packed, scale] = monthlyFactor(fullfile(sourceFolder, month.name), month);
+    createSeries(tmp, epochs(fileOrder,:), labels, filenames(fileOrder), sourceDegrees(fileOrder), ...
+        radii(fileOrder), normalisations(1), tideSystems(1), Loutput);
+    for iMonth = 1:nFiles
+        iFile = fileOrder(iMonth);
+        path = fullfile(sourceFolder, filenames(iFile));
+        nSource = (sourceDegrees(iFile)+1)^2 - 4;
+        [packed, scale] = monthlyFactor(path, matrixOffsets(iFile), nSource, ...
+            nativeIndices(:,iFile), formalStd(:,iFile));
         ncwrite(tmp, 'noiseFactor', packed, [1 iMonth]);
-        ncwrite(tmp, 'formalStd', month.std, [1 iMonth]);
+        ncwrite(tmp, 'formalStd', formalStd(:,iFile), [1 iMonth]);
         ncwrite(tmp, 'varianceFactor', scale, iMonth);
     end
     ncwrite(tmp, 'creationDate', posixtime(datetime('now', 'TimeZone', 'UTC')));
     movefile(tmp, ncPath, 'f');
 end
 
-function month = readHeader(path, L)
+function [header, matrixOffset] = readHeader(path)
     % Small header reads keep preflight independent of matrix size.
     stream = openSource(path);
     cleanup = onCleanup(@() stream.close());
@@ -100,24 +125,21 @@ function month = readHeader(path, L)
     end
     assert(strcmp(strtrim(header(first:last)), '+SOLUTION/NORMAL_EQUATION_MATRIX L'), ...
         'ULMO:gfzneq:InvalidSource', 'Expected a lower normal matrix in %s.', path);
-    month.offset = last;
-    [~, stem, ext] = fileparts(path);
-    month.name = char(stem + ext);
+    matrixOffset = last;
+    header = header(1:first-1);
+end
+
+function [epochs, labels, indices, formalStd] = readEstimates(header, path, maxDegree, Loutput)
     firstLine = split(strtrim(extractBefore(string(header), newline)));
     assert(numel(firstLine) >= 9 && firstLine(1) == "%=SNX", ...
         'ULMO:gfzneq:InvalidSource', 'Invalid SINEX header in %s.', path);
-    month.start = epochSeconds(firstLine(6));
-    month.end = epochSeconds(firstLine(7));
-    month.count = str2double(firstLine(9));
-    month.maxDegree = str2double(headerField(header, 'max_degree', path));
-    month.radius = str2double(headerField(header, 'radius', path));
-    month.norm = headerField(header, 'norm', path);
-    month.tide = headerField(header, 'tide_system', path);
-    assert(month.maxDegree == fix(month.maxDegree) && month.count == (month.maxDegree+1)^2-4 ...
-        && month.radius > 0 && isfinite(month.radius), 'ULMO:gfzneq:InvalidSource', ...
-        'Invalid source degree, parameter count or radius in %s.', path);
-    assert(L <= month.maxDegree, 'ULMO:gfzneq:Degree', 'Requested degree exceeds degree %d in %s.', ...
-        month.maxDegree, path);
+    epochStart = epochSeconds(firstLine(6));
+    epochEnd = epochSeconds(firstLine(7));
+    nSource = str2double(firstLine(9));
+    assert(maxDegree == fix(maxDegree) && nSource == (maxDegree+1)^2-4, ...
+        'ULMO:gfzneq:InvalidSource', 'Invalid source degree or parameter count in %s.', path);
+    assert(Loutput <= maxDegree, 'ULMO:gfzneq:Degree', ...
+        'Requested degree exceeds degree %d in %s.', maxDegree, path);
 
     block = regexp(header, '(?ms)^\+SOLUTION/ESTIMATE\s*?\r?\n(.*?)^-SOLUTION/ESTIMATE', 'tokens', 'once');
     assert(~isempty(block), 'ULMO:gfzneq:InvalidSource', 'Missing estimates in %s.', path);
@@ -127,19 +149,20 @@ function month = readHeader(path, L)
     degree = est{3};
     order = est{5};
     [labels, perm] = sortrows([degree order cs]);
-    valid = degree >= 2 & degree <= month.maxDegree & order >= 0 & order <= degree & ...
+    valid = degree >= 2 & degree <= maxDegree & order >= 0 & order <= degree & ...
         degree == fix(degree) & order == fix(order) & (cs | strcmp(est{2}, 'CN')) & ~(order == 0 & cs);
-    assert(isequal(sort(idx), (1:month.count)') && all(valid) && ...
+    assert(isequal(sort(idx), (1:nSource)') && all(valid) && ...
         ~any(all(diff(labels) == 0, 2)) && all(isfinite(est{10}) & est{10} > 0) && ...
         all(strcmp(est{6}, est{6}{1})), 'ULMO:gfzneq:InvalidSource', ...
         'Invalid coefficient map, uncertainties or epochs in %s.', path);
-    month.time = epochSeconds(est{6}{1});
-    assert(month.start <= month.time && month.time <= month.end, ...
+    time = epochSeconds(est{6}{1});
+    assert(epochStart <= time && time <= epochEnd, ...
         'ULMO:gfzneq:InvalidSource', 'Reference epoch outside solution interval in %s.', path);
-    keep = labels(:, 1) <= L;
-    month.labels = labels(keep, :);
-    month.idx = idx(perm(keep));
-    month.std = est{10}(perm(keep));
+    epochs = [time, epochStart, epochEnd];
+    keep = labels(:, 1) <= Loutput;
+    labels = labels(keep, :);
+    indices = idx(perm(keep));
+    formalStd = est{10}(perm(keep));
 end
 
 function value = headerField(header, name, path)
@@ -171,18 +194,18 @@ function stream = openSource(path)
     end
 end
 
-function [packed, scale] = monthlyFactor(path, month)
-    upper = readNormalTriangle(path, month);
+function [packed, scale] = monthlyFactor(path, matrixOffset, nSource, indices, formalStd)
+    upper = readNormalTriangle(path, matrixOffset, nSource);
     R = chol(upper, 'upper');
     clear upper
-    n = numel(month.idx);
-    E = full(sparse(month.idx, 1:n, 1, month.count, n));
+    n = numel(indices);
+    E = full(sparse(indices, 1:n, 1, nSource, n));
     % Q is the selected block of the inverse of the full normal matrix.
-    Y = linsolve(R, E, struct('UT', true, 'TRANSA', true));
+    Y = R.' \ E;
     clear R E
     Q = Y.' * Y;
     clear Y
-    ratios = month.std.^2 ./ diag(Q);
+    ratios = formalStd.^2 ./ diag(Q);
     scale = median(ratios);
     % GFZ prints six significant digits. Two rounded variances can differ
     % by up to 2e-5 in relative terms even when their true scales agree.
@@ -192,11 +215,10 @@ function [packed, scale] = monthlyFactor(path, month)
     packed = lower(tril(true(n)));
 end
 
-function upper = readNormalTriangle(path, month)
+function upper = readNormalTriangle(path, matrixOffset, n)
     stream = openSource(path);
     cleanup = onCleanup(@() stream.close());
-    stream.readNBytes(month.offset);
-    n = month.count;
+    stream.readNBytes(matrixOffset);
     upper = nan(n);
     carry = '';
     count = 0;
@@ -242,17 +264,15 @@ function upper = readNormalTriangle(path, month)
     end
 end
 
-function createSeries(path, months, L)
-    labels = months(1).labels;
+function createSeries(path, epochs, labels, filenames, sourceDegrees, radii, normalisation, tideSystem, Loutput)
     n = size(labels, 1);
     nPacked = n*(n+1)/2;
-    timeDim = {'time', numel(months)};
+    timeDim = {'time', numel(filenames)};
     paramDim = {'parameter', n};
-    epochs = [[months.time]; [months.start]; [months.end]];
     names = ["time", "epochStart", "epochEnd"];
     for col = 1:3
         nccreate(path, names(col), 'Dimensions', timeDim, 'Format', 'netcdf4');
-        ncwrite(path, names(col), epochs(col,:).');
+        ncwrite(path, names(col), epochs(:,col));
         ncwriteatt(path, names(col), 'units', 'seconds since 2000-01-01 00:00:00 UTC');
         ncwriteatt(path, names(col), 'calendar', 'proleptic_gregorian');
     end
@@ -270,16 +290,16 @@ function createSeries(path, months, L)
     end
     ncwriteatt(path, 'cs', 'description', '0=cosine, 1=sine');
     nccreate(path, 'sourceFilename', 'Dimensions', timeDim, 'Datatype', 'string');
-    ncwrite(path, 'sourceFilename', string({months.name}).');
+    ncwrite(path, 'sourceFilename', filenames);
     nccreate(path, 'sourceMaxDegree', 'Dimensions', timeDim, 'Datatype', 'uint16');
-    ncwrite(path, 'sourceMaxDegree', [months.maxDegree].');
+    ncwrite(path, 'sourceMaxDegree', sourceDegrees);
     nccreate(path, 'referenceRadius', 'Dimensions', timeDim);
-    ncwrite(path, 'referenceRadius', [months.radius].');
+    ncwrite(path, 'referenceRadius', radii);
     ncwriteatt(path, 'referenceRadius', 'units', 'm');
     nccreate(path, 'varianceFactor', 'Dimensions', timeDim);
     nccreate(path, 'creationDate', 'Datatype', 'double');
     ncwriteatt(path, 'creationDate', 'units', 'seconds since 1970-01-01 00:00:00 UTC');
-    ncwriteatt(path, '/', 'maxDegree', L);
-    ncwriteatt(path, '/', 'normalisation', months(1).norm);
-    ncwriteatt(path, '/', 'tideSystem', months(1).tide);
+    ncwriteatt(path, '/', 'maxDegree', Loutput);
+    ncwriteatt(path, '/', 'normalisation', char(normalisation));
+    ncwriteatt(path, '/', 'tideSystem', char(tideSystem));
 end

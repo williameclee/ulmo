@@ -31,9 +31,8 @@ classdef processGfzNormalEquationsTest < matlab.unittest.TestCase
             writeText([early '.gz.part'], 'partial download');
             before = posixtime(datetime('now','TimeZone','UTC'));
             paths = cell(2, 1);
-            for L = 2:3
-                paths{L-1} = processGfzNormalEquations(testCase.Source, 'Loutput', L);
-            end
+            paths{1} = processGfzNormalEquations(char(testCase.Source), 2);
+            paths{2} = processGfzNormalEquations(string(testCase.Source), 3);
             after = posixtime(datetime('now','TimeZone','UTC'));
             rmdir(testCase.Source, 's');
 
@@ -78,10 +77,16 @@ classdef processGfzNormalEquationsTest < matlab.unittest.TestCase
             end
         end
 
+        function rejectsNonscalarFolder(testCase)
+            folders = repmat(string(testCase.Source), 1, 2);
+            testCase.verifyError(@() processGfzNormalEquations(folders), ...
+                'MATLAB:validators:mustBeTextScalar');
+        end
+
         function rejectsDuplicateEpoch(testCase)
             writeSolution(fullfile(testCase.Source, testCase.Early), 15, 1);
             writeSolution(fullfile(testCase.Source, testCase.Late), 15, 1);
-            testCase.verifyError(@() processGfzNormalEquations(testCase.Source, 'Loutput', 2), ...
+            testCase.verifyError(@() processGfzNormalEquations(testCase.Source, 2), ...
                 'ULMO:gfzneq:DuplicateEpoch');
         end
 
@@ -89,9 +94,9 @@ classdef processGfzNormalEquationsTest < matlab.unittest.TestCase
             testCase.verifyError(@() processGfzNormalEquations(testCase.Source), 'ULMO:gfzneq:NoFiles');
             writeSolution(fullfile(testCase.Source,testCase.Early), 15, 1);
             testCase.verifyError(@() processGfzNormalEquations(testCase.Source), 'ULMO:gfzneq:Degree');
-            testCase.verifyError(@() processGfzNormalEquations(testCase.Source, 'Loutput', 1), ...
+            testCase.verifyError(@() processGfzNormalEquations(testCase.Source, 1), ...
                 'MATLAB:validators:mustBeGreaterThanOrEqual');
-            testCase.verifyError(@() processGfzNormalEquations(testCase.Source, 'Loutput', 2.5), ...
+            testCase.verifyError(@() processGfzNormalEquations(testCase.Source, 2.5), ...
                 'MATLAB:validators:mustBeInteger');
         end
 
@@ -101,20 +106,20 @@ classdef processGfzNormalEquationsTest < matlab.unittest.TestCase
             % The final printed estimate is native index 11, a degree-2 term.
             text = regexprep(fileread(path), '[^ \n]+\n-SOLUTION/ESTIMATE', '1.0\n-SOLUTION/ESTIMATE');
             writeText(path, text);
-            testCase.verifyError(@() processGfzNormalEquations(testCase.Source, 'Loutput', 2), ...
+            testCase.verifyError(@() processGfzNormalEquations(testCase.Source, 2), ...
                 'ULMO:gfzneq:Scale');
         end
 
         function preservesPriorSeriesOnTruncatedSecondMonth(testCase)
             writeSolution(fullfile(testCase.Source,testCase.Early), 15, 1);
-            out = processGfzNormalEquations(testCase.Source, 'Loutput', 2);
+            out = processGfzNormalEquations(testCase.Source, 2);
             original = ncread(out,'noiseFactor');
             created = ncread(out,'creationDate');
             late = fullfile(testCase.Source,testCase.Late);
             writeSolution(late, 75, 2);
             body = extractBefore(string(fileread(late)), '-SOLUTION/NORMAL_EQUATION_MATRIX L');
             writeText(late, body);
-            testCase.verifyError(@() processGfzNormalEquations(testCase.Source, 'Loutput', 2), ...
+            testCase.verifyError(@() processGfzNormalEquations(testCase.Source, 2), ...
                 'ULMO:gfzneq:InvalidSource');
             testCase.verifyEqual(ncread(out,'noiseFactor'), original);
             testCase.verifyEqual(ncread(out,'creationDate'), created);
