@@ -4,7 +4,8 @@
 %   PROCESSGFZNORMALEQUATIONS, RANDOMGRACENOISE
 %
 % Created by
-%   2026/11/10
+%   2026/11/10, En-Chi Lee (williameclee@gmail.com)
+
 function folder = gfzneqfolder()
     root = getenv('GRACEDATA');
     if isempty(root)
