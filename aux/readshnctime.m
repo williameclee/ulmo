@@ -5,7 +5,7 @@
 %   dates = readshnctime(path)
 %
 % Input arguments
-%   path - NetCDF file written by CREATESHNC or PROCESSGFZNORMALEQUATIONS.
+%   path - NetCDF file path with a 'time' argument.
 %
 % Output arguments
 %   dates - UTC timestamps. Size: (N, 1), datetime.
@@ -14,7 +14,7 @@
 %   2026/10/31, En-Chi Lee (williameclee@gmail.com)
 %
 % Last modified
-%   2026/11/10
+%   2026/11/10, En-Chi Lee (williameclee@gmail.com)
 
 function dates = readshnctime(path)
 
