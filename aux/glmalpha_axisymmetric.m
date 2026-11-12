@@ -1,14 +1,23 @@
 %% GLMALPHA_AXISYMMETRIC
 % Is an auxiliary function separated from GLMALPHA. 
 % It finds G, V, and N for the given axisymmetric region.
-% This function is not properly tested, so there might be inputs missing. But otherwise the body of the function is copied from the original function.
+% Uses the fixed-order polar-cap routines from the Slepian package.
 %
 % Authored by:
 % 	En-Chi Lee <williameclee@arizona.edu>, 2024-07-12
+%
+% Last modified
+%   2026/11/12, En-Chi Lee (williameclee@arizona.edu)
 
 function [G, V, EL, EM, N, GM2AL, MTAP, IMTAP] = ...
         glmalpha_axisymmetric(TH, sord, L, lp, bp, EM, EL, blkm, ...
-        blox, upco, xver)
+        blox, upco, xver, resc)
+
+    maxL = max(L);
+    ldim = (maxL + 1) ^ 2 - bp * L(1) ^ 2;
+    mesg = NaN;
+    MTAP = zeros(1, ldim);
+    IMTAP = zeros(1, ldim);
 
     G = zeros((maxL + 1) ^ 2, ldim);
     V = zeros(1, ldim);
