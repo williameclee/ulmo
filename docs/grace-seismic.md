@@ -48,10 +48,16 @@ events and require explicit dates.
 
 ## Fitting and uncertainty
 
+The polar-cap basis contains only degrees `2:L`, with scalar maximum degree
+`L >= 2`. Degrees 0 and 1 are excluded from both GRACE and GLDAS inputs
+and have exactly zero coefficients and standard deviations in the output.
+The concentration eigenproblem is solved in this restricted spectral space;
+low-degree rows are not merely removed from an existing lowpass basis.
+
 The polar-cap basis is sorted by decreasing concentration and rotated to
 the epicentre using the Slepian package's harmonic convention. The default
-retained count is `min((L+1)^2, max(1, round(N)))`, as in
-`prepareslepianbasis`. This is explicitly `round(N)`, not `ceil(N)`.
+retained count is `min((L+1)^2 - 4, max(1, round(N)))`, where
+`N = ((L+1)^2 - 4) * (1-cosd(radius))/2`. This is explicitly `round(N)`, not `ceil(N)`.
 Projection, fitting and synthesis use exactly those retained columns.
 
 Each call to `slept2seismic` receives only one event. Ordinary least squares
@@ -79,7 +85,7 @@ Both `timefirst` and `traditional` layouts retain degree/order labels in
 the field and uncertainty arrays. Units follow `grace2plmt_new`; the default
 is `SD` in kg/m², and the default returned time format is MATLAB datenum.
 RL05 GSM, RL06 GSM and CSR mascon source discovery follows the loader.
-`L` cannot exceed the product's bandwidth, and every selected harmonic must
+`L` cannot exceed the product's bandwidth, and every harmonic of degrees `2:L` must
 be available at every observation.
 
 ## NetCDF event caches
@@ -88,20 +94,22 @@ The directory is `GRACEDATA/Seismic`, falling back to
 `IFILES/GRACE/Seismic`. The stable filename is:
 
 ```text
-grace2seismic-<centre><releaseDigits><productDegree>-<eventId>_<radius>[-TYYYYMMDD]-L<degree>-<unit>[-GLDAS].nc
+grace2seismic-<centre><releaseDigits><productDegree>-<eventId>_<radius>[-TYYYYMMDD][-L<degree>]-<unit>[-GLDAS].nc
 ```
 
 Examples:
 
 ```text
-grace2seismic-CSR0660-Sumatra_20-L60-SD.nc
-grace2seismic-CSR0660-Sumatra_20-T20041227-L60-SD.nc
-grace2seismic-CSR0660-121p48_n30p72_20-T20091028-L60-SD-GLDAS.nc
+grace2seismic-CSR0660-Sumatra_20-SD.nc
+grace2seismic-CSR0660-Sumatra_20-T20041227-SD.nc
+grace2seismic-CSR0660-121p48_n30p72_20-T20091028-SD-GLDAS.nc
 ```
 
 `-TYYYYMMDD` is omitted only for a resolved catalogue event whose rounded
-input date is its expected day. `-L` is always present; `-GLDAS` appears only
-when removal is enabled. `num2filename` chooses sufficient significant
+input date is its expected day. `-L<degree>` is omitted when `L` equals the
+product degree and retained otherwise (for example, `-L40` for a degree-60
+product fitted through degree 40). `-GLDAS` appears only when removal is
+enabled. `num2filename` chooses sufficient significant
 digits to round-trip a double, replaces decimal points with `p` and minus
 signs with `n`, and keeps ordinary coordinate/radius magnitudes in decimal
 notation. There are no hashes or cache versions.
@@ -166,7 +174,7 @@ extrapolation or midpoint-only approximation is used. Cell-constant storage
 is integrated into the standard real harmonic basis with exact longitude
 integrals and eight-point latitude quadrature. This supports `L < 180` for
 the native 1-degree grid. Degree zero is removed to match GRACE's zero C00;
-other low degrees are retained. Unit conversion uses the GRACE reference
+the earthquake fit also excludes degree 1. Unit conversion uses the GRACE reference
 radius and requested Love numbers. These harmonics are subtracted before
 projection and fitting, which is equivalent to subtracting their projection
 in exactly the same cap basis.
