@@ -6,7 +6,7 @@
 % Input arguments
 %   epicentre - [longitude, latitude] in degrees.
 %   radius - Cap radius in degrees, including both land and ocean.
-%   L - Maximum harmonic degree.
+%   L - Maximum harmonic degree, at least 2. The basis uses degrees 2:L.
 %   truncation - Positive mode count, or [] for max(1, round(N)).
 %   SaveData (name-value) - Whether to save the polar basis where supported.
 %       Default flag: true. PLM2ROT's dependency DLMB has no save control.
@@ -20,16 +20,22 @@
 %
 % Created by
 %   2026/11/12, En-Chi Lee (williameclee@arizona.edu)
+%
+% Last modified
+%   2026/11/13, En-Chi Lee (williameclee@arizona.edu)
 
 function GVN = seismiccapbasis(epicentre, radius, L, truncation, options)
     arguments (Input)
         epicentre (1, 2) double {mustBeFinite, mustBeReal}
         radius (1, 1) double {mustBePositive, mustBeLessThanOrEqual(radius, 180)}
-        L (1, 1) double {mustBeInteger, mustBeNonnegative}
+        L (1, 1) double {mustBeFinite, mustBeInteger, mustBeGreaterThanOrEqual(L, 2)}
         truncation = []
         options.SaveData (1, 1) logical = true
     end
-    GVN = prepareslepianbasis(radius, L, truncation, {}, SaveData = options.SaveData);
+    [G, V, ~, ~, N] = glmalpha_new(radius, [2, L], SaveData = options.SaveData, BeQuiet = true);
+    [V, order] = sort(V(:), 'descend');
+    if isempty(truncation), truncation = min(size(G, 2), max(1, round(N))); end
+    GVN = prepareslepianbasis(radius, L, truncation, {G(:, order), V, N});
     G = GVN{1};
     [~, ~, ~, template, ~, ~, ~, ~, ~, mapping] = addmon(L);
     for iMode = 1:size(G, 2)

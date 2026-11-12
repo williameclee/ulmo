@@ -18,7 +18,8 @@
 %   eventDates - Datetime or MATLAB datenum vector, one time per event.
 %       Rounded to the nearest UTC midnight; noon rounds to the next day.
 %       Supplied dates are authoritative even for named events.
-%   L - Nonnegative maximum localisation/output degree, at most product degree.
+%   L - Maximum localisation/output degree, at least 2 and at most product degree.
+%       The Slepian basis uses degrees 2:L; degrees 0 and 1 are excluded.
 %   Unit (name-value) - GRACE coefficient unit: SD, POT or GRAV.
 %       Default unit: SD (kg/m^2).
 %   OutputFormat (name-value) - timefirst or traditional.
@@ -57,6 +58,7 @@
 %       lmcosi layout, with degree/order labels in both arrays.
 %       Size: (nDates, addmup(L), 4), or (addmup(L), 4, nDates) for traditional.
 %       Unit: selected Unit for coefficient columns.
+%       Degrees 0 and 1 have zero coefficients and standard deviations.
 %   dates - Actual GRACE interval midpoints. Size: (nDates, 1).
 %   eventPlm - Static jumps in input event order and the same Unit.
 %       Size: (nEvents, addmup(L), 4), or (addmup(L), 4, nEvents).
@@ -82,6 +84,9 @@
 %
 % Created by
 %   2026/11/12, En-Chi Lee (williameclee@arizona.edu)
+%
+% Last modified
+%   2026/11/13, En-Chi Lee (williameclee@arizona.edu)
 
 function [seisPlmt, seisStdPlmt, dates, eventPlm] = ...
         grace2seismic(product, earthquakes, radius, eventDates, L, options)
@@ -90,7 +95,7 @@ function [seisPlmt, seisStdPlmt, dates, eventPlm] = ...
         earthquakes
         radius double {mustBeReal, mustBeFinite, mustBePositive, mustBeLessThanOrEqual(radius, 180)}
         eventDates {mustBeA(eventDates, {'datetime', 'numeric'}), mustBeVector, mustBeNonempty}
-        L (1, 1) double {mustBeFinite, mustBeInteger, mustBeNonnegative}
+        L (1, 1) double {mustBeFinite, mustBeInteger, mustBeGreaterThanOrEqual(L, 2)}
         options.Unit (1, 1) string {mustBeMember(options.Unit, ["SD", "POT", "GRAV"])} = "SD"
         options.OutputFormat (1, 1) string {mustBeMember(options.OutputFormat, ["timefirst", "traditional"])} = "timefirst"
         options.TimeFormat (1, 1) string {mustBeMember(options.TimeFormat, ["datetime", "datenum"])} = "datenum"
@@ -149,6 +154,7 @@ function [seisPlmt, seisStdPlmt, dates, eventPlm] = ...
     assert(all(diff(dates) > seconds(0)) && all(epochs(:, 2) > epochs(:, 1)), ...
         'ULMO:grace2seismic:InvalidWindows', 'GRACE windows must have unique midpoints and positive duration.');
     [~, ~, ~, template, ~, ~, ~, ~, ~, mapping] = addmon(L);
+    [~, degrees] = addmout(L);
     nHarmonics = (L + 1) ^ 2;
     amplitudes = zeros(nEvents, nHarmonics);
     variances = zeros(nEvents, nHarmonics);
@@ -183,13 +189,14 @@ function [seisPlmt, seisStdPlmt, dates, eventPlm] = ...
                 plmt = plmt(locations, 1:size(template, 1), :);
                 source = reshape(plmt(:, :, 3:4), numel(dates), []);
                 source = source(:, mapping);
-                assert(all(isfinite(source), 'all'), 'ULMO:grace2seismic:MissingCoefficients', ...
-                    'The selected GRACE bandwidth must be finite at every observation.');
                 if options.RemoveGLDAS
                     storage = seismicgldas(epochs, L, options.Unit, options.LoveNumSource, equatorRadius);
                     storage = reshape(storage(:, :, 3:4), numel(dates), []);
                     source = source - storage(:, mapping);
                 end
+                source(:, degrees < 2) = 0;
+                assert(all(isfinite(source), 'all'), 'ULMO:grace2seismic:MissingCoefficients', ...
+                    'GRACE degrees 2:L must be finite at every observation.');
             end
             GVN = seismiccapbasis(epicentres(iEvent, :), radius(iEvent), L, ...
                 options.truncation, SaveData = options.SaveData);
@@ -286,7 +293,8 @@ function path = cachepath(product, name, radius, date, expected, L, unit, gldas)
     tag = string(replace(product{1}, ' ', '')) + extractAfter(string(product{2}), 2) + product{3};
     stem = "grace2seismic-" + tag + "-" + name + "_" + num2filename(radius);
     if isnat(expected) || date ~= expected, stem = stem + "-T" + string(date, 'yyyyMMdd'); end
-    stem = stem + "-L" + L + "-" + unit;
+    if L ~= product{3}, stem = stem + "-L" + L; end
+    stem = stem + "-" + unit;
     if gldas, stem = stem + "-GLDAS"; end
     path = fullfile(root, 'Seismic', stem + ".nc");
 end
