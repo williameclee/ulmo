@@ -3,11 +3,11 @@
 % It finds G, V, and N for the given axisymmetric region.
 % Uses the fixed-order polar-cap routines from the Slepian package.
 %
-% Authored by:
-% 	En-Chi Lee <williameclee@arizona.edu>, 2024-07-12
+% Created by
+% 	2024/07/12, En-Chi Lee (williameclee@arizona.edu)
 %
 % Last modified
-%   2026/11/12, En-Chi Lee (williameclee@arizona.edu)
+%   2026/11/12, En-Chi Lee (williameclee@gmail.com)
 
 function [G, V, EL, EM, N, GM2AL, MTAP, IMTAP] = ...
         glmalpha_axisymmetric(TH, sord, L, lp, bp, EM, EL, blkm, ...
