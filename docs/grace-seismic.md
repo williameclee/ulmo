@@ -63,7 +63,9 @@ basis `G` and jump standard errors `s`, harmonic variance is
 they share observations; GLDAS is a fixed correction with no model-error
 term. No additional physical-unit or basis-normalisation factor is applied.
 
-The source files provide the actual solution windows and reference radius.
+`graceepochs` provides the solution windows, synthetic-window flags and
+optional source reference radius. `grace2seismic` excludes the synthetic
+windows before fitting or assembling the correction.
 The loader's midpoint dates must match every window. Missing months and
 the mission gap are not filled. `TimeRange` selects only returned midpoints
 and does not restrict a fit or change an event cache. For window `[a,b]`

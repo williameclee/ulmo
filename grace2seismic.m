@@ -78,7 +78,7 @@
 %   for filename rules, catalogue sources and GLDAS coverage requirements.
 %
 % See also
-%   slept2seismic, grace2plmt_new, seismiccapbasis, writeshnc, readshnc
+%   slept2seismic, grace2plmt_new, graceepochs, seismiccapbasis, writeshnc, readshnc
 %
 % Created by
 %   2026/11/12, En-Chi Lee (williameclee@arizona.edu)
@@ -143,8 +143,11 @@ function [seisPlmt, seisStdPlmt, dates, eventPlm] = ...
         'ULMO:grace2seismic:NondefaultCache', ...
         'Nondefault fit, truncation or correction settings require ForceNew=true and SaveData=false.');
 
-    [epochs, equatorRadius] = seismicgraceepochs(product);
+    [epochs, synthetic, equatorRadius] = graceepochs(product);
+    epochs = epochs(~synthetic, :);
     dates = mean(epochs, 2);
+    assert(all(diff(dates) > seconds(0)) && all(epochs(:, 2) > epochs(:, 1)), ...
+        'ULMO:grace2seismic:InvalidWindows', 'GRACE windows must have unique midpoints and positive duration.');
     [~, ~, ~, template, ~, ~, ~, ~, ~, mapping] = addmon(L);
     nHarmonics = (L + 1) ^ 2;
     amplitudes = zeros(nEvents, nHarmonics);
