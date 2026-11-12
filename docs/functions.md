@@ -46,7 +46,7 @@ The ultimate goal is to drop the `_new` suffixes and replace the original functi
 | `ssh2slept` | Fits SSH anomalies to a regional Slepian basis. | [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git) | [Prepared monthly NASA-SSH maps](nasa-ssh-processing.md#prepare-calendar-month-means) | |
 | `slep2xyz` | Projects Slepian functions onto latitude-longitude grids/points. | [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git) | none | WIP |
 | `slept2resid_new` | Fits a time series | [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git) | none | Replacement for `slept2resid` in [slepian_delta](https://github.com/csdms-contrib/slepian_delta.git), with support for `GeoDomain` objects. |
-| `slept2seismic` | Estimates static earthquake coefficients and standard errors in a supplied Slepian basis. | none | none | Fits prescribed steps jointly with polynomial and periodic backgrounds. |
+| `slept2seismic` | Estimates static earthquake coefficients and standard errors in a supplied Slepian basis. | none | none | |
 | `sphgaussfilt` | Apply Gaussian filter to spherical harmonics | none | none | |
 
 ### GRACE Data Processing
