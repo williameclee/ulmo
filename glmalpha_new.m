@@ -244,7 +244,9 @@ function varargout = glmalpha_new(varargin)
             domain, sord, L, lp, bp, EM, EL, blkm, blox, upco, xver, resc);
 
         if ~strcmp(dataPath, 'neveravailable') && saveData
-            if ~isfolder(fileparts(dataPath)), mkdir(fileparts(dataPath)); end
+            if ~isfolder(fileparts(dataPath))
+                mkdir(fileparts(dataPath)); 
+            end
             save(dataPath, vars{:}, '-v7.3')
         end
 
