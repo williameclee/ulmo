@@ -1,5 +1,5 @@
-%% GRACEEPOCHS
-% Obtains observation time windows for GRACE/GRACE-FO Level-2 products,
+%% GRACEEPOCHS - Obtains observation windows for GRACE and GRACE-FO products.
+% Reads GSM or CSR mascon solution windows,
 % supplementing missing solution months and the mission gap with aligned
 % calendar/synthetic windows.
 %
@@ -14,12 +14,16 @@
 %   epochs = GRACEEPOCHS(product)
 %   epochs = GRACEEPOCHS(product, timelim)
 %   [epochs, synthetic] = GRACEEPOCHS(__)
+%   [epochs, synthetic, equatorRadius] = GRACEEPOCHS(__)
 %
 % Input arguments
 %   product - Product specification cell array {centre, release, degree}
-%       - centre: Data centre ('CSR', 'GFZ', or 'JPL'). Default is 'CSR'.
-%       - release: Solution release level ('RL06' or 6). Default is 'RL06'.
-%       - degree: Maximum spherical harmonic degree (60 or 96). Default is 60.
+%       - centre: 'CSR', 'GFZ', 'JPL' or 'CSR mascon'. Default is 'CSR'.
+%       - release: 'RL05' or 'RL06', or numeric 5 or 6. Default is 'RL06'.
+%       - degree: RL06 GSM degree 60 or 96. RL05 uses CSR degree 60 and
+%           GFZ/JPL degree 90; CSR mascons use RL06 degree 720. These fixed
+%           product degrees override the supplied value, as in GRACE2PLMT_NEW.
+%           Default degree: 60.
 %       The default cell array is {'CSR', 'RL06', 60}.
 %       Data type: CELL
 %       Dimension: [1 x 3]
@@ -43,6 +47,16 @@
 %       solution windows.
 %       Data type: LOGICAL
 %       Dimension: [N x 1]
+%   equatorRadius - Common source reference equatorial radius.
+%       Header parameters are read and checked only when this output is
+%       requested. All source files for the product must agree within 1e-6 m,
+%       including files outside timelim. Synthetic windows have no separate
+%       reference radius.
+%       Unit: m.
+%       Size: scalar.
+%
+% Notes
+%   Select epochs(~synthetic, :) to retain only actual solution windows.
 %
 % See also
 %   FILLGRACEEPOCHS, AVERAGEEPOCHS, SSH2LONLATT, STERIC2LONLATT,
@@ -50,8 +64,11 @@
 %
 % Created by
 %   2026/09/25, En-Chi Lee (williameclee@arizona.edu)
+%
+% Last modified
+%   2026/11/12, En-Chi Lee (williameclee@arizona.edu)
 
-function [epochs, synthetic] = graceepochs(product, timelim)
+function [epochs, synthetic, equatorRadius] = graceepochs(product, timelim)
 
     arguments (Input)
         product (1, 3) cell = {'CSR', 'RL06', 60}
@@ -61,13 +78,35 @@ function [epochs, synthetic] = graceepochs(product, timelim)
     arguments (Output)
         epochs (:, 2) datetime
         synthetic (:, 1) logical
+        equatorRadius (1, 1) double
     end
 
-    centre = char(product{1});
+    centre = validatestring(product{1}, {'CSR', 'GFZ', 'JPL', 'CSR mascon'});
     release = product{2};
 
     if isnumeric(release)
+        validateattributes(release, {'numeric'}, {'scalar', 'integer', 'finite'});
         release = sprintf('RL%02d', release);
+    end
+    release = upper(string(release));
+    validateattributes(product{3}, {'numeric'}, {'scalar', 'integer', 'positive', 'finite'});
+    assert(isscalar(release) && ismember(release, ["RL05", "RL06"]), ...
+        'ULMO:Epochs:UnsupportedProduct', 'Epoch discovery supports RL05 and RL06 products.');
+
+    if strcmp(centre, 'CSR mascon')
+        assert(release == "RL06", 'ULMO:Epochs:UnsupportedProduct', 'CSR mascons require RL06.');
+        pattern = 'GSU-2_*_B---_06*';
+    elseif release == "RL05"
+        switch centre
+            case 'CSR', pattern = 'GSM-2_2*-2*_*_UTCSR_0060_0005*';
+            case 'GFZ', pattern = 'GSM-2_2*-2*_*_EIGEN_G---_005a';
+            case 'JPL', pattern = 'GSM-2_2*-2*_*_JPLEM_0000_0005*';
+        end
+    else
+        assert(ismember(product{3}, [60, 96]), 'ULMO:Epochs:UnsupportedProduct', ...
+            'RL06 GSM epoch discovery supports degree 60 or 96.');
+        patterns = {'GSM-2_*_BA01_06*', 'GSM-2_*_BB01_06*'};
+        pattern = patterns{1 + (product{3} == 96)};
     end
 
     if ~isempty(getenv('ORIGINALGRACEDATA'))
@@ -78,22 +117,28 @@ function [epochs, synthetic] = graceepochs(product, timelim)
         folder = fullfile(getenv('IFILES'), 'GRACE', 'raw', release, centre);
     end
 
-    if ~strcmpi(release, 'RL06') || ~ismember(product{3}, [60, 96])
-        error('ULMO:Epochs:UnsupportedProduct', ...
-        'Automatic epoch discovery supports RL06 degree 60 or 96 GSM products.');
-    end
-
-    patterns = {'GSM-2_*_BA01_06*', 'GSM-2_*_BB01_06*'};
-    files = dir(fullfile(folder, patterns{1 + (product{3} == 96)}));
+    files = dir(fullfile(folder, pattern));
 
     if isempty(files)
         error('ULMO:Epochs:MissingReference', 'No reference GRACE files found in %s.', folder);
     end
 
     epochs = NaT(numel(files), 2);
+    equatorRadius = NaN;
+    radii = zeros(numel(files), 1);
 
-    for k = 1:numel(files)
-        [~, ~, ~, epochs(k, :)] = parsegracesourcefile(fullfile(files(k).folder, files(k).name));
+    for iFile = 1:numel(files)
+        path = fullfile(files(iFile).folder, files(iFile).name);
+        if nargout >= 3
+            [~, ~, ~, epochs(iFile, :), ~, radii(iFile)] = parsegracesourcefile(path);
+        else
+            [~, ~, ~, epochs(iFile, :)] = parsegracesourcefile(path);
+        end
+    end
+    if nargout >= 3
+        assert(all(abs(radii - radii(1)) < 1e-6), 'ULMO:Epochs:Reference', ...
+            'GRACE source files must use a common reference radius.');
+        equatorRadius = radii(1);
     end
 
     [epochs, synthetic] = fillgraceepochs(epochs, timelim);

@@ -112,7 +112,7 @@
 %   back...
 %
 % Last modified by
-%   2026/11/05, En-Chi Lee (williameclee@gmail.com)
+%   2026/11/12, En-Chi Lee (williameclee@gmail.com)
 %   2017/12/01, fjsimons@alum.mit.edu (@fjsimons)
 %   2016/06/27, charig@princeton.edu (@harig00)
 %   2016/10/11, plattner@alumni.ethz.ch (@AlainPlattner)
@@ -219,7 +219,7 @@ function varargout = glmalpha_new(varargin)
     [EM, EL, ~, blkm] = addmout(maxL);
 
     % For geographical or lonlat regions
-    if ismatrix(domain) || isa(domain, 'GeoDomain')
+    if ~strcmp(domainType, 'cap')
         upscale = sord;
         [G, V, N] = glmalpha_geographic( ...
             maxL, domain, upscale, anti, rotb, ldim, bp, EL, EM, xver, ...
@@ -241,9 +241,12 @@ function varargout = glmalpha_new(varargin)
     else
         % For AXISYMMETRIC REGIONS
         [G, V, EL, EM, N, GM2AL, MTAP, IMTAP] = glmalpha_axisymmetric( ...
-            domain, sord, L, lp, bp, EM, EL, blkm, blox, upco, xver);
+            domain, sord, L, lp, bp, EM, EL, blkm, blox, upco, xver, resc);
 
         if ~strcmp(dataPath, 'neveravailable') && saveData
+            if ~isfolder(fileparts(dataPath))
+                mkdir(fileparts(dataPath)); 
+            end
             save(dataPath, vars{:}, '-v7.3')
         end
 
@@ -375,11 +378,11 @@ function [dataPath, domainType] = ...
             sord = conddefval(sord, 1);
 
             if ~bp
-                outputFile = sprintf('glmalpha-%i-%i-%i-%i.mat', ...
-                    domain, L, sord, blox);
+                outputFile = sprintf('glmalpha-%s-%i-%i-%i.mat', ...
+                    num2filename(domain), L, sord, blox);
             else
-                outputFile = sprintf('glmalphabl-%i-%i-%i-%i-%i.mat', ...
-                    domain, L(1), L(2), sord, blox);
+                outputFile = sprintf('glmalphabl-%s-%i-%i-%i-%i.mat', ...
+                    num2filename(domain), L(1), L(2), sord, blox);
             end
 
         case 'GeoDomain'
