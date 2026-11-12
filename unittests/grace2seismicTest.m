@@ -4,6 +4,9 @@
 %
 % Created by
 %   2026/11/12, En-Chi Lee (williameclee@arizona.edu)
+%
+% Last modified
+%   2026/11/13, En-Chi Lee (williameclee@arizona.edu)
 
 classdef grace2seismicTest < matlab.unittest.TestCase
     properties
@@ -71,6 +74,48 @@ classdef grace2seismicTest < matlab.unittest.TestCase
         end
     end
     methods (Test)
+        function excludedDegreesCannotAffectFitOrUncertainty(testCase)
+            global ULMO_SEISMIC_FIXTURE %#ok<GVMIS>
+            [a, sa, ~, ea] = testCase.call('Sumatra', 60, testCase.Events(1), SaveData=false);
+            ULMO_SEISMIC_FIXTURE.plmt(:, 1:3, 3:4) = NaN;
+            [b, sb, ~, eb] = testCase.call('Sumatra', 60, testCase.Events(1), SaveData=false);
+            testCase.verifyEqual(b, a);
+            testCase.verifyEqual(sb, sa);
+            testCase.verifyEqual(eb, ea);
+            testCase.verifyEqual(a(:, 1:3, 3:4), zeros(numel(testCase.Dates), 3, 2));
+            testCase.verifyEqual(sa(:, 1:3, 3:4), zeros(numel(testCase.Dates), 3, 2));
+            testCase.verifyEqual(ea(:, 1:3, 3:4), zeros(1, 3, 2));
+        end
+        function maximumDegreeMustBeAtLeastTwo(testCase)
+            for degree = [0, 1]
+                testCase.verifyError(@() grace2seismic(testCase.Product, 'Sumatra', 60, ...
+                    testCase.Events(1), degree), 'MATLAB:validators:mustBeGreaterThanOrEqual');
+            end
+            [p, s] = grace2seismic(testCase.Product, 'Sumatra', 60, ...
+                testCase.Events(1), 2, SaveData=false, BeQuiet=true);
+            testCase.verifySize(p, [numel(testCase.Dates), 6, 4]);
+            testCase.verifyEqual(s(:, 1:3, 3:4), zeros(numel(testCase.Dates), 3, 2));
+        end
+        function matchingProductDegreeOmitsCacheSuffix(testCase)
+            % Seed a degree-60 cache to test naming/reuse without a large cap solve.
+            [~, ~, ~, field] = addmon(60);
+            field(:, 3:4) = 0;
+            field(end, 3) = 2;
+            sigma = field;
+            sigma(:, 3:4) = 0;
+            folder = fullfile(getenv('GRACEDATA'), 'Seismic');
+            mkdir(folder);
+            path = fullfile(folder, 'grace2seismic-CSR0660-Sumatra_60-SD.nc');
+            writeshnc(path, field, sigma, testCase.Events(1), 'SD');
+            [p, s, ~, event] = grace2seismic(testCase.Product, 'Sumatra', 60, ...
+                testCase.Events(1), 60, BeQuiet=true);
+            testCase.verifyEqual(squeeze(event), field);
+            testCase.verifyEqual(p(end, :, 3:4), reshape(field(:, 3:4), 1, [], 2));
+            testCase.verifyEqual(s(:, :, 3:4), zeros(numel(testCase.Dates), size(field, 1), 2));
+            global ULMO_SEISMIC_FIXTURE %#ok<GVMIS>
+            testCase.verifyEqual(ULMO_SEISMIC_FIXTURE.calls, 0);
+            testCase.verifyNumElements(dir(fullfile(folder, '*.nc')), 1);
+        end
         function uncachedFitsRemainIndependent(testCase)
             [combined, sigma, ~, events] = grace2seismic(testCase.Product, {'Sumatra', 'Chile'}, ...
                 60, testCase.Events, testCase.L, ForceNew=true, SaveData=false, BeQuiet=true);
@@ -115,6 +160,7 @@ classdef grace2seismicTest < matlab.unittest.TestCase
             global ULMO_SEISMIC_FIXTURE %#ok<GVMIS>
             ULMO_SEISMIC_FIXTURE.storage = ULMO_SEISMIC_FIXTURE.plmt;
             ULMO_SEISMIC_FIXTURE.storage(:, :, 3:4) = 0.25 * ULMO_SEISMIC_FIXTURE.plmt(:, :, 3:4);
+            ULMO_SEISMIC_FIXTURE.storage(:, 1:3, 3:4) = NaN;
             ULMO_SEISMIC_FIXTURE.gldasCalls = 0;
             copyfile(fullfile(testCase.Root, 'unittests', 'fixtures', 'seismic', ...
                 'seismicgldas.m.txt'), fullfile(testCase.Scratch, 'seismicgldas.m'));
@@ -244,6 +290,7 @@ classdef grace2seismicTest < matlab.unittest.TestCase
             testCase.call('Sumatra', 60, testCase.Events(1), SaveData=false);
             testCase.verifyFalse(isfolder(fullfile(getenv('GRACEDATA'), 'Seismic')));
             testCase.verifyEmpty(dir(fullfile(testCase.Scratch, 'GLMALPHA', '*.mat')));
+            testCase.verifyFalse(isfolder(fullfile(testCase.Scratch, 'SDWCAP')));
         end
         function nondefaultSettingsRequireUncachedMode(testCase)
             alternatives = {{'polynomialDegree', 1}, {'periods', []}, {'truncation', 3}, ...
