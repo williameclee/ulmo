@@ -112,9 +112,7 @@
 %   back...
 %
 % Last modified by
-%   2026/11/12, En-Chi Lee (williameclee@arizona.edu)
-%     - Restored scalar polar-cap dispatch and helper arguments.
-%   2026/11/05, En-Chi Lee (williameclee@gmail.com)
+%   2026/11/12, En-Chi Lee (williameclee@gmail.com)
 %   2017/12/01, fjsimons@alum.mit.edu (@fjsimons)
 %   2016/06/27, charig@princeton.edu (@harig00)
 %   2016/10/11, plattner@alumni.ethz.ch (@AlainPlattner)
