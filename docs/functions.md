@@ -106,7 +106,7 @@ The ultimate goal is to drop the `_new` suffixes and replace the original functi
 
 | Function name | Description | Package dependencies | Data dependencies | Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| `fittimeseries` | Fits multiple time series with polynomial, periodic and prescribed permanent jump terms; supports fit intervals, component reconstruction, and average derivatives with joint coefficient standard errors. | | | |
+| `fittimeseries` | Fits polynomial, periodic and jump terms to time series sharing a time axis. | | | |
 
 ## Appendices
 
@@ -125,4 +125,4 @@ The ultimate goal is to drop the `_new` suffixes and replace the original functi
 
 ---
 
-Last modified: 2026/11/08, [@williameclee](mailto:williameclee@gmail.com)
+Last modified: 2026/11/12, [@williameclee](mailto:williameclee@gmail.com)
