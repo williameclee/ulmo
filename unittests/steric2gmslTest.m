@@ -222,6 +222,9 @@ classdef steric2gmslTest < matlab.unittest.TestCase
             testCase.data.lon = [0, 110, 240];
             testCase.writeNative;
             testCase.verifyError(@() steric2gmsl('EN4c14', "total"), 'ULMO:steric2gmsl:InvalidGrid');
+            testCase.data.lon = [0, NaN, 240];
+            testCase.writeNative;
+            testCase.verifyError(@() steric2gmsl('EN4c14', "total"), 'ULMO:steric2gmsl:InvalidGrid');
             testCase.data.lon = [0, 120, 240];
             testCase.data.stericSl = testCase.data.stericSl(:, :, 1:4);
             testCase.writeNative;

@@ -87,7 +87,7 @@
 %   A timestamp with no positive-weight support returns NaN.
 %
 % See also
-%   steric2lonlatt, stericfilepath, stericfieldschema
+%   steric2lonlatt, stericfilepath, preparegridcoordinates, stericfieldschema
 %
 % Created by
 %   2026/11/04, En-Chi Lee (williameclee@gmail.com)
@@ -275,42 +275,21 @@ function [schema, precision] = fieldschema(metadata)
 end
 
 function [dates, wghts, keepLon, transposeGrid] = coordinates(coord, metadata, names)
-    lon = double(coord.lon(:));
-    lat = double(coord.lat(:));
-
-    if ~isnumeric(coord.lon) || ~isnumeric(coord.lat) || ...
-            ~isvector(coord.lon) || ~isvector(coord.lat) || ...
-            ~isreal(lon) || ~isreal(lat) || any(~isfinite([lon; lat])) || ...
-            numel(lon) < 2 || numel(lat) < 2 || any(abs(lat) > 90)
-        error('ULMO:steric2gmsl:InvalidGrid', 'Expected finite longitude/latitude coordinate vectors.');
+    try
+        [~, ~, iLon, iLat, orderedWeights] = preparegridcoordinates( ...
+            coord.lon, coord.lat, RequireGlobalLongitude=true);
+    catch cause
+        if strcmp(cause.identifier, 'ULMO:preparegridcoordinates:InvalidGrid')
+            throwAsCaller(addCause(MException('ULMO:steric2gmsl:InvalidGrid', '%s', cause.message), cause));
+        end
+        rethrow(cause)
     end
-
-    tol = 3e-5; % Coordinate tolerance in degrees.
-    latSteps = diff(lat);
-    if ~(all(latSteps > 0) || all(latSteps < 0))
-        error('ULMO:steric2gmsl:InvalidGrid', 'Latitude must be strictly monotone.');
-    end
-
-    % Both endpoints of an offset can carry single-precision rounding.
-    lonTolerance = tol;
-    if isa(coord.lon, 'single')
-        lonTolerance = max(lonTolerance, double(eps(max(abs(coord.lon(:))))));
-    end
-    % Keep adjacent meridians distinguishable even on very fine grids.
-    lonTolerance = min(lonTolerance, 90 / numel(lon));
-    lonSpan = lon(end) - lon(1);
-    keepLon = 1:numel(lon);
-    if abs(abs(lonSpan) - 360) <= lonTolerance
-        keepLon(end) = [];
-    end
-
-    % A complete cycle fixes the spacing independently of the first interval.
-    lonStep = sign(lonSpan) * 360 / numel(keepLon);
-    expectedOffsets = (0:numel(lon) - 1)' * lonStep;
-    if lonSpan == 0 || any(abs((lon - lon(1)) - expectedOffsets) > lonTolerance)
-        error('ULMO:steric2gmsl:InvalidGrid', 'Longitude must cover one complete regular periodic grid.');
-    end
-
+    lon = coord.lon; lat = coord.lat;
+    % Keep the native reader's original traversal and summation order.
+    [keepLon, orderLon] = sort(iLon);
+    keepLon = keepLon.';
+    wghts = zeros(numel(lat), numel(keepLon));
+    wghts(iLat, :) = orderedWeights(orderLon, :).';
     dates = coord.dates;
 
     if isnumeric(dates) && isreal(dates) && all(isfinite(dates(:)))
@@ -345,17 +324,7 @@ function [dates, wghts, keepLon, transposeGrid] = coordinates(coord, metadata, n
         transposeGrid = thisTranspose;
     end
 
-    if all(abs(latSteps - latSteps(1)) <= tol)
-        latWghts = cosd(lat);
-    else
-        bdrys = [lat(1) - latSteps(1) / 2; ...
-                     (lat(1:end - 1) + lat(2:end)) / 2; ...
-                     lat(end) + latSteps(end) / 2];
-        bdrys = max(-90, min(90, bdrys));
-        latWghts = abs(diff(sind(bdrys)));
-    end
 
-    wghts = repmat(latWghts, 1, numel(keepLon));
 end
 
 function valid = validcache(metadata, names, nDates)

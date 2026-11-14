@@ -11,7 +11,9 @@
 %       Latitude must lie in [-90, 90] and may be unevenly spaced.
 %       Unit: degrees east and north, respectively.
 %   RequireGlobalLongitude (name-value) - Whether to require one complete
-%       periodic longitude grid after removing a duplicated endpoint.
+%       periodic longitude grid after removing a duplicated endpoint. In this
+%       mode each offset from the first meridian must match the regular
+%       360-degree grid within the coordinate tolerance, capped at 90/nLon.
 %       Default flag: false.
 %
 % Output arguments
@@ -59,7 +61,7 @@ function [lon, lat, iLon, iLat, wghts, wghtMthd] = preparegridcoordinates(lon, l
     lonStep = (lon(end) - lon(1)) / (numel(lon) - 1);
     latSteps = diff(lat);
 
-    if any(abs(lonSteps - lonStep) > lonTol) || ...
+    if (~options.RequireGlobalLongitude && any(abs(lonSteps - lonStep) > lonTol)) || ...
             ~(all(lonSteps > 0) || all(lonSteps < 0)) || ...
             ~(all(latSteps > 0) || all(latSteps < 0))
         error('ULMO:preparegridcoordinates:InvalidGrid', ...
@@ -70,16 +72,22 @@ function [lon, lat, iLon, iLat, wghts, wghtMthd] = preparegridcoordinates(lon, l
     % The seam tolerance must distinguish a missing meridian from round-off.
     seamTol = min(lonTol, abs(lonStep) / 2);
 
-    if abs(lonSpan - 360) <= seamTol
-        % Keep the first copy of the cyclic endpoint.
+    if options.RequireGlobalLongitude
+        lonTol = min(lonTol, 90 / numel(lon));
+        if abs(lonSpan - 360) <= lonTol
+            iLon(end) = [];
+        end
+        step = sign(lonStep) * 360 / numel(iLon);
+        offsets = (0:numel(lon) - 1)' * step;
+        if any(abs((lon - lon(1)) - offsets) > lonTol)
+            error('ULMO:preparegridcoordinates:InvalidGrid', ...
+                'Longitude must cover one complete regular periodic grid.');
+        end
+    elseif abs(lonSpan - 360) <= seamTol
         iLon(end) = [];
     elseif lonSpan > 360
         error('ULMO:preparegridcoordinates:InvalidGrid', ...
-        'Longitude cannot span more than one cycle.');
-    elseif options.RequireGlobalLongitude && ...
-            abs((360 - lonSpan) - abs(lonStep)) > seamTol
-        error('ULMO:preparegridcoordinates:InvalidGrid', ...
-        'Longitude must cover one complete periodic grid.');
+            'Longitude cannot span more than one cycle.');
     end
 
     [lon, order] = sort(lon(iLon));
