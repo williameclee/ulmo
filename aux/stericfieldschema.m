@@ -30,6 +30,9 @@
 %   schema.meanNames - Global-mean names for all component rows.
 %       Only the first three rows are cached; difference components are derived.
 %       Size: (5, 3) string.
+%   schema.cacheGridNames - Processed grid names for the three supplied components.
+%       Depth names are explicit even for products with shallow native coverage.
+%       Size: (3, 3) string.
 %   schema.available - Whether each native grid is present and nonempty.
 %       Size: (3, 3) logical.
 %   schema.supported - Whether each component/depth has its required native grids.
@@ -81,6 +84,7 @@ function schema = stericfieldschema(metadata, nativeDepth)
          "halostericGmsl", "shallowHalostericGmsl", "deepHalostericGmsl"; ...
          "nonThermostericGmsl", "shallowNonThermostericGmsl", "deepNonThermostericGmsl"; ...
          "nonHalostericGmsl", "shallowNonHalostericGmsl", "deepNonHalostericGmsl"];
+    schema.cacheGridNames = replace(schema.meanNames(1:3, :), "Gmsl", "Sl");
 
     if nativeDepth == "shallow"
         schema.gridNames(:, 2) = schema.gridNames(:, 1);
