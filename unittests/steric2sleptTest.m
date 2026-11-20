@@ -86,7 +86,7 @@ classdef steric2sleptTest < matlab.unittest.TestCase
         end
 
         function agreesWithLoaderThenFit(t, temporal)
-            % Epoch residuals must use paired native samples before averaging.
+            % Difference components must subtract separately processed source grids.
             t.Data.thermostericSl(2, 2, 1:9) = NaN;
             t.Data.shallowThermostericSl(2, 2, 1:9) = NaN;
             t.Data.deepThermostericSl(2, 2, 1:9) = NaN;
@@ -101,10 +101,10 @@ classdef steric2sleptTest < matlab.unittest.TestCase
             for iField = find(schema.supported(:)).'
                 [iType, iDepth] = ind2sub(size(schema.supported), iField);
                 [c, dates, fit, basis, h, constant] = steric2slept(args{:}, ...
-                    Type=schema.types(iType), Depth=schema.depths(iDepth), ...
+                    Component=schema.components(iType), Depth=schema.depths(iDepth), ...
                     truncation=4, Interpolation=method, BeQuiet=1);
                 [grid, ~, expectedDates, lon, lat, expectedH] = steric2lonlatt('EN4c14', step, ...
-                    Type=schema.types(iType), Depth=schema.depths(iDepth), Interpolation=method, ...
+                    Component=schema.components(iType), Depth=schema.depths(iDepth), Interpolation=method, ...
                     OutputFormat='ndgrid', SaveData=false, BeQuiet=1);
                 [expected, expectedFit] = t.fitReference(grid, lon, lat, basis);
                 t.verifyEqual(c, expected, AbsTol=2e-10);
@@ -124,7 +124,7 @@ classdef steric2sleptTest < matlab.unittest.TestCase
             info = ncinfo(path);
             names = string({info.Variables.Name});
             t.verifyEqual(nnz(endsWith(names, 'Slept')), 16); % 15 fields + constant.
-            t.verifyEqual(nnz(endsWith(names, 'Gmsl')), 15);
+            t.verifyEqual(nnz(endsWith(names, 'Gmsl')), 9);
             t.verifyEqual(nnz(endsWith(names, '_nObs')), 15);
             t.verifyEqual(string({ncinfo(path, 'stericSlept').Dimensions.Name}), ["mode", "time"]);
             t.verifyEqual(ncread(path, 'stericSlept'), first.');
@@ -257,10 +257,10 @@ classdef steric2sleptTest < matlab.unittest.TestCase
             end
             t.writeNative;
             args = {'EN4c14',t.Polygon,1,'midmonth'};
-            for type = schema.types
-                [full,~,fullFit] = steric2slept(args{:},Type=type,truncation=4,BeQuiet=1);
-                [shallow,~,shallowFit] = steric2slept(args{:},Type=type,Depth='shallow',truncation=4,BeQuiet=1);
-                [deep,dates,deepFit,basis,~,constant] = steric2slept(args{:},Type=type,Depth='deep',truncation=4,BeQuiet=1);
+            for type = schema.components
+                [full,~,fullFit] = steric2slept(args{:},Component=type,truncation=4,BeQuiet=1);
+                [shallow,~,shallowFit] = steric2slept(args{:},Component=type,Depth='shallow',truncation=4,BeQuiet=1);
+                [deep,dates,deepFit,basis,~,constant] = steric2slept(args{:},Component=type,Depth='deep',truncation=4,BeQuiet=1);
                 t.verifyEqual(full,shallow+deep,AbsTol=1e-10);
                 t.verifyEqual(deepFit.nObs,fullFit.nObs);
                 t.verifyEqual(deepFit.areaFraction,shallowFit.areaFraction);
@@ -358,6 +358,9 @@ classdef steric2sleptTest < matlab.unittest.TestCase
             data = struct('lon',t.Data.lon,'lat',t.Data.lat,'dates',t.Data.dates,'stericSl',t.Data.stericSl);
             path = stericfilepath('SIO'); mkdir(fileparts(path)); save(path,'-struct','data','-v7.3');
             c = steric2slept('SIO',t.Polygon,0, BeQuiet=1);
+            t.verifyError(@() steric2slept('SIO',t.Polygon,0,Depth='full-depth',BeQuiet=1), ...
+                'ULMO:steric2slept:UnsupportedField');
+            t.verifyEqual(steric2slept('SIO',t.Polygon,0,Depth='shallow',BeQuiet=1), c);
             t.verifySize(c,[60,1]);
             t.verifyError(@() requestHalo('SIO',t.Polygon), 'ULMO:steric2slept:UnsupportedField');
             t.verifyError(@() steric2slept('SIO',t.Polygon,0,Depth='deep',BeQuiet=1), ...
@@ -391,10 +394,10 @@ classdef steric2sleptTest < matlab.unittest.TestCase
         function textOptionsAcceptCharAndString(t)
             % Every text selector accepts either representation without conversion.
             args = {'EN4c14', t.Polygon, 0, days(7)};
-            [c, dates, ~, ~, h] = steric2slept(args{:}, Type='halosteric', ...
+            [c, dates, ~, ~, h] = steric2slept(args{:}, Component='halosteric', ...
                 Depth='shallow', Interpolation='LiNeAr', OutputFormat='traditional', ...
                 Unit='mm', TimeFormat='datenum', BeQuiet=true);
-            [actual, actualDates, ~, ~, actualH] = steric2slept(args{:}, Type="halosteric", ...
+            [actual, actualDates, ~, ~, actualH] = steric2slept(args{:}, Component="halosteric", ...
                 Depth="shallow", Interpolation="linear", OutputFormat="traditional", ...
                 Unit="mm", TimeFormat="datenum", BeQuiet=1, SaveData=0);
             t.verifyEqual(actual, c);
@@ -426,7 +429,7 @@ classdef steric2sleptTest < matlab.unittest.TestCase
 
         function textInputsRejectNontextAndArrays(t)
             % Reject values that a typed string argument could silently convert.
-            for name = {'Type', 'Depth', 'Interpolation', 'OutputFormat', 'Unit', 'TimeFormat'}
+            for name = {'Component', 'Depth', 'Interpolation', 'OutputFormat', 'Unit', 'TimeFormat'}
                 for value = {42, ["linear", "nearest"]}
                     t.verifyError(@() steric2slept('EN4c14', t.Polygon, 0, ...
                         name{1}, value{1}), 'MATLAB:validators:mustBeTextScalar');
