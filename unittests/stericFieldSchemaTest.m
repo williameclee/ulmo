@@ -10,18 +10,20 @@
 %   Production data is not read or changed.
 %
 % Created by
-%   2026/11/05, OpenAI Codex
+%   2026/11/05, En-Chi Lee (williameclee@gmail.com)
 %
 % Last modified
-%   2026/11/08, OpenAI Codex
+%   2026/11/20, En-Chi Lee (williameclee@gmail.com)
 
 classdef stericFieldSchemaTest < matlab.unittest.TestCase
+
     properties
         nativePath
         fixtureData
     end
 
     methods (TestMethodSetup)
+
         function prepareNativeFile(testCase)
             folder = testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture);
             testCase.applyFixture(matlab.unittest.fixtures.EnvironmentVariableFixture('IFILES', folder.Folder));
@@ -31,14 +33,16 @@ classdef stericFieldSchemaTest < matlab.unittest.TestCase
                 'dates', datetime(2020, 1, (1:3)'), 'stericSl', 6 * ones(2, 3, 3), ...
                 'thermostericSl', 2 * ones(2, 3, 3), 'halostericSl', ones(2, 3, 3));
         end
+
     end
 
     methods (Test)
+
         function namesWithoutMetadata(testCase)
             schema = stericfieldschema();
-            testCase.verifyEqual(schema.types, ...
+            testCase.verifyEqual(schema.components, ...
                 ["total", "thermosteric", "halosteric", "non-thermosteric", "non-halosteric"]);
-            testCase.verifyEqual(schema.depths, ["full", "shallow", "deep"]);
+            testCase.verifyEqual(schema.depths, ["full-depth", "shallow", "deep"]);
             testCase.verifySize(schema.gridNames, [3, 3]);
             testCase.verifySize(schema.meanNames, [5, 3]);
             testCase.verifyEqual(schema.gridNames(3, 2), "shallowHalostericSl");
@@ -66,12 +70,14 @@ classdef stericFieldSchemaTest < matlab.unittest.TestCase
         function completeSplitsSupportAllMeans(testCase)
             data = testCase.fixtureData;
             components = {'Steric', 'Thermosteric', 'Halosteric'};
+
             for iComponent = 1:numel(components)
                 component = components{iComponent};
-                fullName = [lower(component(1)), component(2:end), 'Sl'];
-                data.(['shallow', component, 'Sl']) = data.(fullName) / 4;
-                data.(['deep', component, 'Sl']) = 3 * data.(fullName) / 4;
+                fullDepthName = [lower(component(1)), component(2:end), 'Sl'];
+                data.(['shallow', component, 'Sl']) = data.(fullDepthName) / 4;
+                data.(['deep', component, 'Sl']) = 3 * data.(fullDepthName) / 4;
             end
+
             schema = testCase.writeSchema(data);
             testCase.verifyTrue(all(schema.available, 'all'));
             testCase.verifyTrue(all(schema.supported, 'all'));
@@ -88,8 +94,19 @@ classdef stericFieldSchemaTest < matlab.unittest.TestCase
             testCase.verifyEqual(schema.supported(:, 1), logical([1; 0; 1; 0; 1]));
         end
 
+        function shallowNativeFieldsHaveNoFullDepthSupport(testCase)
+            testCase.writeSchema(testCase.fixtureData);
+            schema = stericfieldschema(whos('-file', testCase.nativePath), "shallow");
+            testCase.verifyEqual(schema.available, logical([0, 1, 0; 0, 1, 0; 0, 1, 0]));
+            testCase.verifyTrue(all(schema.supported(:, 2)));
+            testCase.verifyFalse(any(schema.supported(:, [1, 3]), 'all'));
+            testCase.verifyEqual(schema.gridNames(:, 2), ["stericSl"; "thermostericSl"; "halostericSl"]);
+            testCase.verifyFalse(any(schema.split) || schema.incompleteSplit || schema.incompatibleSplits);
+        end
+
         function partialSplitsRetainCallerErrors(testCase)
             components = {'Steric', 'Thermosteric', 'Halosteric'};
+
             for iComponent = 1:numel(components)
                 data = testCase.fixtureData;
                 data.(['shallow', components{iComponent}, 'Sl']) = ones(2, 3, 3);
@@ -97,10 +114,12 @@ classdef stericFieldSchemaTest < matlab.unittest.TestCase
                 testCase.verifyTrue(schema.incompleteSplit);
                 testCase.verifyCallerSchemaErrors;
             end
+
         end
 
         function incompatibleSplitsRetainCallerErrors(testCase)
             components = {'Steric', 'Halosteric'};
+
             for iComponent = 1:numel(components)
                 data = testCase.fixtureData;
                 data.(['shallow', components{iComponent}, 'Sl']) = ones(2, 3, 3);
@@ -110,20 +129,22 @@ classdef stericFieldSchemaTest < matlab.unittest.TestCase
                 testCase.verifyTrue(schema.incompatibleSplits);
                 testCase.verifyCallerSchemaErrors;
             end
+
         end
 
         function componentOnlyCallerRequirements(testCase)
             data = rmfield(testCase.fixtureData, {'stericSl', 'halostericSl'});
             testCase.writeSchema(data);
             testCase.verifyError(@() stericproductinfo('EN4c14'), 'ULMO:LoadData:VariableNotFound');
-            gmsl = steric2gmsl('EN4c14', 'thermosteric', SaveData=false, BeQuiet=true);
-            testCase.verifyEqual(gmsl, 2 * ones(3, 1), AbsTol=1e-12);
-            grid = steric2lonlatt('EN4c14', Type='thermosteric', SaveData=false, BeQuiet=true);
+            gmsl = steric2gmsl('EN4c14', 'thermosteric', SaveData = false, BeQuiet = true);
+            testCase.verifyEqual(gmsl, 2 * ones(3, 1), AbsTol = 1e-12);
+            grid = steric2lonlatt('EN4c14', Component = 'thermosteric', SaveData = false, BeQuiet = true);
             testCase.verifyEqual(grid, data.thermostericSl);
         end
 
         function numericValidationRemainsWithEstimator(testCase)
             grids = {uint8(ones(2, 3)), complex(ones(2, 3), ones(2, 3)), sparse(ones(2, 3))};
+
             for iGrid = 1:numel(grids)
                 data = testCase.fixtureData;
                 data.dates = data.dates(1);
@@ -134,12 +155,15 @@ classdef stericFieldSchemaTest < matlab.unittest.TestCase
                 testCase.verifyTrue(schema.available(1, 1));
                 testCase.verifyWarningFree(@() stericproductinfo('EN4c14'));
                 testCase.verifyError(@() steric2gmsl('EN4c14', 'total', ...
-                    SaveData=false, BeQuiet=true), 'ULMO:steric2gmsl:InvalidSchema');
+                    SaveData = false, BeQuiet = true), 'ULMO:steric2gmsl:InvalidSchema');
             end
+
         end
+
     end
 
-    methods (Access=private)
+    methods (Access = private)
+
         function schema = writeSchema(testCase, data)
             save(testCase.nativePath, '-struct', 'data', '-v7.3');
             schema = stericfieldschema(whos('-file', testCase.nativePath));
@@ -147,10 +171,12 @@ classdef stericFieldSchemaTest < matlab.unittest.TestCase
 
         function verifyCallerSchemaErrors(testCase)
             testCase.verifyError(@() stericproductinfo('EN4c14'), 'ULMO:stericproductinfo:InvalidSchema');
-            testCase.verifyError(@() steric2gmsl('EN4c14', 'total', SaveData=false, ...
-                BeQuiet=true), 'ULMO:steric2gmsl:InvalidSchema');
-            testCase.verifyError(@() steric2lonlatt('EN4c14', ForceNew=true, SaveData=false, ...
-                BeQuiet=true), 'ULMO:steric2lonlatt:InvalidSchema');
+            testCase.verifyError(@() steric2gmsl('EN4c14', 'total', SaveData = false, ...
+                BeQuiet = true), 'ULMO:steric2gmsl:InvalidSchema');
+            testCase.verifyError(@() steric2lonlatt('EN4c14', ForceNew = true, SaveData = false, ...
+                BeQuiet = true), 'ULMO:steric2lonlatt:InvalidSchema');
         end
+
     end
+
 end
