@@ -65,5 +65,5 @@ function info = stericproductinfo(product)
     info.hasShallowField = schema.available(1, 2);
     info.hasDeepField = schema.available(1, 3);
     info.hasDeep = schema.split(1);
-    info.hasHalosteric = schema.available(3, 1);
+    info.hasHalosteric = schema.available(3, schema.depths == info.nativeDepth);
 end
