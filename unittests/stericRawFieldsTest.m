@@ -86,7 +86,7 @@ classdef stericRawFieldsTest < matlab.unittest.TestCase
                 mkdir(fileparts(path));
                 save(path, '-struct', 'data', '-v7.3');
                 data.steric = data.stericSl;
-                cache = stericfilepath(product, 'midmonth', [], [], 'linear', false, [], '-full-depth-total');
+                cache = stericfilepath(product, 'midmonth', [], [], 'linear');
                 save(cache, '-struct', 'data', '-v7.3');
                 info = stericproductinfo(product);
                 testCase.verifyFalse(info.hasFullDepth);
@@ -141,16 +141,16 @@ classdef stericRawFieldsTest < matlab.unittest.TestCase
             path = stericfilepath('SIO'); mkdir(fileparts(path));
             save(path, '-struct', 'data', '-v7.3');
             [raw, ~, ~, ~, ~, nativeHalo] = steric2lonlatt('SIO', 'midmonth', BeQuiet = true);
-            cache = stericfilepath('SIO', 'midmonth', [], [], 'linear', false, [], '-shallow-total');
+            cache = stericfilepath('SIO', 'midmonth', [], [], 'linear');
             stored = load(cache);
-            testCase.verifyEqual(raw, stored.stericSl);
+            testCase.verifyEqual(raw, stored.shallowStericSl);
             testCase.verifyEqual(nativeHalo, stored.shallowHalostericGmsl);
             testCase.verifyFalse(isfield(stored, 'halostericGmsl'));
-            stericSl = raw + 123;
-            save(cache, 'stericSl', '-append');
+            shallowStericSl = raw + 123;
+            save(cache, 'shallowStericSl', '-append');
             delete(path);
-            testCase.verifyEqual(steric2lonlatt('SIO', 'midmonth', Depth = 'shallow', BeQuiet = true), stericSl);
-            testCase.verifyEqual(steric2lonlatt('SIO', 'midmonth', Depth = 'native', BeQuiet = true), stericSl);
+            testCase.verifyEqual(steric2lonlatt('SIO', 'midmonth', Depth = 'shallow', BeQuiet = true), shallowStericSl);
+            testCase.verifyEqual(steric2lonlatt('SIO', 'midmonth', Depth = 'native', BeQuiet = true), shallowStericSl);
         end
 
         function rawOnlyWithoutHalo(testCase)
@@ -179,7 +179,7 @@ classdef stericRawFieldsTest < matlab.unittest.TestCase
 
         function allMeansAndFieldsInEpochCache(testCase)
             sixth('EN4c14', 'midmonth');
-            path = stericfilepath('EN4c14', 'midmonth', [], [], 'linear', false, [], '-full-depth-total');
+            path = stericfilepath('EN4c14', 'midmonth', [], [], 'linear');
             stored = load(path);
             testCase.verifyEqual(nnz(endsWith(fieldnames(stored), 'Gmsl')), 9);
             testCase.verifyEqual(nnz(endsWith(fieldnames(stored), 'Sl')), 9);
@@ -188,6 +188,40 @@ classdef stericRawFieldsTest < matlab.unittest.TestCase
                 ["nonthermosteric", "nonhalosteric"])));
             testCase.verifySize(stored.halostericGmsl, [2, 1]);
             testCase.verifyEqual(stored.halostericGmsl, stored.shallowHalostericGmsl + stored.deepHalostericGmsl);
+        end
+
+        function selectionsShareCompleteRecordCache(testCase)
+            limits = datetime(2020, 1, [1, 31]);
+            [~, ~, dates] = steric2lonlatt('EN4c14', 'midmonth', [], limits, ...
+                Component = 'thermosteric', Depth = 'shallow', BeQuiet = true);
+            testCase.verifyEqual(dates, datetime(2020, 1, 16, 12, 0, 0));
+            path = stericfilepath('EN4c14', 'midmonth', [], [], 'linear');
+            stored = load(path);
+            testCase.verifySize(stored.dates, [2, 1]);
+            before = bytes(path);
+            delete(testCase.nativePath);
+            schema = stericfieldschema();
+
+            for iDepth = 1:3
+                grids = {testCase.fixtureData.(schema.gridNames(1, iDepth)), ...
+                             testCase.fixtureData.(schema.gridNames(2, iDepth)), ...
+                             testCase.fixtureData.(schema.gridNames(3, iDepth))};
+                grids{4} = grids{1} - grids{2};
+                grids{5} = grids{1} - grids{3};
+
+                for iComponent = 1:5
+                    [actual, ~, returnedDates] = steric2lonlatt('EN4c14', 'midmonth', ...
+                        Component = schema.components(iComponent), Depth = schema.depths(iDepth), BeQuiet = true);
+                    expected = cat(3, mean(grids{iComponent}(:, :, 1:31), 3), ...
+                        mean(grids{iComponent}(:, :, 32:60), 3));
+                    testCase.verifyEqual(actual, expected, AbsTol = 1e-12);
+                    testCase.verifyEqual(returnedDates, stored.dates);
+                end
+
+            end
+
+            testCase.verifyEqual(bytes(path), before);
+            testCase.verifyNumElements(dir(fullfile(fileparts(path), '*.mat')), 1);
         end
 
         function differenceUsesProcessedEpochMeans(testCase)
@@ -206,6 +240,36 @@ classdef stericRawFieldsTest < matlab.unittest.TestCase
             separate = totalMean(:, :, 1) - mean(halo, 3, 'omitmissing');
             testCase.verifyEqual(actual(:, :, 1), separate, AbsTol = 1e-12);
             testCase.verifyGreaterThan(abs(expected(1, 1) - separate(1, 1)), 0.01);
+        end
+
+        function missingGridRebuildsCompleteCache(testCase)
+            original = steric2lonlatt('EN4c14', 'midmonth', BeQuiet = true);
+            path = stericfilepath('EN4c14', 'midmonth', [], [], 'linear');
+            stored = load(path);
+            stored.stericSl(:) = -999;
+            stored = rmfield(stored, 'deepHalostericSl');
+            save(path, '-struct', 'stored', '-v7.3');
+            before = bytes(path);
+            actual = steric2lonlatt('EN4c14', 'midmonth', SaveData = false, BeQuiet = true);
+            testCase.verifyEqual(actual, original);
+            testCase.verifyEqual(bytes(path), before);
+            actual = steric2lonlatt('EN4c14', 'midmonth', BeQuiet = true);
+            testCase.verifyEqual(actual, original);
+            stored = load(path);
+            testCase.verifyEqual(nnz(endsWith(fieldnames(stored), 'Sl')), 9);
+        end
+
+        function cachedMeansRemainAvailableWithoutNativeFile(testCase)
+            sixth('EN4c14', 'midmonth');
+            path = stericfilepath('EN4c14', 'midmonth', [], [], 'linear');
+            stored = load(path);
+            delete(testCase.nativePath);
+            limits = datetime(2020, 2, [1, 29]);
+            [raw, ~, dates, ~, ~, halo] = steric2lonlatt('EN4c14', 'midmonth', [], limits, ...
+                Component = 'non-thermosteric', Depth = 'deep', BeQuiet = true);
+            testCase.verifyEqual(raw, stored.deepStericSl(:, :, 2) - stored.deepThermostericSl(:, :, 2));
+            testCase.verifyEqual(dates, stored.dates(2));
+            testCase.verifyEqual(halo, stored.deepHalostericGmsl(2));
         end
 
         function differencesUseProcessedInterpolationAndIgnoreOldFields(testCase)
@@ -266,10 +330,10 @@ classdef stericRawFieldsTest < matlab.unittest.TestCase
             testCase.verifyEqual(spatial, original);
         end
 
-        function truncatedAndFilteredDates(testCase)
+        function filteredDatesUseCompleteCache(testCase)
             limits = datetime(2020, 1, [10, 30]);
             [~, ~, dates, ~, ~, halo] = steric2lonlatt('EN4c14', days(7), [], limits, ...
-                TruncationBeforeInterpolation = true, Unit = 'mm', BeQuiet = true);
+                Unit = 'mm', BeQuiet = true);
             testCase.verifyEqual(dates, datetime(2020, 1, [15; 22; 29]));
             testCase.verifyEqual(halo, 1000 * (9.75 + [14; 21; 28] / 40), AbsTol = 1e-11);
         end
@@ -301,7 +365,7 @@ classdef stericRawFieldsTest < matlab.unittest.TestCase
             data = testCase.fixtureData;
             save(testCase.nativePath, '-struct', 'data', '-append');
             [raw, ~, ~, ~, ~] = steric2lonlatt('EN4c14', 'midmonth', ForceNew = true, BeQuiet = true);
-            stored = load(stericfilepath('EN4c14', 'midmonth', [], [], 'linear', false, [], '-full-depth-total'));
+            stored = load(stericfilepath('EN4c14', 'midmonth', [], [], 'linear'));
             native = load(testCase.nativePath);
             testCase.verifyEqual(native.halostericGmsl, 2 * old.halostericGmsl, AbsTol = 1e-12);
             testCase.verifyEqual(native.deepThermostericGmsl, 2 * old.deepThermostericGmsl, AbsTol = 1e-12);
@@ -316,7 +380,7 @@ classdef stericRawFieldsTest < matlab.unittest.TestCase
             data.deepHalostericSl = 2 * data.deepHalostericSl;
             data.halostericSl = data.shallowHalostericSl + data.deepHalostericSl;
             save(testCase.nativePath, '-struct', 'data', '-append');
-            cache = stericfilepath('EN4c14', 'midmonth', [], [], 'linear', false, [], '-full-depth-total');
+            cache = stericfilepath('EN4c14', 'midmonth', [], [], 'linear');
             beforeNative = bytes(testCase.nativePath); beforeCache = bytes(cache);
             actual = sixth('EN4c14', 'midmonth', [], [], 'ForceNew', true, 'SaveData', false);
             expected = 2 * [mean(9.75 + (0:30) / 40); mean(9.75 + (31:59) / 40)];
@@ -330,7 +394,7 @@ classdef stericRawFieldsTest < matlab.unittest.TestCase
             data.steric = -999 * ones(4, 3, 2);
             data = rmfield(data, 'stericSl');
             data.dates = datetime(2020, [1; 2], [16; 15], 12, 0, 0);
-            legacy = stericfilepath('EN4c14', 'midmonth', [], [], 'linear', false, [], '-full-depth-total');
+            legacy = stericfilepath('EN4c14', 'midmonth', [], [], 'linear');
             save(legacy, '-struct', 'data');
             raw = steric2lonlatt('EN4c14', 'midmonth', SaveData = false, BeQuiet = true);
             testCase.verifyEqual(raw(:, :, 1), mean(testCase.fixtureData.stericSl(:, :, 1:31), 3));

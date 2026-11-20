@@ -141,7 +141,7 @@ classdef epochAveragingTest < matlab.unittest.TestCase
             total = steric2lonlatt('EN4c14', 'GRACE', 90, limits, Component = 'total', BeQuiet = true);
             testCase.verifyEqual(total(2, 2), 145);
 
-            % The wider request must succeed using only the component-specific source-grid cache.
+            % The wider request must succeed using only the shared configuration cache.
             delete(rawPath);
             delete(refFile);
             [steric, sigma, labels, x, y] = steric2lonlatt('EN4c14', "GRACE", 90, [], args{:});
@@ -153,8 +153,8 @@ classdef epochAveragingTest < matlab.unittest.TestCase
             testCase.verifyEqual(sigma, zeros(size(steric), 'like', steric));
         end
 
-        function testStericGraceTruncation(testCase)
-            % Truncation preserves the selected epoch samples.
+        function testStericGraceTimeSelection(testCase)
+            % Time selection slices the complete cached record without changing epoch samples.
             folder = testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture);
             testCase.applyFixture(matlab.unittest.fixtures.EnvironmentVariableFixture('IFILES', folder.Folder));
             testCase.applyFixture(matlab.unittest.fixtures.EnvironmentVariableFixture('ORIGINALGRACEDATA', folder.Folder));
@@ -182,8 +182,7 @@ classdef epochAveragingTest < matlab.unittest.TestCase
             for iRange = 1:size(ranges, 1)
                 limits = ranges(iRange, :);
                 keep = labels >= limits(1) & labels <= limits(2);
-                [grid, ~, selected] = steric2lonlatt('EN4c14', 'GRACE', [], limits, args{:}, ...
-                    TruncationBeforeInterpolation = true);
+                [grid, ~, selected] = steric2lonlatt('EN4c14', 'GRACE', [], limits, args{:});
                 testCase.verifyEqual(selected, labels(keep));
                 testCase.verifyEqual(grid, fullGrid(:, :, keep));
             end
