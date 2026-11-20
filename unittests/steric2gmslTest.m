@@ -11,6 +11,9 @@
 %
 % Created by
 %   2026/11/04, En-Chi Lee (williameclee@gmail.com)
+%
+% Last modified
+%   2026/11/20, En-Chi Lee (williameclee@gmail.com)
 
 classdef steric2gmslTest < matlab.unittest.TestCase
 
@@ -53,11 +56,11 @@ classdef steric2gmslTest < matlab.unittest.TestCase
             baseMean = 10/3 + (0:4)';
             expected = [11 * baseMean + 2, 3 * baseMean + 1, 1.5 * baseMean - 0.5, ...
                             8 * baseMean + 1, 9.5 * baseMean + 2.5];
-            types = ["total", "thermosteric", "halosteric", "non-thermosteric", "non-halosteric"];
+            components = ["total", "thermosteric", "halosteric", "non-thermosteric", "non-halosteric"];
 
-            for iType = 1:numel(types)
-                [actual, dates] = steric2gmsl('EN4c14', types(iType), BeQuiet = true);
-                testCase.verifyEqual(actual, expected(:, iType), AbsTol = 1e-12);
+            for iComponent = 1:numel(components)
+                [actual, dates] = steric2gmsl('EN4c14', components(iComponent), BeQuiet = true);
+                testCase.verifyEqual(actual, expected(:, iComponent), AbsTol = 1e-12);
                 testCase.verifyEqual(dates, testCase.data.dates);
             end
 
@@ -70,18 +73,31 @@ classdef steric2gmslTest < matlab.unittest.TestCase
             end
 
             cached = who('-file', testCase.nativePath);
-            testCase.verifyEqual(nnz(endsWith(cached, 'Gmsl')), 15);
-            testCase.verifyEqual(stored.nonThermostericGmsl, stored.stericGmsl - stored.thermostericGmsl, AbsTol = 1e-12);
-            testCase.verifyNotEqual(stored.nonThermostericGmsl, stored.halostericGmsl);
+            testCase.verifyEqual(nnz(endsWith(cached, 'Gmsl')), 9);
+            testCase.verifyFalse(any(contains(lower(string(cached)), ["nonthermosteric", "nonhalosteric"])));
+            difference = steric2gmsl('EN4c14', 'non-thermosteric', BeQuiet = true);
+            testCase.verifyEqual(difference, stored.stericGmsl - stored.thermostericGmsl);
+            testCase.verifyNotEqual(difference, stored.halostericGmsl);
+        end
+
+        function differenceIgnoresPreviouslyCachedValues(testCase)
+            total = steric2gmsl('EN4c14', 'total', BeQuiet = true);
+            thermo = steric2gmsl('EN4c14', 'thermosteric', BeQuiet = true);
+            halo = steric2gmsl('EN4c14', 'halosteric', BeQuiet = true);
+            nonThermostericGmsl = -999 * ones(size(total));
+            nonHalostericGmsl = nonThermostericGmsl;
+            save(testCase.nativePath, 'nonThermostericGmsl', 'nonHalostericGmsl', '-append');
+            testCase.verifyEqual(steric2gmsl('EN4c14', 'non-thermosteric', BeQuiet = true), total - thermo);
+            testCase.verifyEqual(steric2gmsl('EN4c14', 'non-halosteric', BeQuiet = true), total - halo);
         end
 
         function directLayersRetainZeroContributions(testCase)
             shallow = steric2gmsl('EN4c14', "halosteric", "shallow");
             deep = steric2gmsl('EN4c14', "halosteric", "deep", BeQuiet = true);
-            full = steric2gmsl('EN4c14', "halosteric", BeQuiet = true);
+            fullDepth = steric2gmsl('EN4c14', "halosteric", BeQuiet = true);
             testCase.verifyEqual(shallow, 10/3 + (0:4)', AbsTol = 1e-12);
             testCase.verifyEqual(deep, 7/6 + 0.5 * (0:4)', AbsTol = 1e-12);
-            testCase.verifyEqual(full, shallow + deep);
+            testCase.verifyEqual(fullDepth, shallow + deep);
         end
 
         function commonSupportAndFiniteNonzeroCounts(testCase)
@@ -234,19 +250,25 @@ classdef steric2gmslTest < matlab.unittest.TestCase
         function fractionalSingleLongitudeCoordinates(testCase)
             % Rounding at the positive end of the grid also affects reversed grids.
             dates = testCase.data.dates;
+
             for lonOrigin = [-180, 0, 20]
                 lon = single(lonOrigin + (0:4319) / 12);
+
                 for descending = [false, true]
+
                     if descending
                         lon = flip(lon);
                     end
+
                     testCase.data = struct('lon', lon, 'lat', [-1; 1], 'dates', dates, ...
                         'thermostericSl', ones(2, numel(lon), numel(dates), 'single'));
                     testCase.writeNative;
                     actual = steric2gmsl('EN4c14', "thermosteric", SaveData = false, BeQuiet = true);
                     testCase.verifyEqual(actual, ones(numel(dates), 1), AbsTol = 1e-12);
                 end
+
             end
+
         end
 
         function missingLongitudeMeridianFailsBeforeSaving(testCase)
@@ -259,9 +281,10 @@ classdef steric2gmslTest < matlab.unittest.TestCase
                 testCase.writeNative;
                 before = testCase.fileBytes;
                 testCase.verifyError(@() steric2gmsl('EN4c14', "total"), ...
-                    'ULMO:steric2gmsl:InvalidGrid');
+                'ULMO:steric2gmsl:InvalidGrid');
                 testCase.verifyEqual(testCase.fileBytes, before);
             end
+
         end
 
         function nonuniformLatitudeMidpointAreas(testCase)
@@ -290,13 +313,13 @@ classdef steric2gmslTest < matlab.unittest.TestCase
                         'dates', dates, 'stericSl', grid, ...
                         'shallowStericSl', 0.25 * grid, 'deepStericSl', 0.75 * grid);
                     testCase.writeNative;
-                    full = steric2gmsl('EN4c14', "total", BeQuiet = true);
+                    fullDepth = steric2gmsl('EN4c14', "total", BeQuiet = true);
                     shallow = steric2gmsl('EN4c14', "total", "shallow", BeQuiet = true);
                     deep = steric2gmsl('EN4c14', "total", "deep", BeQuiet = true);
-                    testCase.verifyEqual(full, expected, AbsTol = 1e-12);
+                    testCase.verifyEqual(fullDepth, expected, AbsTol = 1e-12);
                     testCase.verifyEqual(shallow, 0.25 * expected, AbsTol = 1e-12);
                     testCase.verifyEqual(deep, 0.75 * expected, AbsTol = 1e-12);
-                    testCase.verifyEqual(full, shallow + deep);
+                    testCase.verifyEqual(fullDepth, shallow + deep);
                 end
 
             end
@@ -360,7 +383,7 @@ classdef steric2gmslTest < matlab.unittest.TestCase
             testCase.verifyEqual(total, (11 * 10/3 + 2) / 7, AbsTol = 1e-6);
         end
 
-        function explicitTypeAndMissingFile(testCase)
+        function explicitComponentAndMissingFile(testCase)
             testCase.verifyError(@() steric2gmsl('EN4c14'), 'MATLAB:minrhs');
             testCase.verifyError(@() steric2gmsl('NOAA', "total"), 'ULMO:steric2gmsl:FileNotFound');
         end

@@ -3,7 +3,7 @@
 %
 % Syntax
 %   [c, dates, fit, GVN, h, constantSlept] = STERIC2SLEPT(product, domain, L)
-%   [__] = STERIC2SLEPT(product, domain, L, timestep, timeRange, Type="total")
+%   [__] = STERIC2SLEPT(product, domain, L, timestep, timeRange, Component="total")
 %   [__] = STERIC2SLEPT(__, OutputFormat="traditional", SaveData=false)
 %
 % Input arguments
@@ -23,11 +23,12 @@
 %       Size: (1, 2) or (2, 1), or empty.
 %       Unit: days for datenum values.
 %       Default range: [] (complete record).
-%   Type (name-value) - total, thermosteric, halosteric, non-thermosteric
+%   Component (name-value) - total, thermosteric, halosteric, non-thermosteric
 %       (total minus thermosteric), or non-halosteric (total minus halosteric).
 %       Default type: total.
-%   Depth (name-value) - full, shallow or deep, as supplied by the product.
-%       Default depth: full.
+%   Depth (name-value) - native, full-depth, shallow or deep.
+%       Native resolves to the prepared product coverage. Upper-ocean products
+%       reject full-depth and deep requests. Default depth: native.
 %   Interpolation (name-value) - Temporal method as in STERIC2LONLATT.
 %       'mean' averages fixed-step windows; midmonth and GRACE always average.
 %       Interpolation methods are validated by INTERPTEMPORAL when used.
@@ -90,7 +91,7 @@
 %       harmonic convention.
 %       Size: (1, 3); G is ((L+1)^2, J), V is (J, 1), N is scalar.
 %   halostericGmsl - Selected depth's temporally processed halosteric GMSL.
-%       Independent of Type. For split products, full GMSL is the sum of the
+%       Independent of Component. For split products, full GMSL is the sum of the
 %       processed shallow/deep means. Unavailable halosteric means raise an
 %       error only when this output is requested.
 %       Size: (nTime, 1) for timefirst; (1, nTime) for traditional.
@@ -116,7 +117,7 @@
 %
 % Notes
 %   One complete NetCDF-4 file per product/temporal/domain/L/J configuration
-%   lives in IFILES/STERIC/product/SlepianExpansions. Type, Depth, timeRange,
+%   lives in IFILES/STERIC/product/SlepianExpansions. Component, Depth, timeRange,
 %   Unit and OutputFormat select outputs, not caches. Updates replace entire
 %   files only after successful completion. Convention changes require manual
 %   rebuilding. Basis caches and projection caches must remain consistent.
@@ -125,7 +126,9 @@
 %   area weighting and deep-support convention.
 %   The bulk path shares STERIC2LONLATT's temporal operations and obtains all
 %   native means through STERIC2GMSL. It processes grids in memory without
-%   intermediate grid caches. Unsaved requests may recalculate native means
+%   intermediate grid caches. Difference grids are formed after temporal
+%   processing, matching STERIC2LONLATT. Only total, thermosteric and halosteric
+%   global means are stored. Unsaved requests may recalculate native means
 %   for each selected component/depth, following STERIC2LONLATT.
 %   Full and shallow fields retain their finite observations. Supplied deep
 %   grids use paired finite full/shallow support: missing deep values there
@@ -149,7 +152,7 @@
 %   2026/11/05, En-Chi Lee
 %
 % Last modified
-%   2026/11/09, En-Chi Lee (williameclee@gmail.com)
+%   2026/11/20, En-Chi Lee (williameclee@gmail.com)
 
 function [stericSlept, dates, fit, GVN, halostericGmsl, constantSlept] = ...
         steric2slept(product, domain, L, timestep, timeRange, options)
@@ -159,9 +162,9 @@ function [stericSlept, dates, fit, GVN, halostericGmsl, constantSlept] = ...
         L (1, 1) double {mustBeFinite, mustBeInteger, mustBeNonnegative}
         timestep {mustBeTimeStep} = []
         timeRange {mustBeTimeRange} = []
-        options.Type {mustBeTextScalar, mustBeMember(options.Type, ...
+        options.Component {mustBeTextScalar, mustBeMember(options.Component, ...
             {'total', 'thermosteric', 'halosteric', 'non-thermosteric', 'non-halosteric'})} = 'total'
-        options.Depth {mustBeTextScalar, mustBeMember(options.Depth, {'full', 'shallow', 'deep'})} = 'full'
+        options.Depth {mustBeTextScalar, mustBeMember(options.Depth, {'native', 'full-depth', 'shallow', 'deep'})} = 'native'
         options.Interpolation {mustBeTextScalar} = 'linear'
         options.OutputFormat {mustBeTextScalar, mustBeMember(options.OutputFormat, {'timefirst', 'traditional'})} = 'timefirst'
         options.Unit {mustBeTextScalar, mustBeMember(options.Unit, {'m', 'mm'})} = 'm'
@@ -184,8 +187,12 @@ function [stericSlept, dates, fit, GVN, halostericGmsl, constantSlept] = ...
     assert((isa(domain, 'GeoDomain') && isscalar(domain)) || ...
         (isnumeric(domain) && ismatrix(domain) && size(domain, 2) == 2 && all(isfinite(domain), 'all')), ...
         'ULMO:steric2slept:Domain', 'Supply a GeoDomain, region name or finite polygon.');
-    schema = stericfieldschema();
-    iType = find(schema.types == options.Type);
+    nativeDepth = product.nativeDepth();
+    if string(options.Depth) == "native", options.Depth = nativeDepth; end
+    assert(~ismember(string(options.Depth), ["full-depth", "deep"]) || product.supportsFullDepth(), ...
+        'ULMO:steric2slept:UnsupportedField', 'Product %s does not supply Depth=%s.', char(product), options.Depth);
+    schema = stericfieldschema(struct('name', {}, 'size', {}), nativeDepth);
+    iType = find(schema.components == options.Component);
     iDepth = find(schema.depths == options.Depth);
     field = replace(schema.meanNames(iType, iDepth), 'Gmsl', 'Slept');
     haloName = schema.meanNames(3, iDepth);
@@ -205,9 +212,9 @@ function [stericSlept, dates, fit, GVN, halostericGmsl, constantSlept] = ...
     else
         if options.BeQuiet < 1, fprintf('[ULMO>steric2slept] Fitting all fields for %s.\n', char(product)); end
         metadata = whos('-file', stericfilepath(product));
-        schema = stericfieldschema(metadata);
+        schema = stericfieldschema(metadata, nativeDepth);
         assert(schema.supported(iType, iDepth), 'ULMO:steric2slept:UnsupportedField', ...
-            'Product %s does not supply Type=%s, Depth=%s.', char(product), options.Type, options.Depth);
+            'Product %s does not supply Component=%s, Depth=%s.', char(product), options.Component, options.Depth);
         if nargout >= 5
             assert(schema.supported(3, iDepth), 'ULMO:steric2slept:UnsupportedField', ...
                 'Product %s does not supply halosteric GMSL at Depth=%s.', char(product), options.Depth);
@@ -294,10 +301,12 @@ function [fields, means, dates, lon, lat] = prepareRecord(product, timestep, opt
     % Unsaved forced calls must each bypass the existing native cache.
     means = struct();
     firstMean = true;
-    for iMean = find(schema.supported(:)).'
+    cachedMeans = schema.supported;
+    cachedMeans(4:5, :) = false;
+    for iMean = find(cachedMeans(:)).'
         [iType, iDepth] = ind2sub(size(schema.supported), iMean);
         forceMean = options.ForceNew && (firstMean || ~options.SaveData);
-        [values, nativeDates] = steric2gmsl(product, schema.types(iType), ...
+        [values, nativeDates] = steric2gmsl(product, schema.components(iType), ...
             schema.depths(iDepth), ForceNew=forceMean, ...
             SaveData=options.SaveData, BeQuiet=options.BeQuiet);
         means.(schema.meanNames(iMean)) = values;
@@ -309,13 +318,18 @@ function [fields, means, dates, lon, lat] = prepareRecord(product, timestep, opt
     lat = data.lat(:);
     data = rmfield(data, {'lon', 'lat'});
     data = prepareDeepSupport(data, schema);
-    [~, ~, useMean] = normalisetimeconfig(timestep, options.Interpolation);
-    if useMean, data = addResiduals(data, schema); end
     [data, dates] = processfieldtime(data, nativeDates, timestep, options.Interpolation, []);
-    if ~useMean, data = addResiduals(data, schema); end
+    % Native upper-ocean fields have unprefixed names; processed fields use explicit depths.
+    processed = struct();
+    fieldNames = replace(schema.meanNames, 'Gmsl', 'Sl');
+    for iField = find(schema.available(:)).'
+        [iComponent, iDepth] = ind2sub(size(schema.available), iField);
+        processed.(fieldNames(iComponent, iDepth)) = data.(schema.gridNames(iField));
+    end
+    data = addResiduals(processed, schema);
     fields = struct();
     fieldNames = replace(schema.meanNames, 'Gmsl', 'Sl');
-    transposeGrid = numel(lat) == size(data.(names{1}), 1);
+    transposeGrid = numel(lat) == size(data.(fieldNames(find(schema.supported, 1))), 1);
     for iField = find(schema.supported(:)).'
         values = data.(fieldNames(iField));
         if transposeGrid, values = permute(values, [2, 1, 3]); end
@@ -329,7 +343,7 @@ function [fields, means, dates, lon, lat] = prepareRecord(product, timestep, opt
     assert(isequal(dates, meanDates), 'ULMO:steric2slept:Dates', 'Grid and GMSL dates differ.');
     for iMean = 1:numel(meanNames), means.(meanNames{iMean}) = means.(meanNames{iMean})(:); end
     % Match the loader's full GMSL convention under nonlinear interpolation.
-    for iType = 1:numel(schema.types)
+    for iType = 1:3
         if all(schema.supported(iType, :))
             means.(schema.meanNames(iType, 1)) = ...
                 means.(schema.meanNames(iType, 2)) + means.(schema.meanNames(iType, 3));
