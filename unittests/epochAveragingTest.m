@@ -1,7 +1,7 @@
-%% epochAveragingTest - Unit tests for epoch averaging, temporal interpolation, and GRACE epoch utilities.
+%% EPOCHAVERAGINGTEST - Unit tests for epoch averaging, temporal interpolation, and GRACE epoch utilities.
 %
 % Last modified
-%	2026/11/01, En-Chi Lee (williameclee@arizona.edu)
+%   2026/11/20, En-Chi Lee (williameclee@gmail.com)
 
 classdef epochAveragingTest < matlab.unittest.TestCase
 
@@ -110,7 +110,7 @@ classdef epochAveragingTest < matlab.unittest.TestCase
         end
 
         function testStericGraceCache(testCase)
-            % Derived components use paired native samples before epoch averaging.
+            % Difference components subtract separately processed epoch means.
             folder = testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture);
             testCase.applyFixture(matlab.unittest.fixtures.EnvironmentVariableFixture('IFILES', folder.Folder));
             testCase.applyFixture(matlab.unittest.fixtures.EnvironmentVariableFixture('ORIGINALGRACEDATA', folder.Folder));
@@ -135,18 +135,18 @@ classdef epochAveragingTest < matlab.unittest.TestCase
             save(fullfile(stericFolder, 'EN4c14-StericSeaLevel-H90-linear.mat'), ...
                 'dates', 'lon', 'lat', 'stericSl', 'halostericSl');
             limits = datetime(2020, 1, [16, 17]);
-            args = {'Type', 'non-halosteric', 'BeQuiet', true};
+            args = {'Component', 'non-halosteric', 'BeQuiet', true};
             subset = steric2lonlatt('EN4c14', 'GRACE', 90, limits, args{:});
-            testCase.verifyEqual(subset(2, 2), 97);
-            total = steric2lonlatt('EN4c14', 'GRACE', 90, limits, Type = 'total', BeQuiet = true);
+            testCase.verifyEqual(subset(2, 2), 142);
+            total = steric2lonlatt('EN4c14', 'GRACE', 90, limits, Component = 'total', BeQuiet = true);
             testCase.verifyEqual(total(2, 2), 145);
 
-            % The wider request must succeed using only the finished component cache.
+            % The wider request must succeed using only the component-specific source-grid cache.
             delete(rawPath);
             delete(refFile);
             [steric, sigma, labels, x, y] = steric2lonlatt('EN4c14', "GRACE", 90, [], args{:});
             testCase.verifyEqual(labels, datetime(2020, [1; 2], [16; 15], 12, 0, 0));
-            testCase.verifyEqual(squeeze(steric(2, 2, :)), [97; 115]);
+            testCase.verifyEqual(squeeze(steric(2, 2, :)), [142; 115]);
             testCase.verifyEqual(x, 0:90:360);
             testCase.verifyEqual(y, (-90:90:90)');
             % Unavailable steric uncertainty is represented by a zero grid.
@@ -154,7 +154,7 @@ classdef epochAveragingTest < matlab.unittest.TestCase
         end
 
         function testStericGraceTruncation(testCase)
-            % Truncation selects the same midpoints and uses the same native samples as a full run.
+            % Truncation preserves the selected epoch samples.
             folder = testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture);
             testCase.applyFixture(matlab.unittest.fixtures.EnvironmentVariableFixture('IFILES', folder.Folder));
             testCase.applyFixture(matlab.unittest.fixtures.EnvironmentVariableFixture('ORIGINALGRACEDATA', folder.Folder));
@@ -171,7 +171,7 @@ classdef epochAveragingTest < matlab.unittest.TestCase
             stericSl = repmat(reshape([4, 8, 12], 1, 1, []), 3, 2);
             save(fullfile(stericFolder, 'EN4c14-StericSeaLevel.mat'), 'dates', 'lon', 'lat', 'stericSl');
 
-            args = {'Type', 'total', 'BeQuiet', true};
+            args = {'Component', 'total', 'BeQuiet', true};
             [fullGrid, ~, labels] = steric2lonlatt('EN4c14', 'GRACE', [], [], args{:});
             testCase.verifyEqual(labels, dates([1, 3]));
             testCase.verifyEqual(squeeze(fullGrid(1, 1, :)), [4; 10]);
@@ -238,7 +238,7 @@ classdef epochAveragingTest < matlab.unittest.TestCase
             save(fullfile(sshFolder, 'MEaSUREs-Tmidmonth-nearest.mat'), 'sshs', 'dates', 'lon', 'lat');
 
             [ssh, ~, sshDate] = ssh2lonlatt('MEaSUREs', 'midmonth', Interpolation = 'nearest', BeQuiet = true);
-            [steric, ~, stericDate] = steric2lonlatt('EN4c14', 'midmonth', Type = 'total', BeQuiet = true);
+            [steric, ~, stericDate] = steric2lonlatt('EN4c14', 'midmonth', Component = 'total', BeQuiet = true);
             testCase.verifyEqual(sshDate, dates);
             testCase.verifyEqual(stericDate, dates);
             testCase.verifyEqual(ssh, 6 * ones(3, 2));
