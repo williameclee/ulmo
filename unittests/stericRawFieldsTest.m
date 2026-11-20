@@ -91,6 +91,7 @@ classdef stericRawFieldsTest < matlab.unittest.TestCase
                 info = stericproductinfo(product);
                 testCase.verifyFalse(info.hasFullDepth);
                 testCase.verifyEqual(info.nativeDepth, "shallow");
+                testCase.verifyTrue(info.hasHalosteric);
                 testCase.verifyEqual(steric2lonlatt(product, BeQuiet = true), data.stericSl);
                 testCase.verifyError(@() steric2lonlatt(product, Depth = 'full-depth', BeQuiet = true), ...
                 'ULMO:steric2lonlatt:UnsupportedField');
@@ -126,6 +127,7 @@ classdef stericRawFieldsTest < matlab.unittest.TestCase
                 info = stericproductinfo(product);
                 testCase.verifyTrue(info.hasFullDepth);
                 testCase.verifyEqual(info.nativeDepth, "full-depth");
+                testCase.verifyTrue(info.hasHalosteric);
                 testCase.verifyEqual(steric2lonlatt(product, Component = 'halosteric', ...
                     Depth = "full-depth", BeQuiet = true), data.halostericSl);
                 actual = steric2gmsl(product, 'halosteric', "full-depth", SaveData = false, BeQuiet = true);
