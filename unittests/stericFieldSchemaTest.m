@@ -45,6 +45,8 @@ classdef stericFieldSchemaTest < matlab.unittest.TestCase
             testCase.verifyEqual(schema.depths, ["full-depth", "shallow", "deep"]);
             testCase.verifySize(schema.gridNames, [3, 3]);
             testCase.verifySize(schema.meanNames, [5, 3]);
+            testCase.verifySize(schema.cacheGridNames, [3, 3]);
+            testCase.verifyEqual(schema.cacheGridNames(3, 3), "deepHalostericSl");
             testCase.verifyEqual(schema.gridNames(3, 2), "shallowHalostericSl");
             testCase.verifyEqual(schema.meanNames(5, 3), "deepNonHalostericGmsl");
             testCase.verifyFalse(any(schema.available, 'all'));
