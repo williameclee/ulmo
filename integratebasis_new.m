@@ -29,7 +29,7 @@
 %   The function is not properly tested yet.
 %
 % Last modified
-%   2026/11/09, En-Chi Lee (williameclee@arizona.edu)
+%   2026/11/09, En-Chi Lee (williameclee@gmail.com)
 %   2016/11/01, Chris Harig (charig@email.arizona.edu)
 
 function varargout = integratebasis_new(varargin)
