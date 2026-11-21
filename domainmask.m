@@ -65,7 +65,7 @@
 %   2025/07/25, En-Chi Lee (williameclee@arizona.edu)
 %
 % Last modified
-%   2026/11/06, En-Chi Lee (williameclee@gmail.com)
+%   2026/11/09, En-Chi Lee (williameclee@gmail.com)
 
 function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshsize, options)
 
@@ -249,7 +249,7 @@ function [mask, lonn, latt] = domainmask(domain, lon, lat, lonlim, latlim, meshs
         end
 
         tmp = [tempname(folder), '.mat'];
-        cleanup = onCleanup(@() deletePartial(tmp));
+        cleanup = onCleanup(@() deletefileifpresent(tmp));
         creationDate = datetime('now', 'TimeZone', 'UTC');
         save(tmp, vars{:}, 'creationDate', '-v7.3');
         movefile(tmp, dataPath, 'f');
@@ -341,14 +341,6 @@ function dataPath = datapath(dom, meshSize, lonLim, latLim, extBuf)
         domName, num2str(meshSize), ...
         num2str(lonLim(1)), num2str(lonLim(2)), num2str(latLim(1)), num2str(latLim(2)));
     dataPath = fullfile(dataFolder, dataFile);
-end
-
-function deletePartial(path)
-
-    if isfile(path)
-        delete(path);
-    end
-
 end
 
 function plotdomainmask(mask, lonn, latt)
