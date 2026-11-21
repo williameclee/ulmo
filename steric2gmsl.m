@@ -124,7 +124,7 @@ function [gmsl, dates] = steric2gmsl(product, component, depth, options)
     end
 
     metadata = whos('-file', inPath);
-    [schema, precision] = fieldschema(metadata, nativDepth);
+    [schema, precision] = checkfieldschema(metadata, nativDepth);
     rasterNames = schema.gridNames;
     available = schema.available;
     meanNames = schema.meanNames;
@@ -164,7 +164,7 @@ function [gmsl, dates] = steric2gmsl(product, component, depth, options)
             fprintf('[ULMO>%s] Calculating GMSLs for %s.\n', mfilename, char(product));
         end
 
-        means = steric2gmslCore(inPath, schema, ...
+        means = steric2gmsl_core(inPath, schema, ...
             numel(dates), wghts, keepLon, transGrid, precision, find(depths == nativDepth));
 
         if options.SaveData
@@ -203,10 +203,10 @@ function [gmsl, dates] = steric2gmsl(product, component, depth, options)
 
 end
 
-function gmslObj = steric2gmslCore(inPath, schema, ...
+function gmslObj = steric2gmsl_core(inPath, schema, ...
         nEpochs, wghts, keepLon, transGrid, precision, nativDepthIdx)
     inFileObj = matfile(inPath);
-    rasterNames = schema.gridNames;
+    fieldNames = schema.gridNames;
     fieldAvail = schema.available;
     meanNames = schema.meanNames;
     supported = schema.supported;
@@ -214,7 +214,7 @@ function gmslObj = steric2gmslCore(inPath, schema, ...
     fieldIdxs = find(fieldAvail(:))';
 
     if ~isempty(splitComps)
-        masks = stericcoverage(inFileObj, rasterNames, fieldAvail, nEpochs);
+        masks = stericcoverage(inFileObj, fieldNames, fieldAvail, nEpochs);
         oceanMask = masks.oceanMask;
         deepOceanMask = masks.deepOceanMask;
 
@@ -230,7 +230,7 @@ function gmslObj = steric2gmslCore(inPath, schema, ...
     % Determine full-record validity from the existing reference field.
     priority = [3, 1, 2];
     refField = find(fieldAvail(priority, nativDepthIdx), 1);
-    refField = rasterNames(priority(refField), nativDepthIdx);
+    refField = fieldNames(priority(refField), nativDepthIdx);
     finiteCnt = zeros(size(wghts));
     nonzeroCnt = zeros(size(wghts));
 
@@ -241,15 +241,15 @@ function gmslObj = steric2gmslCore(inPath, schema, ...
         nonzeroCnt = nonzeroCnt + (isfinite(field) & field ~= 0);
     end
 
-    support = (finiteCnt >= 0.8 * nEpochs) & (nonzeroCnt >= 0.8 * nEpochs) & wghts > 0;
+    validMask = (finiteCnt >= 0.8 * nEpochs) & (nonzeroCnt >= 0.8 * nEpochs) & wghts > 0;
     gmsls = nan(3, 3, nEpochs);
 
     for iEpoch = 1:nEpochs
         fields = cell(3);
-        valid = support;
+        epochValidMask = validMask;
 
         for iField = fieldIdxs
-            fields{iField} = readtimeslice(inFileObj, rasterNames(iField), iEpoch, keepLon, transGrid);
+            fields{iField} = readtimeslice(inFileObj, fieldNames(iField), iEpoch, keepLon, transGrid);
         end
 
         for iComp = splitComps
@@ -258,28 +258,28 @@ function gmslObj = steric2gmslCore(inPath, schema, ...
         end
 
         for iField = fieldIdxs
-            valid = valid & isfinite(fields{iField});
+            epochValidMask = epochValidMask & isfinite(fields{iField});
         end
 
-        totalWghts = sum(wghts(valid));
+        totalWghts = sum(wghts(epochValidMask));
 
         if totalWghts == 0
             continue
         end
 
-        w = wghts(valid) / totalWghts;
+        w = wghts(epochValidMask) / totalWghts;
 
         for iComp = 1:3
 
             for iDepth = find(fieldAvail(iComp, :))
                 field = fields{iComp, iDepth};
-                gmsls(iComp, iDepth, iEpoch) = sum(w .* field(valid));
+                gmsls(iComp, iDepth, iEpoch) = sum(w .* field(epochValidMask));
             end
 
             % If shallow and deep fields are available, make sure they sum to the full-depth value
             if all(fieldAvail(iComp, :))
                 gmsls(iComp, 1, iEpoch) = checkDepthPartsSumToFullDepth( ...
-                    gmsls, iComp, iEpoch, fields, w, valid, precision, rasterNames(iComp, 1));
+                    gmsls, iComp, iEpoch, fields, w, epochValidMask, precision, fieldNames(iComp, 1));
             end
 
         end
@@ -298,12 +298,13 @@ function gmslObj = steric2gmslCore(inPath, schema, ...
 
 end
 
-%% Subfunctions
-function [schema, precision] = fieldschema(metadata, nativeDepth)
-    schema = stericfieldschema(metadata, nativeDepth);
+%% CHECKFIELDSCHEMA - Finds and validates the schema
+function [schema, precision] = checkfieldschema(metadata, nativDepth)
+    schema = stericfieldschema(metadata, nativDepth);
     % Numerical requirements and source precision belong to the estimator.
     precision = eps('double');
 
+    % Check every field
     for iField = find(schema.available(:))'
         name = schema.gridNames(iField);
         entry = metadata(strcmp({metadata.name}, name));
@@ -316,11 +317,11 @@ function [schema, precision] = fieldschema(metadata, nativeDepth)
     end
 
     if schema.incompleteSplit
-        error('ULMO:steric2gmsl:InvalidSchema', 'A depth split requires explicit full-depth, shallow and deep grids.');
-    end
-
-    if schema.incompatibleSplits
-        error('ULMO:steric2gmsl:InvalidSchema', 'Supplied total and halosteric depth splits must agree.');
+        error('ULMO:steric2gmsl:InvalidSchema', ...
+        'A depth split requires explicit full-depth, shallow and deep grids.');
+    elseif schema.incompatibleSplits
+        error('ULMO:steric2gmsl:InvalidSchema', ...
+        'Supplied total and halosteric depth splits must agree.');
     end
 
 end
@@ -452,13 +453,14 @@ function field = readtimeslice(matObj, field, iDate, keepLon, trans)
 end
 
 %% CHECKDEPTHPARTSSUMTOFULLDEPTH - Checks that the full-depth value agrees with the sum of shallow and deep parts
-function combined = checkDepthPartsSumToFullDepth(values, iComponent, iDate, fields, w, valid, precision, fieldName)
-    direct = values(iComponent, 1, iDate);
-    combined = sum(values(iComponent, 2:3, iDate));
+function combined = checkDepthPartsSumToFullDepth( ...
+        values, iComp, iDate, fields, w, valid, precision, fieldName)
+    direct = values(iComp, 1, iDate);
+    combined = sum(values(iComp, 2:3, iDate));
     scale = 1;
 
     for iDepth = 1:3
-        field = fields{iComponent, iDepth};
+        field = fields{iComp, iDepth};
         scale = max(scale, sum(w .* abs(field(valid))));
     end
 
