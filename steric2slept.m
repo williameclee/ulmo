@@ -1,8 +1,8 @@
 %% STERIC2SLEPT - Fits steric fields to regional Slepian functions.
 %
 % Syntax
-%   [c, dates, fit, GVN, h, constantSlept] = STERIC2SLEPT(product, domain, L)
-%   [__] = STERIC2SLEPT(product, domain, L, timestep, timeRange, Component="total")
+%   [c, dates, GVN, h, constSlept] = STERIC2SLEPT(product, domain, L)
+%   [__] = STERIC2SLEPT(product, domain, L, timestep, timelim, Component="total")
 %   [__] = STERIC2SLEPT(__, OutputFormat="traditional", SaveData=false)
 %
 % Input arguments
@@ -12,15 +12,17 @@
 %       Size: (nVertex, 2) for a polygon.
 %       Unit: degrees east and north for polygon coordinates.
 %   L - Maximum spherical harmonic degree, a nonnegative integer.
-%   timestep (optional) - Temporal selection as in STERIC2LONLATT: a positive
-%       duration or number of days, 'midmonth', 'GRACE', or []. Processing
-%       precedes projection and uses native spatial coordinates.
+%   timestep (optional) - Temporal interpolation step or averaging convention.
+%       - Positive numeric scalar or duration for fixed steps
+%       - 'midmonth' for calendar-month means, or 'GRACE' for CSR RL06 degree-60
+%         solution windows. Both conventions average native samples and return
+%         window midpoints.
 %       Unit: days for numeric values.
 %       Default step: [] (native timestamps).
-%   timeRange (optional) - Inclusive datetime or datenum output limits.
+%   timelim (optional) - Inclusive datetime or datenum output limits.
 %       Increasing limits, applied after processing the complete record.
-%       Size: (1, 2) or (2, 1), or empty.
-%       Unit: days for datenum values.
+%       Size: (1, 2) or (2, 1).
+%       Unit: days for numeric values.
 %       Default range: [] (complete record).
 %   Component (name-value) - total, thermosteric, halosteric, non-thermosteric
 %       (total minus thermosteric), or non-halosteric (total minus halosteric).
@@ -80,22 +82,17 @@
 %   dates - Returned timestamps in TimeFormat.
 %       Size: (nTime, 1).
 %       Unit: days for datenum output.
-%   fit - Table of nObs, areaFraction, condNum and residualRms, one row per
-%       returned epoch. Counts include exterior-buffer cells and zero-filled
-%       deep cells; areaFraction measures fitted area inside the target.
-%       Residual RMS uses Unit.
-%       Size: (nTime, 4) table.
 %   GVN - Cell array {G, V, N}: retained harmonic basis, concentration
 %       eigenvalues and full Shannon number. G uses the real 4*pi-normalized
 %       harmonic convention.
 %       Size: (1, 3); G is ((L+1)^2, J), V is (J, 1), N is scalar.
-%   halostericGmsl - Selected depth's temporally processed halosteric GMSL.
+%   haloGmsl - Selected depth's temporally processed halosteric GMSL.
 %       Independent of Component. For split products, full GMSL is the sum of the
 %       processed shallow/deep means. Unavailable halosteric means raise an
 %       error only when this output is requested.
 %       Size: (nTime, 1) for timefirst; (1, nTime) for traditional.
 %       Unit: Unit.
-%   constantSlept - Harmonic projection of unit C00: GVN{1}(1,:).'.
+%   constSlept - Harmonic projection of unit C00: GVN{1}(1,:).'.
 %       Independent of data masks and output units/order; dimensionless.
 %       Size: (J, 1).
 %
@@ -115,37 +112,11 @@
 %       Unit: seconds since 1970-01-01 00:00:00 UTC.
 %
 % Notes
-%   One complete NetCDF-4 file per product/temporal/domain/L/J configuration
-%   lives in IFILES/STERIC/product/SlepianExpansions. Component, Depth, timeRange,
-%   Unit and OutputFormat select outputs, not caches. Updates replace entire
-%   files only after successful completion. Convention changes require manual
-%   rebuilding. Basis caches and projection caches must remain consistent.
-%   Global attributes record available fields/means, product, domain, degree,
-%   retained/default truncation, temporal configuration, observation buffer,
-%   area weighting and deep-support convention.
-%   The bulk path shares STERIC2LONLATT's temporal operations and obtains all
-%   native means through STERIC2GMSL. It processes grids in memory without
-%   intermediate grid caches. Difference grids are formed after temporal
-%   processing, matching STERIC2LONLATT. Only total, thermosteric and halosteric
-%   global means are stored. Unsaved requests may recalculate native means
-%   for each selected component/depth, following STERIC2LONLATT.
-%   Full and shallow fields retain their finite observations. Supplied deep
-%   grids use paired finite full/shallow support: missing deep values there
-%   are zero contributions, and deep values outside that support are omitted.
-%   This absent-layer convention is applied before temporal processing and
-%   residual construction, in memory only. It assumes missing deep values on
-%   observed upper columns mean an absent deep contribution, not lost data.
-%   Native GMSL estimation is unchanged. Source layer inconsistencies and
-%   nonlinear temporal interpolation can still prevent exact depth closure.
-%   Raw grids and GMSL use independent finite samples during epoch averaging.
-%   For timefirst, caller correction is c - h*constantSlept.'; traditional
-%   uses c - constantSlept*h. This is harmonic C00 subtraction, not refitting
-%   corrected grids with their observation masks. No product policy is applied.
-%   Empty epochs retain NaN coefficients. Entirely empty fields and
-%   underdetermined nonempty fits raise errors; previous caches are preserved.
+%   For timefirst, caller correction is c - h * constSlept.'; traditional
+%   uses c - constSlept * h.
 %
 % See also
-%   steric2lonlatt, steric2gmsl, prepareslepianbasis, fitgriddedslepian, processfieldtime
+%   steric2lonlatt, steric2gmsl
 %
 % Created by
 %   2026/11/21, En-Chi Lee (williameclee@gmail.com)

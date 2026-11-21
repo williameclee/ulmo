@@ -12,10 +12,10 @@
 %       JAMSTEC, ISAS, IPRC or IAPv4.
 %       Default product: EN4c14.
 %   timestep (optional) - Temporal interpolation step or averaging convention.
-%       Positive numeric scalar or duration for fixed steps, 'midmonth' for
-%       calendar-month means, or 'GRACE' for CSR RL06 degree-60 solution
-%       windows. Both conventions average native samples and return window
-%       midpoints.
+%       - Positive numeric scalar or duration for fixed steps
+%       - 'midmonth' for calendar-month means, or 'GRACE' for CSR RL06 degree-60
+%         solution windows. Both conventions average native samples and return
+%         window midpoints.
 %       Unit: days for numeric values.
 %       Default step: [] (native timestamps).
 %   meshsize (optional) - Spatial interpolation spacing.
