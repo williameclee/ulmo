@@ -20,6 +20,12 @@ See [Linear sea-level and low-degree solvers](docs/linear-sle.md) for the shared
 2. Add the repository folder and subfolders to your MATLAB path.
 3. Install the dependencies listed below and ensure their paths are configured properly, and the search order is set correctly (ULMO should be at the top of the order in `pathdef.m`).
 
+## Cached data
+
+ULMO uses unversioned cache filenames and does not store or validate a cache version in the file. A reader can reuse a cache when it contains all the variables that reader needs. If any required variable is missing, the reader regenerates the data and saves them at the same path when saving is enabled.
+
+Users are responsible for clearing outdated caches, including after a change in processing. Functions such as `grace2plmt_new` also provide a `ForceNew` option to control when data are refreshed.
+
 ## Dependencies
 
 Functions in this repository may call or overwrite functions from the following packages. Please ensure they are installed and the paths are configured properly before running the functions in this repository.
@@ -32,4 +38,4 @@ Functions in this repository may call or overwrite functions from the following 
 
 ---
 
-Last modified: 2026/09/25, [En-Chi Lee (@williameclee)](mailto:williameclee@arizona.edu)
+Last modified: 2026/11/09, [En-Chi Lee (@williameclee)](mailto:williameclee@arizona.edu)
