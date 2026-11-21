@@ -309,7 +309,7 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
             [data, coord] = preparegrid(data, coord, meshsize, lonOrigin, spatialIntpMthd, options.BeQuiet, callChain);
         end
 
-        [data, coord.dates] = processtime(data, coord.dates, timestep, intpMthd);
+        [data, coord.dates] = processsterictime(data, coord.dates, timestep, intpMthd, []);
 
         if ~useMean
             [data, coord] = preparegrid(data, coord, meshsize, lonOrigin, spatialIntpMthd, options.BeQuiet, callChain);
@@ -359,7 +359,7 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
                 firstMean = false;
             end
 
-            [means, meanDates] = processtime(means, nativeDates, timestep, intpMthd);
+            [means, meanDates] = processsterictime(means, nativeDates, timestep, intpMthd, []);
             assert(isequal(meanDates(:), coord.dates(:)), ...
                 'ULMO:steric2lonlatt:MeanDates', 'GMSL and grid dates must agree.');
 
@@ -475,36 +475,6 @@ function processed = componentfields(data, schema)
             selectsteric(data, schema.gridNames, iComp, iDepth);
     end
 
-end
-
-function [data, dates] = processtime(data, dates, timestep, method)
-    % Grids and means enter separately but share temporal conventions. Epoch
-    % averaging uses each array's own finite observations; it deliberately does
-    % not match a GMSL to each individual cell's temporal support.
-    if isempty(timestep)
-        dates = dates(:);
-        return;
-    end
-
-    names = fieldnames(data);
-    useMean = ischar(timestep) || isstring(timestep) || method == "mean";
-
-    if useMean
-        epochs = temporalmeanepochs(dates, timestep, []);
-    end
-
-    for iName = 1:numel(names)
-
-        if useMean
-            [data.(names{iName}), outputDates] = averageepochs(dates, data.(names{iName}), epochs);
-        else
-            [data.(names{iName}), outputDates] = interptemporal(dates, data.(names{iName}), ...
-                timestep, method, BeQuiet = true);
-        end
-
-    end
-
-    dates = outputDates(:);
 end
 
 function [data, coord] = preparegrid(data, coord, meshsize, lonOrigin, intpMthd, beQuiet, callChain)
