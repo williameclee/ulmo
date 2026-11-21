@@ -39,9 +39,10 @@ function [meshIntp, datesIntp] = interptemporal(dates, mesh, timeStep, intpMthd,
 
     intpMthd = validatestring(intpMthd, ...
         {'linear', 'nearest', 'previous', 'next', 'pchip', 'cubic', 'spline', 'makima', 'v5cubic'});
+
     if size(mesh, 3) ~= numel(dates)
         error('ULMO:interpTemporal:DimensionMismatch', ...
-            'The mesh time dimension must match the number of dates.');
+        'The mesh time dimension must match the number of dates.');
     end
 
     callChain = [options.CallChain, {mfilename}];
@@ -54,20 +55,27 @@ function [meshIntp, datesIntp] = interptemporal(dates, mesh, timeStep, intpMthd,
     end
 
     limits = options.TimeRange;
+
     if isdatetime(dates)
+
         if isnumeric(timeStep)
             timeStep = days(timeStep);
         end
+
         if isnumeric(limits)
             limits = datetime(limits, 'ConvertFrom', 'datenum');
         end
+
     else
+
         if isduration(timeStep)
             timeStep = days(timeStep);
         end
+
         if isdatetime(limits)
             limits = datenum(limits); %#ok<DATNM>
         end
+
     end
 
     if mean(diff(dates)) > timeStep
@@ -77,6 +85,7 @@ function [meshIntp, datesIntp] = interptemporal(dates, mesh, timeStep, intpMthd,
     end
 
     datesIntp = dates(1):timeStep:dates(end);
+
     if ~isempty(limits)
         datesIntp = datesIntp(datesIntp >= limits(1) & datesIntp <= limits(2));
     end
@@ -87,20 +96,24 @@ function [meshIntp, datesIntp] = interptemporal(dates, mesh, timeStep, intpMthd,
         meshIntp = mesh;
     else
         meshFlat = reshape(mesh, [], numel(dates)).';
+
         if ismember(intpMthd, {'pchip', 'spline', 'makima'})
             % These methods discard NaNs and error on series with fewer than
             % two remaining samples. Such series have no values to interpolate.
             canInterpolate = sum(~isnan(meshFlat), 1) >= 2;
             values = nan(numel(datesIntp), size(meshFlat, 2), 'like', meshFlat);
+
             if any(canInterpolate)
                 interpolated = interp1(dates, meshFlat(:, canInterpolate), datesIntp, intpMthd);
                 values(:, canInterpolate) = reshape(interpolated, numel(datesIntp), []);
             end
+
             [onNative, nativeRows] = ismember(datesIntp, dates);
             values(onNative, ~canInterpolate) = meshFlat(nativeRows(onNative), ~canInterpolate);
         else
             values = interp1(dates, meshFlat, datesIntp, intpMthd);
         end
+
         meshIntp = reshape(values.', [size(mesh, 1:2), numel(datesIntp)]);
     end
 
