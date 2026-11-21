@@ -104,6 +104,7 @@ function [gmsl, dates] = steric2gmsl(product, component, depth, options)
     if numel(component) ~= numel(depth)
         error('ULMO:steric2gmsl:PairCountMismatch', 'Component and depth must have the same number of elements.');
     end
+
     inPath = stericfilepath(product);
 
     if ~isfile(inPath)
@@ -114,6 +115,7 @@ function [gmsl, dates] = steric2gmsl(product, component, depth, options)
 
     depth(depth == "native") = nativDepth;
     invalidDepth = find(ismember(depth, ["full-depth", "deep"]) & ~product.supportsFullDepth(), 1);
+
     if ~isempty(invalidDepth)
         error('ULMO:steric2gmsl:UnsupportedField', ...
             'Product %s does not supply Depth=%s.', char(product), depth(invalidDepth));
@@ -131,6 +133,7 @@ function [gmsl, dates] = steric2gmsl(product, component, depth, options)
     [~, iDepth] = ismember(depth(:), depths);
     pairs = sub2ind(size(supported), iComp, iDepth);
     unsupported = find(~supported(pairs), 1);
+
     if ~isempty(unsupported)
         error('ULMO:steric2gmsl:UnsupportedField', ...
             'Product %s does not supply Component=%s, Depth=%s.', ...
@@ -176,13 +179,16 @@ function [gmsl, dates] = steric2gmsl(product, component, depth, options)
 
     % Derive each requested difference from the finished native means.
     gmsl = zeros(numel(dates), numel(pairs));
+
     for iPair = 1:numel(pairs)
+
         if iComp(iPair) > 3
             gmsl(:, iPair) = double(means.(meanNames(1, iDepth(iPair)))) - ...
                 double(means.(meanNames(iComp(iPair) - 2, iDepth(iPair))));
         else
             gmsl(:, iPair) = double(means.(meanNames(iComp(iPair), iDepth(iPair))));
         end
+
     end
 
     if options.Unit == "mm"

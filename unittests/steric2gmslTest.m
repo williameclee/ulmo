@@ -228,7 +228,7 @@ classdef steric2gmslTest < matlab.unittest.TestCase
             testCase.writeNative;
             before = testCase.fileBytes;
             testCase.verifyError(@() steric2gmsl('EN4c14', ["thermosteric", "thermosteric"], ["full-depth", "deep"]), ...
-                'ULMO:steric2gmsl:UnsupportedField');
+            'ULMO:steric2gmsl:UnsupportedField');
             testCase.verifyEqual(testCase.fileBytes, before);
             actual = steric2gmsl('EN4c14', "thermosteric", BeQuiet = true);
             testCase.verifyEqual(actual, 11 + 3 * (0:4)', AbsTol = 1e-12);
@@ -366,7 +366,7 @@ classdef steric2gmslTest < matlab.unittest.TestCase
         function nearlyUniformLatitudeRetainsCosineWeights(testCase)
             % Coordinate rounding below the spacing tolerance retains the
             % existing uniform-grid convention, including at the outer rows.
-            lats = [-60; 0; 60 + 1e-5];
+            lats = [-60; 0; 60 +1e-5];
             rowVals = [1; 5; 13];
             testCase.data = struct('lon', [0, 90, 180, 270], 'lat', lats, ...
                 'dates', testCase.data.dates, 'stericSl', repmat(rowVals, 1, 4, 5));
