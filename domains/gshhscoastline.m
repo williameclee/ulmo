@@ -1,7 +1,7 @@
-%% GSHHSCOASTLINE Retrieves the GSHHS coastline data and formats it
+%% GSHHSCOASTLINE - Retrieves the GSHHS coastline data and formats it.
 %
 % Last modified
-%   2026/09/25, williameclee@arizona.edu (@williameclee)
+%   2026/11/09, En-Chi Lee (williameclee@gmail.com)
 
 function varargout = gshhscoastline(varargin)
     %% Initialisation
@@ -21,8 +21,8 @@ function varargout = gshhscoastline(varargin)
         load(gshhsFileName, vars{:})
 
         if ~beQuiet
-            fprintf('[ULMO>%s] Loaded <a href="matlab: fprintf(''%s\\n'');open(''%s'')">GSHHS coastline data</a>.\n', ...
-                callchaintext(callChain), gshhsFileName, gshhsFileName);
+            fprintf('[ULMO>%s] Loaded %s.\n', ...
+                callchaintext(callChain), filehref(gshhsFileName, 'GSHHS coastline data'));
         end
 
     else
@@ -57,16 +57,16 @@ function varargout = gshhscoastline(varargin)
                 save(gshhsFileName, vars{:}, '-append')
 
                 if ~beQuiet
-                    fprintf('[ULMO>%s] Updated <a href="matlab: fprintf(''%s\\n'');open(''%s'')">GSHHS coastline data</a>.\n', ...
-                        callchaintext(callChain), gshhsFileName, gshhsFileName);
+                    fprintf('[ULMO>%s] Updated %s.\n', ...
+                        callchaintext(callChain), filehref(gshhsFileName, 'GSHHS coastline data'));
                 end
 
             else
                 save(gshhsFileName, vars{:})
 
                 if ~beQuiet
-                    fprintf('[ULMO>%s] Saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">GSHHS coastline data</a>.\n', ...
-                        callchaintext(callChain), gshhsFileName, gshhsFileName);
+                    fprintf('[ULMO>%s] Saved %s.\n', ...
+                        callchaintext(callChain), filehref(gshhsFileName, 'GSHHS coastline data'));
                 end
 
             end
@@ -151,14 +151,17 @@ function varargout = parseinputs(inputArguments)
          forcenew, saveData, beQuiet, callChain};
 end
 
+%% Subfunctions
 function p = croptolims(p, latlim, lonlim, lonOrigin)
     %% Shifting
     XY = poly2xy(p);
     [Y, X] = ...
         flatearthpoly(XY(:, 2), XY(:, 1), lonOrigin);
+
     while max(X) <= min(lonlim)
         X = X + 360;
     end
+
     p = polyshape([X, Y]);
 
     %% Cropping

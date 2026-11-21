@@ -3,10 +3,10 @@
 % Syntax
 %   outPath = STERICFILEPATH(product)
 %   outPath = STERICFILEPATH(product, timeStep, meshSize, lonOrigin, ...
-%       intpMthd, truncBeforeIntp, timelim, component)
+%       intpMthd)
 %
 % Input arguments
-%   product - Product name.
+%   product - Prepared product identifier accepted by StericProduct.
 %   timeStep (optional) - Temporal cache selector.
 %       Positive numeric scalar or duration, 'midmonth', or 'GRACE'.
 %       Numeric steps use the MATLAB %d format. Duration steps use their
@@ -21,15 +21,7 @@
 %       Default centre: [] (no origin suffix).
 %   intpMthd (optional) - Interpolation method.
 %       Used only when a temporal or spatial selector is supplied.
-%       Default method: "" (empty text).
-%   truncBeforeIntp (optional) - Whether to include timelim in the filename.
-%       Default flag: false.
-%   timelim (optional) - Datetime or datenum limits.
-%       Size: (1, 2) or (2, 1), or empty.
-%       Unit: days for datenum values.
-%       Default limits: [] (no time-range suffix).
-%   component (optional) - Component suffix, including its leading hyphen.
-%       Default suffix: '' (empty text).
+%       Default method: "".
 %
 % Output arguments
 %   outPath - MAT file path under the product folder in IFILES/STERIC.
@@ -39,19 +31,19 @@
 %
 % Created by
 %   2026/11/08, En-Chi Lee (williameclee@gmail.com)
+%
+% Last modified
+%   2026/11/20, En-Chi Lee (williameclee@gmail.com)
 
 function outPath = stericfilepath( ...
-        product, timeStep, meshSize, lonOrigin, intpMthd, truncBeforeIntp, timelim, component)
+        product, timeStep, meshSize, lonOrigin, intpMthd)
 
     arguments (Input)
         product StericProduct {mustBeScalarOrEmpty}
         timeStep {mustBeTimeStep} = []
         meshSize {mustBePositive} = []
         lonOrigin {mustBeFinite, mustBeReal} = []
-        intpMthd {mustBeTextScalar} = ""
-        truncBeforeIntp (1, 1) {mustBeNumericOrLogical} = false
-        timelim {mustBeTimeRange} = []
-        component (1, :) char = ''
+        intpMthd (1, 1) string = ""
     end
 
     outFolder = fullfile(getenv("IFILES"), 'STERIC', char(product));
@@ -94,25 +86,8 @@ function outPath = stericfilepath( ...
         intpMethodStr = sprintf('-%s', lower(intpMthd));
     end
 
-    timelimStr = '';
-
-    if truncBeforeIntp && ~isempty(timelim)
-
-        if isnumeric(timelim)
-            timelim = datetime(timelim, 'ConvertFrom', 'datenum');
-        end
-
-        timeFmt = 'yyyyMMdd';
-
-        if any(timeofday(timelim) ~= 0)
-            timeFmt = 'yyyyMMdd''T''HHmmssSSSSSSSSS';
-        end
-
-        timelimStr = sprintf('-%s_%s', string(timelim(1), timeFmt), string(timelim(2), timeFmt));
-    end
-
-    outFile = sprintf('%s-StericSeaLevel%s%s%s%s%s.mat', ...
-        product, timeStepStr, spaceIntpStr, intpMethodStr, timelimStr, component);
+    outFile = sprintf('%s-StericSeaLevel%s%s%s.mat', ...
+        product, timeStepStr, spaceIntpStr, intpMethodStr);
 
     outPath = fullfile(outFolder, outFile);
 end
