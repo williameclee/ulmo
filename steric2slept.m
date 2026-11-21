@@ -114,6 +114,11 @@
 % Notes
 %   For timefirst, caller correction is c - h * constSlept.'; traditional
 %   uses c - constSlept * h.
+%   On the native grid, absent deep-ocean contributions are filled before
+%   temporal processing using the same validity masks as STERIC2LONLATT.
+%   A missing observation in a cell with deep-ocean coverage remains missing
+%   at that step. Refresh projection caches after changing the source grids
+%   or the validity convention.
 %
 % See also
 %   steric2lonlatt, steric2gmsl
@@ -324,34 +329,19 @@ end
 
 %% PREPAREGMSL - Loads and temporally processes the native GMSLs.
 % Obtain every diagnostic through the public native-GMSL interface.
-% A saved forced call refreshes all means; later calls reuse that set.
-% Unsaved forced calls must each bypass the existing native cache.
 function [means, meanDates, nativeDates] = prepareGmsl( ...
         product, timestep, options, schema)
     means = struct();
-    firstMean = true;
     fieldSupported = schema.supported;
     fieldSupported(4:5, :) = false;
-
-    % Get the GMSLs
-    for iField = find(fieldSupported(:)).'
-        [iComp, iDepth] = ind2sub(size(schema.supported), iField);
-        % Temporary patch: We have to query STERIC2GMSL once per field, but
-        % they are all recalculated and saved when the first time series is
-        % requested
-        forceNewGmsl = options.ForceNew && (firstMean || ~options.SaveData);
-        [nativGmsl, nativeDates] = steric2gmsl(product, ...
-            schema.components(iComp), schema.depths(iDepth), ...
-            ForceNew = forceNewGmsl, SaveData = options.SaveData, BeQuiet = options.BeQuiet);
-        means.(schema.meanNames(iField)) = nativGmsl;
-        firstMean = false;
-    end
-
-    % Interpolate the GMSLs
-    meanNames = fieldnames(means);
+    [meanComponents, meanDepths] = find(fieldSupported);
+    meanNames = cellstr(schema.meanNames(fieldSupported));
+    [nativeGmsl, nativeDates] = steric2gmsl(product, ...
+        schema.components(meanComponents), schema.depths(meanDepths), ...
+        ForceNew = options.ForceNew, SaveData = options.SaveData, BeQuiet = options.BeQuiet);
 
     for iField = 1:numel(meanNames)
-        means.(meanNames{iField}) = reshape(means.(meanNames{iField}), 1, 1, []);
+        means.(meanNames{iField}) = reshape(nativeGmsl(:, iField), 1, 1, []);
     end
 
     [means, meanDates] = processfieldtime(means, nativeDates, timestep, options.Interpolation, []);
@@ -381,7 +371,10 @@ function [fields, dates, lon, lat] = prepareGriddedFields( ...
     lon = data.lon(:);
     lat = data.lat(:);
     data = rmfield(data, {'lon', 'lat'}); % Remove since they can't be interpolated
-    data = fillAbsentDeepSteric(data, schema);
+    if any(schema.split)
+        data = maskstericgrids(data, schema, numel(nativeDates));
+    end
+
     [data, dates] = processfieldtime(data, nativeDates, timestep, options.Interpolation, []);
 
     % Compute the residual fields
@@ -408,29 +401,6 @@ function [fields, dates, lon, lat] = prepareGriddedFields( ...
         end
 
         fields.(replace(fieldNames(iField), 'Sl', 'Slept')) = stericSl;
-    end
-
-end
-
-%% FILLABSENTDEEPSTERIC - Fills absent deep-ocean steric contributions with zero.
-% A grid cell within the ocean domain can have the deep steric sea level
-% marked as invalid because the cell is in shallow water. However, these
-% cells should be interpreted as having 0 contribution to deep steric sea
-% level instead of being marked as invalid.
-function data = fillAbsentDeepSteric(data, schema)
-    % Loop through all components that supports splitting into the upper-
-    % and deep-ocean fields
-    for iComp = find(schema.split).'
-        full = data.(schema.gridNames(iComp, 1));
-        upper = data.(schema.gridNames(iComp, 2));
-        deep = data.(schema.gridNames(iComp, 3));
-        % If a cell has valid values in both the full-depth and upper-ocean
-        % field but not in the deep-ocean field, this cell is in shallow
-        % water and contributes 0 to the deep-ocean steric sea levels.
-        validMask = isfinite(full) & isfinite(upper);
-        deep(~validMask) = NaN;
-        deep(validMask & isnan(deep)) = 0;
-        data.(schema.gridNames(iComp, 3)) = deep;
     end
 
 end

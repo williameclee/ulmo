@@ -336,17 +336,7 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
             [data, coord] = preparegrid(data, coord, meshsize, lonOrigin, spatialIntpMthd, options.BeQuiet, callChain);
         end
 
-        masks = stericcoverage(data, gridNames, schema.available, numel(coord.dates));
-
-        if any(schema.split)
-
-            for iSplit = find(schema.split)'
-                fields = gridNames(iSplit, :);
-                data.(fields(3)) = fillabsentdeepsteric( ...
-                    data.(fields(1)), data.(fields(2)), data.(fields(3)), masks.oceanMask, masks.deepOceanMask);
-            end
-
-        end
+        [data, masks] = maskstericgrids(data, schema, numel(coord.dates));
 
         if ~regrid || useMean
             [data, coord.dates] = processfieldtime(data, coord.dates, timestep, intpMthd, []);

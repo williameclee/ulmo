@@ -96,6 +96,7 @@ classdef steric2sleptTest < matlab.unittest.TestCase
             t.Data.shallowStericSl(3, 3, 3:8) = NaN;
             t.Data.stericSl(3, 3, 3:8) = NaN;
             t.Data.deepStericSl(3, 3, 3:8) = NaN;
+            t.Data.deepStericSl(4, 2, 2:5) = NaN;
             t.writeNative;
             step = temporal{1}; method = temporal{2};
             args = {'EN4c14', t.Polygon, 1, step};
@@ -234,8 +235,8 @@ classdef steric2sleptTest < matlab.unittest.TestCase
             t.verifyEqual(snapshot(t.Folder), original);
         end
 
-        function missingDeepUsesZeroWithoutReconstruction(t)
-            % Zero filling cannot repair an inconsistent full/shallow split.
+        function intermittentDeepObservationsRemainMissing(t)
+            % Missing observations at a cell with deep coverage leave the fit.
             [x, y] = meshgrid(t.Data.lon, t.Data.lat);
             extra = 2 * cosd(2 * x) .* cosd(y) .^ 2;
             t.Data.deepStericSl = t.Data.deepStericSl + extra;
@@ -248,27 +249,28 @@ classdef steric2sleptTest < matlab.unittest.TestCase
             [deep, ~] = steric2slept(args{:}, truncation = 4, Depth = 'deep', BeQuiet = 1);
             deepFit = readCachedFit(t.cachePath, "deepStericSlept");
             shallow = steric2slept(args{:}, truncation = 4, Depth = 'shallow', BeQuiet = 1);
-            t.verifyEqual(fullFit.nObs, deepFit.nObs);
-            t.verifyGreaterThan(norm(full(1, :) - shallow(1, :) - deep(1, :)), 0.01);
+            t.verifyLessThan(deepFit.nObs(1:5), fullFit.nObs(1:5));
+            t.verifyEqual(deepFit.nObs(6:end), fullFit.nObs(6:end));
             t.verifyEqual(full(6:end, :), shallow(6:end, :) + deep(6:end, :), AbsTol = 1e-10);
             t.verifyEqual(constant, basis{1}(1, :).');
-            [grid, ~, ~, lon, lat] = steric2lonlatt('EN4c14', Depth = 'deep', OutputFormat = 'ndgrid', BeQuiet = 1);
-            grid(1:2, 2:4, 1:5) = 0;
+            [grid, ~, ~, lon, lat] = steric2lonlatt('EN4c14', Depth = 'deep', ...
+                OutputFormat = 'ndgrid', SaveData = false, BeQuiet = 1);
+            t.verifyTrue(all(isnan(grid(1:2, 2:4, 1:5)), 'all'));
             t.verifyEqual(deep, t.fitReference(grid, lon, lat, basis), AbsTol = 1e-10);
         end
 
         function absentDeepLayersCloseBeforeAveraging(t)
-            % An absent contribution during part of a month must enter its mean
-            % as zero, rather than be omitted from the temporal denominator.
+            % Cells that never have deep coverage contribute zero before
+            % monthly averaging and retain the same fit cells as full depth.
             schema = stericfieldschema(whos('-file', t.NativePath));
 
             for iType = 1:3
                 deepName = schema.gridNames(iType, 3);
                 shallowName = schema.gridNames(iType, 2);
                 fullName = schema.gridNames(iType, 1);
-                t.Data.(deepName)(2:4, 1:2, 1:10) = 0;
+                t.Data.(deepName)(2:4, 1:2, :) = 0;
                 t.Data.(fullName) = t.Data.(shallowName) + t.Data.(deepName);
-                t.Data.(deepName)(2:4, 1:2, 1:10) = NaN;
+                t.Data.(deepName)(2:4, 1:2, :) = NaN;
             end
 
             t.writeNative;
@@ -289,26 +291,26 @@ classdef steric2sleptTest < matlab.unittest.TestCase
             end
 
             % An independent temporal mean of the physically zero-filled deep grid.
-            reference = t.Data.deepStericSl; reference(2:4, 1:2, 1:10) = 0;
+            reference = t.Data.deepStericSl; reference(2:4, 1:2, :) = 0;
             reference = cat(3, mean(reference(:, :, 1:31), 3), mean(reference(:, :, 32:60), 3));
             reference = permute(reference, [2 1 3]);
             actual = steric2slept(args{:}, Depth = 'deep', truncation = 4, BeQuiet = 1);
             t.verifyEqual(actual, t.fitReference(reference, t.Data.lon, t.Data.lat, basis), AbsTol = 1e-10);
-            % Filling is a projection convention; the supplied grids remain intact.
+            % The supplied grids remain intact after fitting.
             stored = load(t.NativePath, 'deepStericSl');
             t.verifyEqual(stored.deepStericSl, t.Data.deepStericSl);
         end
 
-        function deepFitsUsePairedUpperSupport(t)
-            % Preserve full/shallow observations and exclude unmatched deep cells.
+        function deepFitsPreserveObservedDeepValues(t)
+            % A supplied deep observation can enter the fit even when a
+            % full-depth or upper-ocean observation is missing that epoch.
             t.Data.stericSl(2, 2, 1:5) = NaN;
             t.Data.shallowStericSl(3, 3, 1:5) = NaN;
             t.writeNative;
             [actual, ~, basis] = steric2slept('EN4c14', t.Polygon, 1, truncation = 4, Depth = 'deep', BeQuiet = 1);
             fit = readCachedFit(t.cachePath, "deepStericSlept");
-            expectedGrid = t.Data.deepStericSl;
-            expectedGrid(2, 2, 1:5) = NaN; expectedGrid(3, 3, 1:5) = NaN;
-            [expected, expectedFit] = t.fitReference(permute(expectedGrid, [2 1 3]), t.Data.lon, t.Data.lat, basis);
+            expectedGrid = permute(t.Data.deepStericSl, [2 1 3]);
+            [expected, expectedFit] = t.fitReference(expectedGrid, t.Data.lon, t.Data.lat, basis);
             t.verifyEqual(actual, expected, AbsTol = 1e-10);
             t.verifyEqual(fit.nObs, expectedFit.nObs(:));
         end
