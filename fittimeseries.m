@@ -1,4 +1,4 @@
-%% FITTIMESERIES - Fits a polynomial and periodic terms to time series sharing a time axis.
+%% FITTIMESERIES - Fits polynomial, periodic and jump terms to time series sharing a time axis.
 % Each series is fitted independently by ordinary or weighted least squares.
 % The polynomial can be returned as coefficients or interval-average
 % derivatives, with associated standard errors.
@@ -8,6 +8,8 @@
 %   [polys, harmons, xFit] = fittimeseries(t, x, sigma, p, periods)
 %   [polys, harmons, xFit, polySigmas, harmonSigmas] = fittimeseries(__)
 %   [polys, harmons, xFit, polySigmas, harmonSigmas, polyCovariances] = fittimeseries(__)
+%   [polys, harmons, xFit, polySigmas, harmonSigmas, polyCovariances, ...
+%       jumps, jumpSigmas] = fittimeseries(__, JumpTimes=eventTimes)
 %   [__] = fittimeseries(__, "Name", Value)
 %
 % Input arguments
@@ -46,6 +48,14 @@
 %       The default value is [], for no periodic terms.
 %       Data type: NUMERIC | DURATION
 %       Dimension: [] | [K x 1] | [1 x K]
+%   JumpTimes (name-value) - Times of prescribed permanent jumps
+%       Each event adds a step equal to double(t >= eventTime). Events must
+%       be finite, distinct and use the same time type and units as t.
+%       Datetimes use the same reference as t; durations convert to years.
+%       Input event order is preserved. All terms are fitted jointly.
+%       Default value: [], for no jumps.
+%       Data type: NUMERIC | DATETIME | DURATION (matching t)
+%       Dimension: [] | [E x 1] | [1 x E]
 %   PeriodicFormat (name-value) - Representation of the harmonic outputs
 %       - "cos-sin": cosine and sine coefficients (default).
 %       - "sin-cos": sine and cosine coefficients.
@@ -60,8 +70,8 @@
 %       This option does not change the fitted model or reconstruction.
 %       Data type: STRING | CHAR
 %   Reconstruction (name-value) - Components included in xFit
-%       - "includeharmonics": polynomial and periodic terms (default).
-%       - "omitharmonics": polynomial component only.
+%       - "includeharmonics": polynomial, periodic and jump terms (default).
+%       - "omitharmonics": polynomial and jump terms.
 %       - "onlyharmonics": periodic terms only; zero at valid times when
 %           periods is empty, and NaN at nonfinite times.
 %       All components are still included in the fit regardless of which
@@ -128,11 +138,23 @@
 %       Dimension: [p+1 x p+1 x M]; scaled by residual variance like polySigmas.
 %       Data type: DOUBLE
 %
+%   jumps - Signed permanent step amplitudes
+%       Rows follow JumpTimes order; columns follow the input series order,
+%       independently of x orientation. With no jumps, has zero event rows.
+%       Unit: same as x
+%       Data type: DOUBLE
+%       Dimension: [E x M]
+%   jumpSigmas - Standard errors of jumps from the joint coefficient covariance
+%       The units and dimensions are the same as jumps.
+%       Data type: DOUBLE
+%
 % Notes
-%   N is the number of input times, M the number of series, and K the number
-%   of harmonic periods. Invalid times and nonfinite observations are
-%   excluded from each fit. Each series must retain more than p+1+2*K
-%   observations; reliable coefficient estimates also require full rank.
+%   N is the number of input times, M the number of series, K the number
+%   of harmonic periods, and E the number of events. Invalid times and
+%   nonfinite observations are excluded from each fit. Each series must
+%   retain more than p+1+2*K+E
+%   observations. With jumps, each selected design must have full rank,
+%   including usable observations before and at/after every event.
 %   Coefficient covariance is scaled by residual variance, using the
 %   residual degrees of freedom. Weighted fits use weighted residual
 %   variance, so supplied sigma values act as relative uncertainty weights.
@@ -146,9 +168,9 @@
 %   2025/06/03, En-Chi Lee (williameclee@arizona.edu)
 %
 % Last modified by
-%   2026/10/02, En-Chi Lee (williameclee@arizona.edu)
+%   2026/11/12, En-Chi Lee (williameclee@arizona.edu)
 
-function [polys, harmons, xFit, polySigmas, harmonSigmas, polyCovs] = ...
+function [polys, harmons, xFit, polySigmas, harmonSigmas, polyCovs, jumps, jumpSigmas] = ...
         fittimeseries(t, x, sigma, p, periods, options)
 
     arguments (Input)
@@ -157,6 +179,7 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas, polyCovs] = ...
         sigma {mustBeNumeric, mustBeReal, mustBeMatrix} = []
         p (1, 1) double {mustBeInteger, mustBeNonnegative} = 2
         periods {mustBeA(periods, {'numeric', 'duration'}), mustBeVectorOrEmpty} = []
+        options.JumpTimes {mustBeCompatibleJumpTimes(options.JumpTimes, t)} = []
         options.PeriodicFormat (1, 1) string ...
             {mustBeMember(options.PeriodicFormat, ["sin-cos", "cos-sin", "amp-phase"])} ...
             = "cos-sin"
@@ -178,6 +201,8 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas, polyCovs] = ...
         polySigmas (:, :) {mustBeNumeric}
         harmonSigmas {mustBeNumeric}
         polyCovs {mustBeNumeric}
+        jumps (:, :) {mustBeNumeric}
+        jumpSigmas (:, :) {mustBeNumeric}
     end
 
     %% Input sanitisation
@@ -209,6 +234,8 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas, polyCovs] = ...
 
     fitRange = options.FitRange(:);
     avgRange = options.AverageRange(:);
+    jumpTimes = options.JumpTimes(:).';
+    if isempty(jumpTimes), jumpTimes = []; end
 
     isTime = isdatetime(t);
 
@@ -223,10 +250,12 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas, polyCovs] = ...
         t = years(t - tRef);
         fitRange = years(fitRange - tRef);
         avgRange = years(avgRange - tRef);
+        if ~isempty(jumpTimes), jumpTimes = years(jumpTimes - tRef); end
     elseif isduration(t)
         t = years(t);
         fitRange = years(fitRange);
         avgRange = years(avgRange);
+        if ~isempty(jumpTimes), jumpTimes = years(jumpTimes); end
     else
 
         if ~isreal(t)
@@ -236,6 +265,13 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas, polyCovs] = ...
         t = double(t);
         fitRange = double(fitRange);
         avgRange = double(avgRange);
+    end
+
+    jumpTimes = double(jumpTimes);
+
+    if any(~isfinite(jumpTimes)) || numel(unique(jumpTimes)) ~= numel(jumpTimes)
+        error('ULMO:fittimeseries:InvalidJumpTimes', ...
+            'JumpTimes must contain finite, distinct event times.');
     end
 
     if isduration(periods)
@@ -266,6 +302,8 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas, polyCovs] = ...
 
     harmons = nan(numel(periods), 2, nSeries);
     harmonSigmas = harmons;
+    jumps = nan(numel(jumpTimes), nSeries);
+    jumpSigmas = jumps;
     xFit = nan(size(x));
 
     %% Fitting
@@ -278,7 +316,7 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas, polyCovs] = ...
             sigma_tofit = sigma(isValid, iSeries);
         end
 
-        nMinValids = p + 1 + 2 * numel(periods);
+        nMinValids = p + 1 + 2 * numel(periods) + numel(jumpTimes);
 
         if nnz(isValid) <= nMinValids
             error('ULMO:fittimeseries:InsufficientData', ...
@@ -288,10 +326,11 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas, polyCovs] = ...
         end
 
         [polys(:, iSeries), harmons(:, :, iSeries), xFit(:, iSeries), ...
-             polySigmas(:, iSeries), harmonSigmas(:, :, iSeries), polyCovs(:, :, iSeries)] = ...
+             polySigmas(:, iSeries), harmonSigmas(:, :, iSeries), polyCovs(:, :, iSeries), ...
+             jumps(:, iSeries), jumpSigmas(:, iSeries)] = ...
             fitsingleseries( ...
             t(isValid), x(isValid, iSeries), sigma_tofit, p, periods, ...
-            options.PeriodicFormat, isTime, t, options.Reconstruction, polyTrans);
+            options.PeriodicFormat, isTime, t, options.Reconstruction, polyTrans, jumpTimes, iSeries);
     end
 
     if isTrans
@@ -316,16 +355,32 @@ function [data, transposed] = normalisedata(data, nTimes, name)
 
 end
 
-function [polys, harmons, xFit, polySigmas, harmonSigmas, polyCov] = ...
-        fitsingleseries(t, x, sigma, p, periods, harmonFmt, isTime, tFit, fitMethod, polyTrans)
+function [polys, harmons, xFit, polySigmas, harmonSigmas, polyCov, jumps, jumpSigmas] = ...
+        fitsingleseries(t, x, sigma, p, periods, harmonFmt, isTime, tFit, fitMethod, polyTrans, jumpTimes, iSeries)
     %% Fitting
     N = numel(t);
-    X = zeros([N, p + 1 + 2 * numel(periods)]);
-    X(:, 1:p + 1) = t .^ (0:p);
+    polyIndices = 1:p + 1;
+    harmonIndices = p + 1 + (1:2 * numel(periods));
+    jumpIndices = p + 1 + 2 * numel(periods) + (1:numel(jumpTimes));
+    X = zeros([N, p + 1 + 2 * numel(periods) + numel(jumpTimes)]);
+    X(:, polyIndices) = t .^ (0:p);
 
-    for i = 1:numel(periods)
-        X(:, p + 1 + (i - 1) * 2 + [1, 2]) = ...
-            [cos(2 * pi * t / periods(i)), sin(2 * pi * t / periods(i))];
+    for iPeriod = 1:numel(periods)
+        X(:, p + 1 + (iPeriod - 1) * 2 + [1, 2]) = ...
+            [cos(2 * pi * t / periods(iPeriod)), sin(2 * pi * t / periods(iPeriod))];
+    end
+
+    if ~isempty(jumpTimes)
+        X(:, jumpIndices) = double(t >= jumpTimes);
+        % Scale columns so differing polynomial units do not dominate rank.
+        columnScales = max(abs(X), [], 1);
+        columnScales(columnScales == 0) = 1;
+
+        if rank(X ./ columnScales) < size(X, 2)
+            error('ULMO:fittimeseries:RankDeficient', ...
+                ['Series %d has an unidentifiable design after data selection. ', ...
+                 'Jumps need observations on both sides and independent model columns.'], iSeries);
+        end
     end
 
     if ~isempty(sigma)
@@ -344,9 +399,11 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas, polyCov] = ...
         coeffSigmas = sqrt(diag(cov_matrix));
     end
 
-    polyCov = cov_matrix(1:p + 1, 1:p + 1);
-    polys = coeffs(1:p + 1);
-    polySigmas = coeffSigmas(1:p + 1);
+    polyCov = cov_matrix(polyIndices, polyIndices);
+    polys = coeffs(polyIndices);
+    polySigmas = coeffSigmas(polyIndices);
+    jumps = coeffs(jumpIndices);
+    jumpSigmas = coeffSigmas(jumpIndices);
 
     if ~isempty(polyTrans)
         polys = polyTrans * polys;
@@ -355,8 +412,8 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas, polyCov] = ...
         polySigmas = sqrt(max(diag(polyCov), 0));
     end
 
-    harmons = coeffs(p + 2:end);
-    harmonSigmas = coeffSigmas(p + 2:end);
+    harmons = coeffs(harmonIndices);
+    harmonSigmas = coeffSigmas(harmonIndices);
 
     harmons = reshape(harmons, [2, numel(periods)])';
     harmonSigmas = reshape(harmonSigmas, [2, numel(periods)])';
@@ -370,15 +427,15 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas, polyCov] = ...
         harmons = nan(nPeriods, 2);
         harmonSigmas = nan(nPeriods, 2);
 
-        for k = 1:nPeriods
+        for iPeriod = 1:nPeriods
             % Indices in the original coefficient vector and full covariance.
-            idx = p + 1 + 2 * (k - 1) + [1, 2];
+            idx = harmonIndices(2 * (iPeriod - 1) + [1, 2]);
             c = coeffs(idx(1));
             s = coeffs(idx(2));
             Ccs = cov_matrix(idx, idx);
 
             A = hypot(c, s);
-            harmons(k, 1) = A;
+            harmons(iPeriod, 1) = A;
 
             % At zero amplitude, phase and this linearisation are undefined.
             if A == 0
@@ -395,17 +452,17 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas, polyCov] = ...
 
             % Phase in days for datetime input, otherwise in radians.
             if isTime
-                phaseScale = days(years(periods(k))) / (2 * pi);
+                phaseScale = days(years(periods(iPeriod))) / (2 * pi);
                 phi = phi * phaseScale;
 
                 D = diag([1, phaseScale]);
                 Cap = D * Cap * D.';
             end
 
-            harmons(k, :) = [A, phi];
+            harmons(iPeriod, :) = [A, phi];
 
             % Clamp tiny negative variances caused by roundoff.
-            harmonSigmas(k, :) = sqrt(max(diag(Cap), 0)).';
+            harmonSigmas(iPeriod, :) = sqrt(max(diag(Cap), 0)).';
         end
 
     end
@@ -416,29 +473,48 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas, polyCov] = ...
     if strcmpi(fitMethod, "onlyharmonics")
         X = zeros(N, 2 * numel(periods));
 
-        for i = 1:numel(periods)
-            X(:, (i - 1) * 2 + [1, 2]) = ...
-                [cos(2 * pi * tFit / periods(i)), sin(2 * pi * tFit / periods(i))];
+        for iPeriod = 1:numel(periods)
+            X(:, (iPeriod - 1) * 2 + [1, 2]) = ...
+                [cos(2 * pi * tFit / periods(iPeriod)), sin(2 * pi * tFit / periods(iPeriod))];
         end
 
-        xFit = X * coeffs(p + 2:end);
+        xFit = X * coeffs(harmonIndices);
         xFit(~isfinite(tFit)) = NaN;
         return
     elseif strcmpi(fitMethod, "omitharmonics")
         X = zeros([N, p + 1]);
         X(:, 1:p + 1) = tFit .^ (0:p);
+        reconstructionIndices = polyIndices;
     else
         X = zeros([N, p + 1 + 2 * numel(periods)]);
         X(:, 1:p + 1) = tFit .^ (0:p);
 
-        for i = 1:numel(periods)
-            X(:, p + 1 + (i - 1) * 2 + [1, 2]) = ...
-                [cos(2 * pi * tFit / periods(i)), sin(2 * pi * tFit / periods(i))];
+        for iPeriod = 1:numel(periods)
+            X(:, p + 1 + (iPeriod - 1) * 2 + [1, 2]) = ...
+                [cos(2 * pi * tFit / periods(iPeriod)), sin(2 * pi * tFit / periods(iPeriod))];
         end
 
+        reconstructionIndices = [polyIndices, harmonIndices];
     end
 
-    xFit = X * coeffs(1:size(X, 2));
+    if ~isempty(jumpTimes)
+        X = [X, double(tFit >= jumpTimes)];
+    end
+    xFit = X * coeffs([reconstructionIndices, jumpIndices]);
+end
+
+function mustBeCompatibleJumpTimes(value, t)
+    validType = isnumeric(value) || isdatetime(value) || isduration(value);
+    sameType = (isnumeric(t) && isnumeric(value)) ...
+        || (isdatetime(t) && isdatetime(value)) ...
+        || (isduration(t) && isduration(value));
+
+    if ~validType || (~isempty(value) && (~sameType || ~isvector(value))) ...
+            || (isnumeric(value) && ~isreal(value))
+        error('ULMO:fittimeseries:InvalidJumpTimes', ...
+            'JumpTimes must be a real vector of the same time type as t, or empty.');
+    end
+
 end
 
 function mustBeVectorOrEmpty(value)
