@@ -369,7 +369,7 @@ classdef steric2gmslTest < matlab.unittest.TestCase
         function nearlyUniformLatitudeRetainsCosineWeights(testCase)
             % Coordinate rounding below the spacing tolerance retains the
             % existing uniform-grid convention, including at the outer rows.
-            lats = [-60; 0; 60 +1e-5];
+            lats = [-60; 0; 60 + 1e-5];
             rowVals = [1; 5; 13];
             testCase.data = struct('lon', [0, 90, 180, 270], 'lat', lats, ...
                 'dates', testCase.data.dates, 'stericSl', repmat(rowVals, 1, 4, 5));
