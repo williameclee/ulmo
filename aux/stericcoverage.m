@@ -24,6 +24,7 @@
 function masks = stericcoverage(source, gridNames, available, nDates)
     masks = struct();
     inMemory = isstruct(source);
+
     if ~inMemory
         sourcePath = source.Properties.Source;
         usePartialReads = H5F.is_hdf5(sourcePath);
@@ -38,25 +39,31 @@ function masks = stericcoverage(source, gridNames, available, nDates)
         covered = false;
 
         for name = fieldNames(:)'
+
             if inMemory
                 covered = covered | any(isfinite(source.(name)), 3);
             elseif usePartialReads
                 % Read bounded blocks rather than retaining whole records for GMSL.
                 blockSize = 12;
+
                 for firstDate = 1:blockSize:nDates
                     lastDate = min(firstDate + blockSize - 1, nDates);
                     block = source.(char(name))(:, :, firstDate:lastDate);
                     covered = covered | any(isfinite(block), 3);
                 end
+
             else
                 % Older MAT formats cannot read parts of a variable efficiently.
                 field = load(sourcePath, char(name));
                 covered = covered | any(isfinite(field.(name)), 3);
             end
+
         end
 
         if ~isempty(fieldNames)
             masks.(maskNames(iMask)) = covered;
         end
+
     end
+
 end

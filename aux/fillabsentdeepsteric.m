@@ -1,10 +1,10 @@
 %% FILLABSENTDEEPSTERIC - Fills absent deep-ocean contributions with zero.
 %
 % Syntax
-%   deep = FILLABSENTDEEPSTERIC(fullDepth, shallow, deep, oceanMask, deepOceanMask)
+%   deep = FILLABSENTDEEPSTERIC(full, shallow, deep, oceanMask, deepOceanMask)
 %
 % Input arguments
-%   fullDepth, shallow, deep - Steric grids or same-epoch grid slices.
+%   full, shallow, deep - Steric grids or same-epoch grid slices.
 %   oceanMask, deepOceanMask - Static logical grids of product coverage.
 %
 % Output arguments
@@ -18,7 +18,7 @@
 % Created by
 %   2026/11/21, En-Chi Lee (williameclee@gmail.com)
 
-function deep = fillabsentdeepsteric(fullDepth, shallow, deep, oceanMask, deepOceanMask)
+function deep = fillabsentdeepsteric(full, shallow, deep, oceanMask, deepOceanMask)
     shallowWater = oceanMask & ~deepOceanMask;
     outsideOcean = ~oceanMask;
 
@@ -26,12 +26,13 @@ function deep = fillabsentdeepsteric(fullDepth, shallow, deep, oceanMask, deepOc
         return;
     end
 
-    for iDate = 1:size(deep, 3)
-        field = deep(:, :, iDate);
-        fill = shallowWater & isfinite(fullDepth(:, :, iDate)) & ...
-            isfinite(shallow(:, :, iDate)) & isnan(field);
-        field(fill) = 0;
-        field(outsideOcean) = NaN;
-        deep(:, :, iDate) = field;
+    for iEpoch = 1:size(deep, 3)
+        deepSlice = deep(:, :, iEpoch);
+        fill = shallowWater & isfinite(full(:, :, iEpoch)) & ...
+            isfinite(shallow(:, :, iEpoch)) & isnan(deepSlice);
+        deepSlice(fill) = 0;
+        deepSlice(outsideOcean) = NaN;
+        deep(:, :, iEpoch) = deepSlice;
     end
+
 end

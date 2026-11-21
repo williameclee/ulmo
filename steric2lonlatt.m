@@ -321,6 +321,7 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
     end
 
     coord.dates = coord.dates(:);
+
     if ~isDerived && any(schema.split) && (iDepth == 3 || options.ForceNew)
         data = nativedeepfields(nativePath, schema, coord, sourceComponents, iDepth, options);
     else
@@ -343,11 +344,13 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
         masks = stericcoverage(data, gridNames, schema.available, numel(coord.dates));
 
         if any(schema.split)
+
             for iSplit = find(schema.split)'
                 fields = gridNames(iSplit, :);
                 data.(fields(3)) = fillabsentdeepsteric( ...
                     data.(fields(1)), data.(fields(2)), data.(fields(3)), masks.oceanMask, masks.deepOceanMask);
             end
+
         end
 
         if ~regrid || useMean
@@ -542,13 +545,16 @@ function data = nativedeepfields(nativePath, schema, coord, sourceComponents, iD
 
     if iDepth == 3
         data = struct();
+
         for iField = 1:numel(requestedFields)
             name = requestedFields{iField};
             data.(name) = stored.(name);
         end
+
     else
         data = load(nativePath, requestedFields{:});
     end
+
 end
 
 function savegridcache(path, data)

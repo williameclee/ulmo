@@ -204,17 +204,17 @@ function [gmsl, dates] = steric2gmsl(product, component, depth, options)
 end
 
 function gmslObj = steric2gmslCore(inPath, schema, ...
-        nDates, wghts, keepLon, transGrid, precision, nativDepthIdx)
+        nEpochs, wghts, keepLon, transGrid, precision, nativDepthIdx)
     inFileObj = matfile(inPath);
     rasterNames = schema.gridNames;
     fieldAvail = schema.available;
     meanNames = schema.meanNames;
     supported = schema.supported;
-    splitComponents = find(schema.split)';
-    fieldIndices = find(fieldAvail(:))';
+    splitComps = find(schema.split)';
+    fieldIdxs = find(fieldAvail(:))';
 
-    if ~isempty(splitComponents)
-        masks = stericcoverage(inFileObj, rasterNames, fieldAvail, nDates);
+    if ~isempty(splitComps)
+        masks = stericcoverage(inFileObj, rasterNames, fieldAvail, nEpochs);
         oceanMask = masks.oceanMask;
         deepOceanMask = masks.deepOceanMask;
 
@@ -235,29 +235,29 @@ function gmslObj = steric2gmslCore(inPath, schema, ...
     nonzeroCnt = zeros(size(wghts));
 
     % Counts which grid points have enough valid points to be used
-    for iDate = 1:nDates
-        field = readtimeslice(inFileObj, refField, iDate, keepLon, transGrid);
+    for iEpoch = 1:nEpochs
+        field = readtimeslice(inFileObj, refField, iEpoch, keepLon, transGrid);
         finiteCnt = finiteCnt + isfinite(field);
         nonzeroCnt = nonzeroCnt + (isfinite(field) & field ~= 0);
     end
 
-    support = (finiteCnt >= 0.8 * nDates) & (nonzeroCnt >= 0.8 * nDates) & wghts > 0;
-    gmsls = nan(3, 3, nDates);
+    support = (finiteCnt >= 0.8 * nEpochs) & (nonzeroCnt >= 0.8 * nEpochs) & wghts > 0;
+    gmsls = nan(3, 3, nEpochs);
 
-    for iDate = 1:nDates
+    for iEpoch = 1:nEpochs
         fields = cell(3);
         valid = support;
 
-        for iField = fieldIndices
-            fields{iField} = readtimeslice(inFileObj, rasterNames(iField), iDate, keepLon, transGrid);
+        for iField = fieldIdxs
+            fields{iField} = readtimeslice(inFileObj, rasterNames(iField), iEpoch, keepLon, transGrid);
         end
 
-        for iComp = splitComponents
+        for iComp = splitComps
             fields{iComp, 3} = fillabsentdeepsteric( ...
                 fields{iComp, 1}, fields{iComp, 2}, fields{iComp, 3}, oceanMask, deepOceanMask);
         end
 
-        for iField = fieldIndices
+        for iField = fieldIdxs
             valid = valid & isfinite(fields{iField});
         end
 
@@ -273,13 +273,13 @@ function gmslObj = steric2gmslCore(inPath, schema, ...
 
             for iDepth = find(fieldAvail(iComp, :))
                 field = fields{iComp, iDepth};
-                gmsls(iComp, iDepth, iDate) = sum(w .* field(valid));
+                gmsls(iComp, iDepth, iEpoch) = sum(w .* field(valid));
             end
 
             % If shallow and deep fields are available, make sure they sum to the full-depth value
             if all(fieldAvail(iComp, :))
-                gmsls(iComp, 1, iDate) = checkDepthPartsSumToFullDepth( ...
-                    gmsls, iComp, iDate, fields, w, valid, precision, rasterNames(iComp, 1));
+                gmsls(iComp, 1, iEpoch) = checkDepthPartsSumToFullDepth( ...
+                    gmsls, iComp, iEpoch, fields, w, valid, precision, rasterNames(iComp, 1));
             end
 
         end
