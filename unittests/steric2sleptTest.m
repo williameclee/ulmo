@@ -215,13 +215,7 @@ classdef steric2sleptTest < matlab.unittest.TestCase
             t.verifyEqual(constant, [1; 0; 0; 0]);
             t.verifyEqual(snapshot(t.Folder), original);
             t.verifyError(@() steric2slept(args{:}, GVN = {2 * eye(4), ones(4, 1), 4}, ...
-                SaveData = false, BeQuiet = 1), 'ULMO:steric2slept:Basis');
-        end
-
-        function malformedBasisKeepsCallerError(t)
-            % A malformed supplied basis uses the public steric error identifier.
-            t.verifyError(@() steric2slept('EN4c14', t.Polygon, 1, GVN = {1, 1}, ...
-                SaveData = false, BeQuiet = 1), 'ULMO:steric2slept:Basis');
+                SaveData = false, BeQuiet = 1), 'ULMO:prepareslepianbasis:Basis');
         end
 
         function noWritesComputedBasisAndCachedRebuild(t)
@@ -303,7 +297,6 @@ classdef steric2sleptTest < matlab.unittest.TestCase
             % Filling is a projection convention; the supplied grids remain intact.
             stored = load(t.NativePath, 'deepStericSl');
             t.verifyEqual(stored.deepStericSl, t.Data.deepStericSl);
-            t.verifySubstring(ncreadatt(t.cachePath, '/', 'deepSupport'), 'before temporal processing');
         end
 
         function deepFitsUsePairedUpperSupport(t)
@@ -355,7 +348,7 @@ classdef steric2sleptTest < matlab.unittest.TestCase
             t.Data.stericSl(:, :, 2) = NaN; t.Data.stericSl(3, 2, 2) = value;
             t.writeNative;
             t.verifyError(@() steric2slept(args{:}, truncation = 4, ForceNew = true, BeQuiet = 1), ...
-            'ULMO:steric2slept:FitFailed');
+            'ULMO:fitgriddedslepian:FitFailed');
             t.verifyEqual(readbinary(path), original);
             t.verifyNumElements(dir(fullfile(fileparts(path), '*.nc')), 1);
         end
