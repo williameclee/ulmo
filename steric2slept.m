@@ -1,5 +1,4 @@
-%% STERIC2SLEPT - Fit temporally processed steric fields to regional Slepian functions.
-% Returns raw coefficients and separate global-mean correction ingredients.
+%% STERIC2SLEPT - Fits steric fields to regional Slepian functions.
 %
 % Syntax
 %   [c, dates, fit, GVN, h, constantSlept] = STERIC2SLEPT(product, domain, L)

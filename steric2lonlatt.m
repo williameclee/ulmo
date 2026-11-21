@@ -1,4 +1,4 @@
-%% STERIC2LONLATT - Loads and interpolates prepared steric sea level grids.
+%% STERIC2LONLATT - Loads and interpolates gridded steric sea-level fields.
 %
 % Syntax
 %   [steric, stericSigma, dates] = STERIC2LONLATT(product)
