@@ -26,6 +26,8 @@ ULMO uses unversioned cache filenames and does not store or validate a cache ver
 
 Users are responsible for clearing outdated caches, including after a change in processing. Functions such as `grace2plmt_new` also provide a `ForceNew` option to control when data are refreshed.
 
+For the shared steric validity masks, refresh native global means with `steric2gmsl(..., ForceNew=true)`. Rebuild cached grids from the native record with `steric2lonlatt(..., ForceNew=true)` for each affected configuration, including native deep grids, and rebuild any downstream projection caches that used the earlier grids or means.
+
 ## Dependencies
 
 Functions in this repository may call or overwrite functions from the following packages. Please ensure they are installed and the paths are configured properly before running the functions in this repository.

@@ -75,9 +75,11 @@
 %   The fixed mask uses the first available unprefixed native field in priority
 %   order: halosteric, total, then thermosteric. A cell must have finite,
 %   nonzero reference values at 80% or more of the native timestamps.
-%   Each timestamp uses cells that also have finite values in every supplied
-%   component and layer. Zero layer values contribute on this common support.
-%   A timestamp with no positive-weight support returns NaN.
+%   Deep-ocean NaNs at shallow-water cells are filled using STERICCOVERAGE
+%   and FILLABSENTDEEPSTERIC before selecting the common finite cells across
+%   supplied components and layers. Shallow-water zeros retain their area
+%   weight. A timestamp with no positive-weight valid cells returns NaN.
+%   Use ForceNew to refresh native means saved under earlier conventions.
 %
 % See also
 %   steric2lonlatt
@@ -86,7 +88,7 @@
 %   2026/11/04, En-Chi Lee (williameclee@gmail.com)
 %
 % Last modified
-%   2026/11/20, En-Chi Lee (williameclee@gmail.com)
+%   2026/11/21, En-Chi Lee (williameclee@gmail.com)
 
 function [gmsl, dates] = steric2gmsl(product, component, depth, options)
 
@@ -162,7 +164,7 @@ function [gmsl, dates] = steric2gmsl(product, component, depth, options)
             fprintf('[ULMO>%s] Calculating GMSLs for %s.\n', mfilename, char(product));
         end
 
-        means = steric2gmslCore(inPath, rasterNames, available, meanNames, supported, ...
+        means = steric2gmslCore(inPath, schema, ...
             numel(dates), wghts, keepLon, transGrid, precision, find(depths == nativDepth));
 
         if options.SaveData
@@ -201,10 +203,31 @@ function [gmsl, dates] = steric2gmsl(product, component, depth, options)
 
 end
 
-function gmslObj = steric2gmslCore(inPath, rasterNames, fieldAvail, meanNames, supported, ...
+function gmslObj = steric2gmslCore(inPath, schema, ...
         nDates, wghts, keepLon, transGrid, precision, nativDepthIdx)
     inFileObj = matfile(inPath);
-    % First pass uses only the reference field to determine full-record support
+    rasterNames = schema.gridNames;
+    fieldAvail = schema.available;
+    meanNames = schema.meanNames;
+    supported = schema.supported;
+    splitComponents = find(schema.split)';
+    fieldIndices = find(fieldAvail(:))';
+
+    if ~isempty(splitComponents)
+        masks = stericcoverage(inFileObj, rasterNames, fieldAvail, nDates);
+        oceanMask = masks.oceanMask;
+        deepOceanMask = masks.deepOceanMask;
+
+        if transGrid
+            oceanMask = oceanMask';
+            deepOceanMask = deepOceanMask';
+        end
+
+        oceanMask = oceanMask(:, keepLon);
+        deepOceanMask = deepOceanMask(:, keepLon);
+    end
+
+    % Determine full-record validity from the existing reference field.
     priority = [3, 1, 2];
     refField = find(fieldAvail(priority, nativDepthIdx), 1);
     refField = rasterNames(priority(refField), nativDepthIdx);
@@ -225,8 +248,16 @@ function gmslObj = steric2gmslCore(inPath, rasterNames, fieldAvail, meanNames, s
         fields = cell(3);
         valid = support;
 
-        for iField = find(fieldAvail(:))'
+        for iField = fieldIndices
             fields{iField} = readtimeslice(inFileObj, rasterNames(iField), iDate, keepLon, transGrid);
+        end
+
+        for iComp = splitComponents
+            fields{iComp, 3} = fillabsentdeepsteric( ...
+                fields{iComp, 1}, fields{iComp, 2}, fields{iComp, 3}, oceanMask, deepOceanMask);
+        end
+
+        for iField = fieldIndices
             valid = valid & isfinite(fields{iField});
         end
 
