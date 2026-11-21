@@ -1,8 +1,7 @@
-%% GSHHSSTRUCT Retrieves the GSHHS coastline data and formats it into a struct
+%% GSHHSSTRUCT - Retrieves the GSHHS coastline data and formats it into a struct.
 %
 % Last modified
-%   2026/02/12, williameclee@arizona.edu (@williameclee)
-%     - Added variable check before loading and some other minor refactor
+%   2026/11/09, En-Chi Lee (williameclee@gmail.com)
 
 function varargout = gshhsstruct(varargin)
     %% Initialisation
@@ -40,8 +39,8 @@ function varargout = gshhsstruct(varargin)
         load(matFileName, 'GshhsCoasts')
 
         if ~beQuiet
-            fprintf('[ULMO>%s] Loaded <a href="matlab: fprintf(''%s\\n'');open(''%s'')">GSHHS struct</a>.\n', ...
-                callchaintext(callChain), matFileName, matFileName);
+            fprintf('[ULMO>%s] Loaded %s.\n', ...
+                callchaintext(callChain), filehref(matFileName, 'GSHHS struct'));
         end
 
         varargout = returndata(nargout, GshhsCoasts);
@@ -146,8 +145,8 @@ function varargout = gshhsstruct(varargin)
     end
 
     if ~beQuiet
-        fprintf('[ULMO>%s] Saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">GSHHS struct</a>.\n', ...
-            callchaintext(callChain), matFileName, matFileName);
+        fprintf('[ULMO>%s] Saved %s.\n', ...
+            callchaintext(callChain), filehref(matFileName, 'GSHHS struct'));
     end
 
 end
