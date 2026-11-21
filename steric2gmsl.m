@@ -278,39 +278,36 @@ function [schema, precision] = fieldschema(metadata, nativeDepth)
         entry = metadata(strcmp({metadata.name}, name));
 
         if ~ismember(entry.class, {'double', 'single'}) || entry.complex || entry.sparse
-            error('ULMO:steric2gmsl:InvalidSchema', '%s must be a real floating-point grid.', name);
+            error('ULMO:steric2gmsl:InvalidSchema', ...
+                '%s must be a real floating-point grid.', name);
         end
 
         precision = max(precision, double(eps(entry.class)));
     end
 
     if schema.incompleteSplit
-        error('ULMO:steric2gmsl:InvalidSchema', 'A depth split requires explicit full-depth, shallow and deep grids.');
+        error('ULMO:steric2gmsl:InvalidSchema', ...
+        'A depth split requires explicit full-depth, shallow and deep grids.');
     end
 
     if schema.incompatibleSplits
-        error('ULMO:steric2gmsl:InvalidSchema', 'Supplied total and halosteric depth splits must agree.');
+        error('ULMO:steric2gmsl:InvalidSchema', ...
+        'Supplied total and halosteric depth splits must agree.');
     end
 
 end
 
 %% COORDINATES - Validate time and spatial coordinates of the field grids
 function [dates, wghts, keepLon, transposeGrid] = coordinates(coord, metadata, names)
-    try
-        [~, ~, iLon, iLat, orderedWeights] = preparegridcoordinates( ...
-            coord.lon, coord.lat, RequireGlobalLongitude=true);
-    catch cause
-        if strcmp(cause.identifier, 'ULMO:preparegridcoordinates:InvalidGrid')
-            throwAsCaller(addCause(MException('ULMO:steric2gmsl:InvalidGrid', '%s', cause.message), cause));
-        end
-        rethrow(cause)
-    end
+    [~, ~, iLon, iLat, orderedWghts] = preparegridcoordinates( ...
+        coord.lon, coord.lat, RequireGlobalLongitude = true);
+
     lon = coord.lon; lat = coord.lat;
     % Keep the native reader's original traversal and summation order.
     [keepLon, orderLon] = sort(iLon);
     keepLon = keepLon.';
     wghts = zeros(numel(lat), numel(keepLon));
-    wghts(iLat, :) = orderedWeights(orderLon, :).';
+    wghts(iLat, :) = orderedWghts(orderLon, :).';
     dates = coord.dates;
 
     if isnumeric(dates) && isreal(dates) && all(isfinite(dates(:)))
@@ -333,7 +330,8 @@ function [dates, wghts, keepLon, transposeGrid] = coordinates(coord, metadata, n
         if numel(shape) ~= 3 || shape(3) ~= numel(dates) || ...
                 ~(isequal(shape(1:2), [numel(lat), numel(lon)]) || ...
                 isequal(shape(1:2), [numel(lon), numel(lat)]))
-            error('ULMO:steric2gmsl:InvalidSchema', '%s dimensions do not match the coordinates/dates.', names(iField));
+            error('ULMO:steric2gmsl:InvalidSchema', ...
+                '%s dimensions do not match the coordinates/dates.', names(iField));
         end
 
         thisTranspose = ~isequal(shape(1:2), [numel(lat), numel(lon)]);
@@ -344,7 +342,6 @@ function [dates, wghts, keepLon, transposeGrid] = coordinates(coord, metadata, n
 
         transposeGrid = thisTranspose;
     end
-
 
 end
 
