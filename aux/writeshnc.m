@@ -29,6 +29,9 @@
 %
 % Created by
 %   2026/10/31, En-Chi Lee (williameclee@gmail.com)
+%
+% Last modified
+%   2026/11/09, En-Chi Lee (williameclee@gmail.com)
 
 function writeshnc(path, coeffs, uncs, dates, unit, options)
 
@@ -79,7 +82,7 @@ function writeshnc(path, coeffs, uncs, dates, unit, options)
 
     % Write beside the destination and remove partial output if any step fails
     tmpPath = string(tempname(folder)) + ".nc";
-    cleanup = onCleanup(@() removetemporary(tmpPath));
+    cleanup = onCleanup(@() deletefileifpresent(tmpPath));
     createshnc(tmpPath, labels, dates, unit, 'Uncertainty', ~isempty(uncs), ...
         'Attributes', options.Attributes);
     ncwrite(tmpPath, 'coefficients', coeffs);
@@ -90,14 +93,4 @@ function writeshnc(path, coeffs, uncs, dates, unit, options)
 
     % Replace the destination only after all variables have been written
     movefile(tmpPath, path, 'f');
-end
-
-%% Subfunctions
-% Remove an unfinished temporary file; a successful move leaves none
-function removetemporary(path)
-
-    if isfile(path)
-        delete(path);
-    end
-
 end

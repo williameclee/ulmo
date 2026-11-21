@@ -1,6 +1,4 @@
-%% GRACE2SLEPT
-% Takes GRACE/GRACE-FO gravimetry data created by GRACE2PLM and projects
-% this data into the requested Slepian basis.
+%% GRACE2SLEPT - Takes GRACE data created by GRACE2PLMT and projects onto a Slepian basis.
 %
 % Syntax
 %   [slept, stdSlept, dates] = GRACE2SLEPT(product, domain, L)
@@ -104,12 +102,10 @@
 % See also
 %   GRACE2PLMT (GRACE2PLMT_NEW), PLM2SLEP
 %
-% Last modified by
-%   2026/02/12, williameclee@arizona.edu (@williameclee)
-%     - Added support for ALMA3 love numbers
-%   2024/08/30, williameclee@arizona.edu (@williameclee)
-%   2022/05/18, charig@princeton.edu (@harig00)
-%   2012/06/26, fjsimons@alum.mit.edu (@fjsimons)
+% Last modified
+%   2026/11/09, En-Chi Lee (williameclee@gmail.com)
+%   2022/05/18, Chris Harig (charig@princeton.edu)
+%   2012/06/26, F J Simons (fjsimons@alum.mit.edu)
 
 function varargout = grace2slept_new(varargin)
     %% Initialisation
@@ -151,8 +147,8 @@ function varargout = grace2slept_new(varargin)
         data = load(outputPath, vars{:});
 
         if ~beQuiet
-            fprintf('[ULMO>%s] Loaded <a href="matlab: fprintf(''%s\\n'');open(''%s'')">localised GRACE data</a>.\n', ...
-                callchaintext(callChain), outputPath, outputPath);
+            fprintf('[ULMO>%s] Loaded %s.\n', ...
+                callchaintext(callChain), filehref(outputPath, 'localised GRACE data'));
         end
 
         [slept, stdSlept, dates] = ...
@@ -205,8 +201,8 @@ function varargout = grace2slept_new(varargin)
         save(outputPath, vars{:}, '-v7.3');
 
         if ~beQuiet
-            fprintf('[ULMO>%s] Saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">localised GRACE data</a>.\n', ...
-                callchaintext(callChain), outputPath, outputPath);
+            fprintf('[ULMO>%s] Saved %s.\n', ...
+                callchaintext(callChain), filehref(outputPath, 'localised GRACE data'));
         end
 
     end
