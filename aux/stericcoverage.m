@@ -4,16 +4,16 @@
 %   masks = STERICCOVERAGE(source, gridNames, available, nDates)
 %
 % Input arguments
-%   source - Structure of native grids or a matfile object for the grids.
-%   gridNames - Native grid names ordered by component and depth.
+%   source - Structure of steric grids or a matfile object for the native grids.
+%   gridNames - Grid variable names ordered by component and depth.
 %       Depth columns are full-depth, shallow and deep.
 %   available - Logical array identifying the supplied grids in gridNames.
-%   nDates - Number of native timestamps.
+%   nDates - Number of timestamps in the supplied grids.
 %
 % Output arguments
 %   masks - Structure containing oceanMask and, for split products, deepOceanMask.
-%       Each is a logical array in the original spatial orientation.
-%       A finite sample at any native timestamp establishes coverage.
+%       Each is a logical array in the spatial orientation of the supplied grids.
+%       A finite sample at any supplied timestamp establishes coverage.
 %
 % See also
 %   fillabsentdeepsteric, steric2lonlatt, steric2gmsl

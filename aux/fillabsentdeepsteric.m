@@ -4,8 +4,8 @@
 %   deep = FILLABSENTDEEPSTERIC(fullDepth, shallow, deep, oceanMask, deepOceanMask)
 %
 % Input arguments
-%   fullDepth, shallow, deep - Native steric grids or same-epoch grid slices.
-%   oceanMask, deepOceanMask - Static logical grids of native product coverage.
+%   fullDepth, shallow, deep - Steric grids or same-epoch grid slices.
+%   oceanMask, deepOceanMask - Static logical grids of product coverage.
 %
 % Output arguments
 %   deep - Deep-ocean field with structural NaNs filled at shared valid cells.

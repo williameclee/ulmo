@@ -1,4 +1,4 @@
-%% STERICVALIDITYMASKSTEST - Tests shared native steric validity masks.
+%% STERICVALIDITYMASKSTEST - Tests shared validity rules for steric fields.
 % Uses temporary grids covering observed shallow water, intermittent deep
 % observations, finite zeros and cells outside the product coverage.
 %
@@ -120,12 +120,47 @@ classdef stericValidityMasksTest < matlab.unittest.TestCase
             testCase.verifyEqual(cached, deep);
         end
 
-        function fillingPrecedesInterpolation(testCase)
-            % Interpolate between a shallow-water zero and an observed deep
-            % value, and interpolate in time over the constant zero series.
+        function spatialMasksUseInterpolatedFields(testCase)
+            % The midpoint beside shallow water has no finite interpolated
+            % deep value. The adjacent midpoint retains intermittent coverage.
             [spatial, ~, ~, lon, lat] = steric2lonlatt('EN4c14', [], 45, Depth = 'deep', BeQuiet = true);
-            testCase.verifyEqual(spatial(lat == -45, lon == 45, 1), 3, AbsTol = 1e-12);
+            cache = load(stericfilepath('EN4c14', [], 45, [], "linear"));
+            shallowRow = lat == -45;
+            shallowLon = lon == 45;
+            deepRow = lat == 0;
+            deepLon = lon == 135;
+            testCase.verifySize(cache.oceanMask, size(spatial, 1:2));
+            testCase.verifySize(cache.deepOceanMask, size(spatial, 1:2));
+            testCase.verifyEqual(cache.lon(:), lon(:));
+            testCase.verifyEqual(cache.lat(:), lat(:));
+            testCase.verifyTrue(cache.oceanMask(shallowRow, shallowLon));
+            testCase.verifyFalse(cache.deepOceanMask(shallowRow, shallowLon));
+            testCase.verifyEqual(spatial(shallowRow, shallowLon, 1), 0);
+            testCase.verifyTrue(cache.deepOceanMask(deepRow, deepLon));
+            testCase.verifyEqual(spatial(deepRow, deepLon, 1), 2.5, AbsTol = 1e-12);
+            testCase.verifyTrue(isnan(spatial(deepRow, deepLon, 2)));
+            testCase.verifyEqual(steric2lonlatt('EN4c14', [], 45, Depth = 'deep', BeQuiet = true), spatial);
+        end
 
+        function spatialMasksWithTemporalProcessing(testCase)
+            data = testCase.data;
+            data.dates(end) = datetime(2020, 1, 20);
+            testCase.data = data;
+            testCase.writeNative();
+
+            [averaged, ~, ~, lon, lat] = steric2lonlatt( ...
+                'EN4c14', 'midmonth', 45, Depth = 'deep', BeQuiet = true);
+            testCase.verifyEqual(averaged(lat == -45, lon == 45), 0);
+            testCase.verifyEqual(averaged(lat == 0, lon == 135), 2.5, AbsTol = 1e-12);
+
+            [interpolated, ~, dates, lon, lat] = steric2lonlatt( ...
+                'EN4c14', days(1), 45, Depth = 'deep', BeQuiet = true);
+            testCase.verifyEqual(dates(2), data.dates(1) + days(1));
+            shallow = interpolated(lat == -45, lon == 45, :);
+            testCase.verifyEqual(shallow, zeros(size(shallow)));
+        end
+
+        function fillingPrecedesTemporalInterpolationOnNativeGrid(testCase)
             data = testCase.data;
             data.deepStericSl(2, 1, 2:5) = NaN;
             testCase.data = data;

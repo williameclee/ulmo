@@ -111,9 +111,10 @@
 %       Size: as in the input file, with processed spatial/time dimensions.
 %       Unit: m.
 %
-%   oceanMask, deepOceanMask - Static masks from finite native observations.
-%       The deep-ocean mask is saved for products with depth splits.
-%   nativeLon, nativeLat - Native coordinates for the static masks.
+%   oceanMask, deepOceanMask - Static masks from finite values on the grid
+%       used for zero-filling. Derived caches use the saved lon and lat.
+%       The native deep cache stores nativeLon and nativeLat. The deep-ocean
+%       mask is saved for products with depth splits.
 %   creationDate - Datetime when the cached grids were saved.
 %
 %   <component>Gmsl - Processed total, thermosteric and halosteric means when
@@ -125,7 +126,10 @@
 % Notes
 %   A shallow-water cell contributes zero deep-ocean steric sea level where
 %   both its full-depth and upper-ocean values are finite. A deep-ocean
-%   cell with a missing observation remains missing. See STERICCOVERAGE.
+%   cell with a missing observation remains missing at the zero-filling step.
+%   Derive the masks and fill before temporal processing on the native grid.
+%   For a new spatial grid, derive the masks and fill after spatial
+%   interpolation. See STERICCOVERAGE.
 %   Corrected native deep grids are cached beside the prepared file with the
 %   '-deep' suffix. Native source grids remain unchanged.
 %   Difference components are derived after processing when requested.
@@ -245,6 +249,7 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
     outPath = stericfilepath(product, timestep, meshsize, lonOrigin, intpMthd);
     nativePath = stericfilepath(product);
     isDerived = ~strcmp(outPath, nativePath);
+    regrid = ~isempty(meshsize) || ~isempty(lonOrigin);
     coordVars = {'lon', 'lat', 'dates'};
     needMeans = nargout >= 6 || options.ForceNew;
     halostericGmsl = zeros(0, 1);
@@ -277,7 +282,7 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
     % Only supplied components belong to this configuration's cache.
     % Completeness depends on required variable names, not a cache version.
     requiredGrids = cellstr(cacheGridNames(supported(1:3, :)));
-    maskVars = {'oceanMask', 'nativeLon', 'nativeLat', 'creationDate'};
+    maskVars = {'oceanMask', 'creationDate'};
 
     if any(schema.available(:, 3))
         maskVars{end + 1} = 'deepOceanMask';
@@ -325,9 +330,17 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
     % Process the complete record. Output time limits are applied only after
     % saving or reading the shared configuration cache.
     if ~cacheHit && isDerived
+
+        if regrid
+
+            if ~useMean
+                [data, coord.dates] = processtime(data, coord.dates, timestep, intpMthd);
+            end
+
+            [data, coord] = preparegrid(data, coord, meshsize, lonOrigin, spatialIntpMthd, options.BeQuiet, callChain);
+        end
+
         masks = stericcoverage(data, gridNames, schema.available, numel(coord.dates));
-        masks.nativeLon = coord.lon;
-        masks.nativeLat = coord.lat;
 
         if any(schema.split)
             for iSplit = find(schema.split)'
@@ -337,14 +350,8 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
             end
         end
 
-        if useMean
-            [data, coord] = preparegrid(data, coord, meshsize, lonOrigin, spatialIntpMthd, options.BeQuiet, callChain);
-        end
-
-        [data, coord.dates] = processtime(data, coord.dates, timestep, intpMthd);
-
-        if ~useMean
-            [data, coord] = preparegrid(data, coord, meshsize, lonOrigin, spatialIntpMthd, options.BeQuiet, callChain);
+        if ~regrid || useMean
+            [data, coord.dates] = processtime(data, coord.dates, timestep, intpMthd);
         end
 
         data = componentfields(data, schema);
