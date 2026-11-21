@@ -277,10 +277,10 @@ classdef steric2gmslTest < matlab.unittest.TestCase
         function invalidGeometryAndDimensions(testCase)
             testCase.data.lon = [0, 110, 240];
             testCase.writeNative;
-            testCase.verifyError(@() steric2gmsl('EN4c14', "total"), 'ULMO:steric2gmsl:InvalidGrid');
+            testCase.verifyError(@() steric2gmsl('EN4c14', "total"), 'ULMO:preparegridcoordinates:InvalidGrid');
             testCase.data.lon = [0, NaN, 240];
             testCase.writeNative;
-            testCase.verifyError(@() steric2gmsl('EN4c14', "total"), 'ULMO:steric2gmsl:InvalidGrid');
+            testCase.verifyError(@() steric2gmsl('EN4c14', "total"), 'ULMO:preparegridcoordinates:InvalidGrid');
             testCase.data.lon = [0, 120, 240];
             testCase.data.stericSl = testCase.data.stericSl(:, :, 1:4);
             testCase.writeNative;
@@ -321,7 +321,7 @@ classdef steric2gmslTest < matlab.unittest.TestCase
                 testCase.writeNative;
                 before = testCase.fileBytes;
                 testCase.verifyError(@() steric2gmsl('EN4c14', "total"), ...
-                'ULMO:steric2gmsl:InvalidGrid');
+                'ULMO:preparegridcoordinates:InvalidGrid');
                 testCase.verifyEqual(testCase.fileBytes, before);
             end
 
@@ -383,10 +383,10 @@ classdef steric2gmslTest < matlab.unittest.TestCase
             testCase.data = struct('lon', [0, 90, 180, 270], 'lat', [0; 60; 30], ...
                 'dates', testCase.data.dates, 'stericSl', ones(3, 4, 5));
             testCase.writeNative;
-            testCase.verifyError(@() steric2gmsl('EN4c14', "total"), 'ULMO:steric2gmsl:InvalidGrid');
+            testCase.verifyError(@() steric2gmsl('EN4c14', "total"), 'ULMO:preparegridcoordinates:InvalidGrid');
             testCase.data.lat = [0; 30; 30];
             testCase.writeNative;
-            testCase.verifyError(@() steric2gmsl('EN4c14', "total"), 'ULMO:steric2gmsl:InvalidGrid');
+            testCase.verifyError(@() steric2gmsl('EN4c14', "total"), 'ULMO:preparegridcoordinates:InvalidGrid');
         end
 
         function numericAndInvalidDates(testCase)
