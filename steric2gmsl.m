@@ -55,7 +55,7 @@
 %
 % Output arguments
 %   gmsl - Selected uncorrected global means on common observed support.
-%       Size: (N, nPairs), one column per requested pair.
+%       Size: (N, nSeries), one column per requested series.
 %       Unit: m or mm, as selected by Unit.
 %   dates - Native timestamps in the selected TimeFormat.
 %       Size: (N, 1).
@@ -131,8 +131,8 @@ function [gmsl, dates] = steric2gmsl(product, component, depth, options)
     depths = schema.depths;
     [~, iComp] = ismember(component(:), components);
     [~, iDepth] = ismember(depth(:), depths);
-    pairs = sub2ind(size(supported), iComp, iDepth);
-    unsupported = find(~supported(pairs), 1);
+    series = sub2ind(size(supported), iComp, iDepth);
+    unsupported = find(~supported(series), 1);
 
     if ~isempty(unsupported)
         error('ULMO:steric2gmsl:UnsupportedField', ...
@@ -178,15 +178,15 @@ function [gmsl, dates] = steric2gmsl(product, component, depth, options)
     end
 
     % Derive each requested difference from the finished native means.
-    gmsl = zeros(numel(dates), numel(pairs));
+    gmsl = zeros(numel(dates), numel(series));
 
-    for iPair = 1:numel(pairs)
+    for iSeries = 1:numel(series)
 
-        if iComp(iPair) > 3
-            gmsl(:, iPair) = double(means.(meanNames(1, iDepth(iPair)))) - ...
-                double(means.(meanNames(iComp(iPair) - 2, iDepth(iPair))));
+        if iComp(iSeries) > 3
+            gmsl(:, iSeries) = double(means.(meanNames(1, iDepth(iSeries)))) - ...
+                double(means.(meanNames(iComp(iSeries) - 2, iDepth(iSeries))));
         else
-            gmsl(:, iPair) = double(means.(meanNames(iComp(iPair), iDepth(iPair))));
+            gmsl(:, iSeries) = double(means.(meanNames(iComp(iSeries), iDepth(iSeries))));
         end
 
     end
