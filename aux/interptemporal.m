@@ -30,15 +30,12 @@ function [meshIntp, datesIntp] = interptemporal(dates, mesh, timeStep, intpMthd,
     arguments (Input)
         dates {mustBeA(dates, {'datetime', 'numeric'}), mustBeVector}
         mesh {mustBeNumeric}
-        timeStep {mustBeA(timeStep, {'numeric', 'duration'}), mustBeNonempty, mustBeTimeStep}
-        intpMthd {mustBeTextScalar} = "linear"
+        timeStep {mustBeTimeStep, mustBeNonempty, mustBeA(timeStep, {'numeric', 'duration'})}
+        intpMthd (1, 1) string = "linear"
         options.TimeRange = []
         options.BeQuiet (1, 1) logical = false
         options.CallChain (1, :) cell = {}
     end
-
-    intpMthd = validatestring(intpMthd, ...
-        {'linear', 'nearest', 'previous', 'next', 'pchip', 'cubic', 'spline', 'makima', 'v5cubic'});
 
     if size(mesh, 3) ~= numel(dates)
         error('ULMO:interpTemporal:DimensionMismatch', ...
@@ -97,7 +94,7 @@ function [meshIntp, datesIntp] = interptemporal(dates, mesh, timeStep, intpMthd,
     else
         meshFlat = reshape(mesh, [], numel(dates)).';
 
-        if ismember(intpMthd, {'pchip', 'spline', 'makima'})
+        if ismember(intpMthd, ["pchip", "spline", "makima"])
             % These methods discard NaNs and error on series with fewer than
             % two remaining samples. Such series have no values to interpolate.
             canInterpolate = sum(~isnan(meshFlat), 1) >= 2;
