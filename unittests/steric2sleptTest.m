@@ -123,6 +123,21 @@ classdef steric2sleptTest < matlab.unittest.TestCase
 
         end
 
+        function projectsFromProcessedGridCacheWithoutNativeFile(t)
+            % The gridded loader can supply a projection from an offline product.
+            [grid, ~, dates, lon, lat, halo] = steric2lonlatt('EN4c14', 'midmonth', ...
+                Component = 'non-halosteric', Depth = 'deep', OutputFormat = 'ndgrid', BeQuiet = true);
+            delete(t.NativePath);
+
+            basis = {eye(4), ones(4, 1), 4};
+            [coefficients, actualDates, ~, actualHalo] = steric2slept('EN4c14', ...
+                t.Polygon, 1, 'midmonth', Component = 'non-halosteric', Depth = 'deep', ...
+                GVN = basis, SaveData = false, BeQuiet = 1);
+            t.verifyEqual(coefficients, t.fitReference(grid, lon, lat, basis), AbsTol = 2e-10);
+            t.verifyEqual(actualDates, dates);
+            t.verifyEqual(actualHalo, halo);
+        end
+
         function completeCacheAndFormats(t, refresh, ordering)
             % One selected output still creates every supported field/diagnostic.
             args = {'EN4c14', t.Polygon, 1, []};
@@ -131,7 +146,8 @@ classdef steric2sleptTest < matlab.unittest.TestCase
             info = ncinfo(path);
             names = string({info.Variables.Name});
             t.verifyEqual(nnz(endsWith(names, 'Slept')), 16); % 15 fields + constant.
-            t.verifyEqual(nnz(endsWith(names, 'Gmsl')), 9);
+            t.verifyEqual(sort(names(endsWith(names, 'Gmsl'))), ...
+                ["deepHalostericGmsl", "halostericGmsl", "shallowHalostericGmsl"]);
             t.verifyEqual(nnz(endsWith(names, '_nObs')), 15);
             t.verifyEqual(string({ncinfo(path, 'stericSlept').Dimensions.Name}), ["mode", "time"]);
             t.verifyEqual(ncread(path, 'stericSlept'), first.');

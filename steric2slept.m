@@ -52,13 +52,15 @@
 %       native/processed means for this configuration, regardless of outputs.
 %       Does not regenerate source grids or other cache configurations.
 %       Default flag: false.
-%   SaveData (name-value) - Whether to save calculated means and caches.
+%   SaveData (name-value) - Whether to save calculated grids, means and caches.
 %       false permits reads and in-memory rebuilding without writes.
 %       Default flag: true.
 %   BeQuiet (name-value) - Whether to suppress progress messages.
 %       Default level: 0.5 (calculation/cache messages); 1 suppresses messages.
 %
 % Input file content
+%   Grids and means are read and processed by STERIC2LONLATT.
+%
 %   lon - Regular longitude coordinates spanning one complete cycle.
 %       A duplicated cyclic endpoint is allowed and counted only once.
 %       Size: vector with nLon elements.
@@ -99,7 +101,8 @@
 % Output file content
 %   <component>Slept - All supported raw coefficient fields, in metres.
 %       MATLAB NetCDF dimensions: (mode, time).
-%   <component>Gmsl - All applicable processed global means in metres, (time).
+%   <depth>HalostericGmsl - Available processed halosteric means in metres, (time).
+%       Includes halostericGmsl for full depth.
 %   <component>Slept_<diagnostic> - Per-field fitting diagnostics, (time).
 %   constantSlept - Unit-C00 projection, (mode), with units 1.
 %   time - Processed epoch timestamps.
@@ -115,7 +118,7 @@
 %   For timefirst, caller correction is c - h * constSlept.'; traditional
 %   uses c - constSlept * h.
 %   On the native grid, absent deep-ocean contributions are filled before
-%   temporal processing using the same validity masks as STERIC2LONLATT.
+%   temporal processing by STERIC2LONLATT.
 %   A missing observation in a cell with deep-ocean coverage remains missing
 %   at that step. Refresh projection caches after changing the source grids
 %   or the validity convention.
@@ -202,7 +205,7 @@ function [stericSlept, dates, GVN, haloGmsl, constSlept] = steric2slept( ...
 
     else
         [stericSlept, dates, GVN, haloGmsl, constSlept] = steric2slept_core( ...
-            product, domain, L, timestep, timelim, options, cache, nargout >= 4);
+            product, domain, L, timestep, timelim, options, cache, schema, field, haloName, nargout >= 4);
     end
 
     if options.Unit == "mm"
@@ -227,41 +230,29 @@ end
 % Output dates remain datetime values until the public function formats them.
 % needHaloGmsl records whether the caller requested the halosteric output.
 function [stericSlept, dates, GVN, haloGmsl, constSlept] = steric2slept_core( ...
-        product, domain, L, timestep, timeRange, options, cache, needHaloGmsl)
+        product, domain, L, timestep, timeRange, options, cache, schema, field, haloName, needHaloGmsl)
 
     if options.BeQuiet < 1
         fprintf('[ULMO>%s] Fitting all fields for %s.\n', mfilename, char(product));
     end
 
-    metadata = whos('-file', stericfilepath(product));
-    schema = stericfieldschema(metadata, product.nativeDepth());
-    iComp = find(schema.components == options.Component);
-    iDepth = find(schema.depths == options.Depth);
-    field = replace(schema.meanNames(iComp, iDepth), 'Gmsl', 'Slept');
-    haloName = schema.meanNames(3, iDepth);
-    assert(schema.supported(iComp, iDepth), 'ULMO:steric2slept:UnsupportedField', ...
+    saveProjection = options.SaveData && isempty(options.GVN);
+    [fields, means, dates, lon, lat] = loadFields( ...
+        product, timestep, options, schema, needHaloGmsl || saveProjection);
+    assert(isfield(fields, field), 'ULMO:steric2slept:UnsupportedField', ...
         'Product %s does not supply Component=%s, Depth=%s.', ...
         char(product), options.Component, options.Depth);
 
     if needHaloGmsl
-        assert(schema.supported(3, iDepth), 'ULMO:steric2slept:UnsupportedField', ...
+        assert(isfield(means, haloName), 'ULMO:steric2slept:UnsupportedField', ...
             'Product %s does not supply halosteric GMSL at Depth=%s.', ...
             char(product), options.Depth);
     end
 
-    % Prepare the GMSLs and gridded fields on the same time axis.
-    [means, meanDates, nativDates] = prepareGmsl(product, timestep, options, schema);
-
-    % A supplied basis bypasses projection storage, not an explicit request
-    % to save native diagnostics. SaveData=false is propagated everywhere.
+    % A supplied basis bypasses projection storage.
     GVN = prepareslepianbasis(domain, L, options.truncation, options.GVN, ...
         RequireOrthonormal = true, SaveData = options.SaveData);
     constSlept = GVN{1}(1, :).';
-
-    [fields, dates, lon, lat] = prepareGriddedFields( ...
-        product, nativDates, timestep, options, schema);
-
-    assert(isequal(dates, meanDates), 'ULMO:steric2slept:Dates', 'Grid and GMSL dates differ.');
 
     % Fit every supported field before selecting the requested output.
     [coeffs, fits, buffer, wghtMthd] = fitgriddedslepian( ...
@@ -270,7 +261,7 @@ function [stericSlept, dates, GVN, haloGmsl, constSlept] = steric2slept_core( ..
         SaveData = options.SaveData, ForceNew = options.ForceNew);
 
     % Save the complete record before selecting the requested dates.
-    if options.SaveData && isempty(options.GVN)
+    if saveProjection
         defaultJ = min((L + 1) ^ 2, max(1, round(GVN{3})));
         path = sprintf('%s-%d-m.nc', cache.stem, size(GVN{1}, 2));
         saveCache(path, coeffs, means, dates, fits, constSlept, ...
@@ -284,6 +275,75 @@ function [stericSlept, dates, GVN, haloGmsl, constSlept] = steric2slept_core( ..
 
     if needHaloGmsl
         haloGmsl = means.(haloName)(rows);
+    end
+
+end
+
+%% LOADFIELDS - Reads processed grids and halosteric means from STERIC2LONLATT.
+function [fields, means, dates, lon, lat] = loadFields(product, timestep, options, schema, needMeans)
+    fields = struct();
+    means = struct();
+    dates = NaT(0, 1);
+    lon = [];
+    lat = [];
+    firstField = true;
+    forceNew = options.ForceNew;
+    depths = schema.depths;
+
+    if ~product.supportsFullDepth()
+        depths = product.nativeDepth();
+    end
+
+    for depth = depths
+        iDepth = find(schema.depths == depth, 1);
+
+        for iComp = 1:numel(schema.components)
+            args = {product, timestep, 'Component', schema.components(iComp), 'Depth', depth, ...
+                        'OutputFormat', 'meshgrid', 'Interpolation', options.Interpolation, ...
+                        'ForceNew', forceNew, 'SaveData', options.SaveData, ...
+                        'BeQuiet', options.BeQuiet, 'CallChain', {mfilename}};
+            readMean = needMeans && schema.components(iComp) == "halosteric";
+
+            try
+
+                if readMean
+                    [grid, ~, fieldDates, fieldLon, fieldLat, msl] = steric2lonlatt(args{:});
+                else
+                    [grid, ~, fieldDates, fieldLon, fieldLat] = steric2lonlatt(args{:});
+                end
+
+            catch exception
+
+                if exception.identifier == "ULMO:steric2lonlatt:UnsupportedField"
+                    continue
+                end
+
+                rethrow(exception);
+            end
+
+            if firstField
+                dates = fieldDates;
+                lon = fieldLon(:);
+                lat = fieldLat(:);
+                firstField = false;
+            else
+                assert(isequal(fieldDates, dates) && isequal(fieldLon(:), lon) && isequal(fieldLat(:), lat), ...
+                    'ULMO:steric2slept:GridAxes', 'The loaded steric fields must share dates and coordinates.');
+            end
+
+            meanName = schema.meanNames(iComp, iDepth);
+            fieldName = replace(meanName, 'Gmsl', 'Slept');
+            % The loader returns latitude first and the fitter expects longitude first.
+            fields.(fieldName) = permute(grid, [2, 1, 3]);
+
+            if readMean
+                means.(meanName) = msl;
+            end
+
+            % The first saved refresh rebuilds the shared cache for every field.
+            forceNew = options.ForceNew && ~options.SaveData;
+        end
+
     end
 
 end
@@ -325,103 +385,6 @@ function path = findCache(stem, J)
     end
 
     path = sprintf('%s-%d-m.nc', stem, J);
-end
-
-%% PREPAREGMSL - Loads and temporally processes the native GMSLs.
-% Obtain every diagnostic through the public native-GMSL interface.
-function [means, meanDates, nativeDates] = prepareGmsl( ...
-        product, timestep, options, schema)
-    means = struct();
-    fieldSupported = schema.supported;
-    fieldSupported(4:5, :) = false;
-    [meanComponents, meanDepths] = find(fieldSupported);
-    meanNames = cellstr(schema.meanNames(fieldSupported));
-    [nativeGmsl, nativeDates] = steric2gmsl(product, ...
-        schema.components(meanComponents), schema.depths(meanDepths), ...
-        ForceNew = options.ForceNew, SaveData = options.SaveData, BeQuiet = options.BeQuiet);
-
-    for iField = 1:numel(meanNames)
-        means.(meanNames{iField}) = reshape(nativeGmsl(:, iField), 1, 1, []);
-    end
-
-    [means, meanDates] = processfieldtime(means, nativeDates, timestep, options.Interpolation, []);
-
-    for iField = 1:numel(meanNames)
-        means.(meanNames{iField}) = means.(meanNames{iField})(:);
-    end
-
-    % Make sure the shallow and and deep GMSLs sum to the full-depth GMSL
-    for iComp = 1:3
-
-        if all(schema.supported(iComp, :))
-            means.(schema.meanNames(iComp, 1)) = ...
-                means.(schema.meanNames(iComp, 2)) + means.(schema.meanNames(iComp, 3));
-        end
-
-    end
-
-end
-
-%% PREPAREGRIDDEDFIELDS - Loads and processes steric grids for Slepian fitting.
-function [fields, dates, lon, lat] = prepareGriddedFields( ...
-        product, nativeDates, timestep, options, schema)
-    % Interpolate the fields temporally
-    fieldNames = cellstr(schema.gridNames(schema.available));
-    data = load(stericfilepath(product), 'lon', 'lat', fieldNames{:});
-    lon = data.lon(:);
-    lat = data.lat(:);
-    data = rmfield(data, {'lon', 'lat'}); % Remove since they can't be interpolated
-    if any(schema.split)
-        data = maskstericgrids(data, schema, numel(nativeDates));
-    end
-
-    [data, dates] = processfieldtime(data, nativeDates, timestep, options.Interpolation, []);
-
-    % Compute the residual fields
-    processed = struct();
-    fieldNames = replace(schema.meanNames, 'Gmsl', 'Sl');
-
-    for iField = find(schema.available(:)).'
-        [iComp, iDepth] = ind2sub(size(schema.available), iField);
-        processed.(fieldNames(iComp, iDepth)) = data.(schema.gridNames(iField));
-    end
-
-    processed = addResidualComponents(processed, schema);
-    data = processed;
-
-    % Load the gridded steric sea level fields
-    fields = struct();
-    transGrid = numel(lat) == size(data.(fieldNames(find(schema.supported, 1))), 1);
-
-    for iField = find(schema.supported(:)).'
-        stericSl = data.(fieldNames(iField));
-
-        if transGrid
-            stericSl = permute(stericSl, [2, 1, 3]);
-        end
-
-        fields.(replace(fieldNames(iField), 'Sl', 'Slept')) = stericSl;
-    end
-
-end
-
-%% ADDRESIDUALCOMPONENTS - Computes the residual fields from differencing
-function data = addResidualComponents(data, schema)
-    names = replace(schema.meanNames, 'Gmsl', 'Sl');
-
-    for iDepth = 1:numel(schema.depths)
-
-        for iType = 4:5 % for the non-thermosteric and non-halosteric fields
-
-            if schema.supported(iType, iDepth)
-                data.(names(iType, iDepth)) = ...
-                    data.(names(1, iDepth)) - data.(names(iType - 2, iDepth));
-            end
-
-        end
-
-    end
-
 end
 
 %% SAVECACHE - Saves the computation results into the cache file.
