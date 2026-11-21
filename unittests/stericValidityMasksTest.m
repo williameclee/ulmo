@@ -161,24 +161,16 @@ classdef stericValidityMasksTest < matlab.unittest.TestCase
         end
 
         function fillingPrecedesTemporalInterpolationOnNativeGrid(testCase)
-            data = testCase.data;
-            data.deepStericSl(2, 1, 2:5) = NaN;
-            testCase.data = data;
-            testCase.writeNative();
-
-            for method = ["linear", "pchip", "spline", "makima"]
-                [temporal, ~, dates] = steric2lonlatt('EN4c14', days(1), ...
-                    Depth = 'deep', Interpolation = method, BeQuiet = true);
-                testCase.verifyEqual(reshape(temporal(1, 1, :), [], 1), zeros(numel(dates), 1));
-                testCase.verifyEqual(dates(2), testCase.data.dates(1) + days(1));
-                testCase.verifyTrue(all(isnan(temporal(1, 4, :)), 'all'));
-                testCase.verifyEqual(temporal(2, 1, 1), 2);
-                testCase.verifyTrue(all(isnan(temporal(2, 1, 2:end)), 'all'));
-                processedPath = stericfilepath('EN4c14', days(1), [], [], method);
-                cache = load(processedPath, 'oceanMask', 'deepOceanMask', 'creationDate');
-                testCase.verifyTrue(isdatetime(cache.creationDate));
-                testCase.verifyFalse(cache.deepOceanMask(1, 1));
-            end
+            % Interpolation uses the shallow-water zeros at the native dates.
+            [temporal, ~, dates] = steric2lonlatt('EN4c14', days(1), ...
+                Depth = 'deep', BeQuiet = true);
+            testCase.verifyEqual(reshape(temporal(1, 1, :), [], 1), zeros(numel(dates), 1));
+            testCase.verifyEqual(dates(2), testCase.data.dates(1) + days(1));
+            testCase.verifyTrue(all(isnan(temporal(1, 4, :)), 'all'));
+            processedPath = stericfilepath('EN4c14', days(1), [], [], "linear");
+            cache = load(processedPath, 'oceanMask', 'deepOceanMask', 'creationDate');
+            testCase.verifyTrue(isdatetime(cache.creationDate));
+            testCase.verifyFalse(cache.deepOceanMask(1, 1));
         end
 
         function nativeCacheReadsAndForcedRefresh(testCase)

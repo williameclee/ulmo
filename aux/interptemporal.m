@@ -13,8 +13,6 @@
 %   timeStep - Positive duration or number of days between output samples.
 %       The first output time is anchored to the first native sample.
 %   intpMthd (optional) - Interpolation method to use (passed to INTERP1)
-%       For pchip, spline and makima, series with fewer than two defined
-%       samples retain only their native observations at matching output times.
 %       Default method: "linear".
 %   TimeRange (name-value) - Two-element vector of DATETIME or DATENUM
 %       values specifying the time range to interpolate to
@@ -23,7 +21,7 @@
 %   BeQuiet (name-value) - If true, suppresses progress messages
 %
 % Last modified
-%   2026/11/21, En-Chi Lee (williameclee@arizona.edu)
+%   2026/11/01, En-Chi Lee (williameclee@arizona.edu)
 
 function [meshIntp, datesIntp] = interptemporal(dates, mesh, timeStep, intpMthd, options)
 
@@ -87,20 +85,7 @@ function [meshIntp, datesIntp] = interptemporal(dates, mesh, timeStep, intpMthd,
         meshIntp = mesh;
     else
         meshFlat = reshape(mesh, [], numel(dates)).';
-        if ismember(intpMthd, {'pchip', 'spline', 'makima'})
-            % These methods discard NaNs and error on series with fewer than
-            % two remaining samples. Such series have no values to interpolate.
-            canInterpolate = sum(~isnan(meshFlat), 1) >= 2;
-            values = nan(numel(datesIntp), size(meshFlat, 2), 'like', meshFlat);
-            if any(canInterpolate)
-                interpolated = interp1(dates, meshFlat(:, canInterpolate), datesIntp, intpMthd);
-                values(:, canInterpolate) = reshape(interpolated, numel(datesIntp), []);
-            end
-            [onNative, nativeRows] = ismember(datesIntp, dates);
-            values(onNative, ~canInterpolate) = meshFlat(nativeRows(onNative), ~canInterpolate);
-        else
-            values = interp1(dates, meshFlat, datesIntp, intpMthd);
-        end
+        values = interp1(dates, meshFlat, datesIntp, intpMthd);
         meshIntp = reshape(values.', [size(mesh, 1:2), numel(datesIntp)]);
     end
 
