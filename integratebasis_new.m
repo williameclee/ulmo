@@ -1,5 +1,4 @@
-%% INTEGRATEBASIS
-% Accepts a Slepian basis and integrates the functions within a region.
+%% INTEGRATEBASIS - Accepts a Slepian basis and integrates the functions within a region.
 % The integrals reported are in fractional sphere area. You may want to
 % convert this to real sphere area via x(4*pi*R^2).
 %
@@ -29,10 +28,9 @@
 % Note
 %   The function is not properly tested yet.
 %
-% Last modified by
-%   2025/10/16, williameclee@arizona.edu (@williameclee)
-%   2024/08/15, williameclee@arizona.edu (@williameclee)
-%   2016/11/01, charig@email.arizona.edu (@harig00)
+% Last modified
+%   2026/11/09, En-Chi Lee (williameclee@gmail.com)
+%   2016/11/01, Chris Harig (charig@email.arizona.edu)
 
 function varargout = integratebasis_new(varargin)
     [eigfun, domain, J, phi, theta, forceNew, saveData, beQuiet, callChain] = ...
@@ -87,8 +85,8 @@ function varargout = integratebasis_new(varargin)
             load(dataFile, 'eigfunINT');
 
             if ~beQuiet
-                fprintf('[ULMO>%s] Loaded <a href="matlab: fprintf(''%s\\n'');open(''%s'')">integrated basis functions</a>.\n', ...
-                    callchaintext(callChain), dataFile, dataFile);
+                fprintf('[ULMO>%s] Loaded %s.\n', ...
+                    callchaintext(callChain), filehref(dataFile, 'integrated basis functions'));
             end
 
             if ~isempty(J)
@@ -180,8 +178,8 @@ function varargout = integratebasis_new(varargin)
         save(dataFile, 'eigfunINT');
 
         if ~beQuiet
-            fprintf('[ULMO>%s] Saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">integrated basis functions</a>.\n', ...
-                callchaintext(callChain), dataFile, dataFile);
+            fprintf('[ULMO>%s] Saved %s.\n', ...
+                callchaintext(callChain), filehref(dataFile, 'integrated basis functions'));
         end
 
     end
