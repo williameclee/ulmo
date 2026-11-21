@@ -91,10 +91,12 @@ classdef stericValidityMasksTest < matlab.unittest.TestCase
 
             stored = load(testCase.nativePath);
             original = fieldnames(testCase.data);
+
             for iField = 1:numel(original)
                 name = original{iField};
                 testCase.verifyEqual(stored.(name), testCase.data.(name));
             end
+
         end
 
         function fillingPrecedesEpochAveraging(testCase)
@@ -213,4 +215,5 @@ classdef stericValidityMasksTest < matlab.unittest.TestCase
         end
 
     end
+
 end
