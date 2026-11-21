@@ -130,7 +130,7 @@
 %   2025/07/22, En-Chi Lee (williameclee@arizona.edu)
 %
 % Last modified
-%   2026/11/20, En-Chi Lee (williameclee@gmail.com)
+%   2026/11/21, En-Chi Lee (williameclee@gmail.com)
 
 function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt( ...
         product, timestep, meshsize, timelim, options)
@@ -145,10 +145,8 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
         options.TimeFormat (1, 1) DateFormat = "datetime"
         options.OutputFormat (1, 1) MeshFormat = "meshgrid"
         options.Unit (1, 1) string {mustBeMember(options.Unit, ["mm", "m"])} = "m"
-        options.Depth (1, 1) string ...
-            {mustBeMember(options.Depth, ["native", "full-depth", "shallow", "deep"])} = "native"
-        options.Component (1, 1) string ...
-            {mustBeMember(options.Component, ["total", "thermosteric", "halosteric", "non-thermosteric", "non-halosteric"])} = "total"
+        options.Component (1, 1) string {mustBeStericComponent} = "total"
+        options.Depth (1, 1) string {mustBeStericDepth} = "native"
         options.ForceNew (1, 1) {mustBeNumericOrLogical} = false
         options.BeQuiet (1, 1) {mustBeNumericOrLogical} = 0.5
         options.SaveData (1, 1) {mustBeNumericOrLogical} = true

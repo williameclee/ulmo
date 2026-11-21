@@ -149,10 +149,8 @@
 %   steric2lonlatt, steric2gmsl, prepareslepianbasis, fitgriddedslepian, processfieldtime
 %
 % Created by
-%   2026/11/05, En-Chi Lee
-%
-% Last modified
-%   2026/11/20, En-Chi Lee (williameclee@gmail.com)
+%   2026/11/21, En-Chi Lee (williameclee@gmail.com)
+
 
 function [stericSlept, dates, fit, GVN, halostericGmsl, constantSlept] = ...
         steric2slept(product, domain, L, timestep, timeRange, options)
@@ -162,17 +160,16 @@ function [stericSlept, dates, fit, GVN, halostericGmsl, constantSlept] = ...
         L (1, 1) double {mustBeFinite, mustBeInteger, mustBeNonnegative}
         timestep {mustBeTimeStep} = []
         timeRange {mustBeTimeRange} = []
-        options.Component {mustBeTextScalar, mustBeMember(options.Component, ...
-            {'total', 'thermosteric', 'halosteric', 'non-thermosteric', 'non-halosteric'})} = 'total'
-        options.Depth {mustBeTextScalar, mustBeMember(options.Depth, {'native', 'full-depth', 'shallow', 'deep'})} = 'native'
-        options.Interpolation {mustBeTextScalar} = 'linear'
-        options.OutputFormat {mustBeTextScalar, mustBeMember(options.OutputFormat, {'timefirst', 'traditional'})} = 'timefirst'
-        options.Unit {mustBeTextScalar, mustBeMember(options.Unit, {'m', 'mm'})} = 'm'
-        options.TimeFormat {mustBeTextScalar, mustBeMember(options.TimeFormat, {'datetime', 'datenum'})} = 'datetime'
+        options.Component (1, 1) string {mustBeStericComponent} = "total"
+        options.Depth (1, 1) string {mustBeStericDepth} = "native"
+        options.Interpolation (1, 1) string = "linear"
+        options.OutputFormat (1, 1) string {mustBeMember(options.OutputFormat, ["timefirst", "traditional"])} = "timefirst"
+        options.Unit (1, 1) string {mustBeMember(options.Unit, ["m", "mm"])} = "m"
+        options.TimeFormat DateFormat = "datetime"
         options.truncation double {mustBeScalarOrEmpty, mustBeFinite, mustBeInteger, mustBePositive} = []
         options.GVN cell = {}
-        options.ForceNew (1, 1) {mustBeNumericOrLogical} = false
-        options.SaveData (1, 1) {mustBeNumericOrLogical} = true
+        options.ForceNew (1, 1) logical = false
+        options.SaveData (1, 1) logical = true
         options.BeQuiet (1, 1) {mustBeNumericOrLogical} = 0.5
     end
     [timestep, options.Interpolation] = normalisetimeconfig(timestep, options.Interpolation);

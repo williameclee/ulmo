@@ -84,14 +84,14 @@
 %   2026/11/04, En-Chi Lee (williameclee@gmail.com)
 %
 % Last modified
-%   2026/11/20, En-Chi Lee (williameclee@gmail.com)
+%   2026/11/21, En-Chi Lee (williameclee@gmail.com)
 
 function [gmsl, dates] = steric2gmsl(product, component, depth, options)
 
     arguments (Input)
         product (1, 1) StericProduct
-        component (1, 1) string {mustBeMember(component, ["total", "thermosteric", "halosteric", "non-thermosteric", "non-halosteric"])}
-        depth (1, 1) string {mustBeMember(depth, ["native", "full-depth", "shallow", "deep"])} = "native"
+        component (1, 1) string {mustBeStericComponent}
+        depth (1, 1) string {mustBeStericDepth} = "native"
         options.Unit (1, 1) string {mustBeMember(options.Unit, ["m", "mm"])} = "m"
         options.TimeFormat (1, 1) DateFormat = "datetime"
         options.SaveData (1, 1) logical = true
