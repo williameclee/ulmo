@@ -1,5 +1,4 @@
-%% GRACEDEG2
-% Reads and formats the C20 and C30 spherical harmonic corrections from GRACE/GRACE-FO Technical Note 14.
+%% GRACEDEG2 - Reads and formats the C20 and C30 spherical harmonic corrections from GRACE TN-14.
 %
 % Syntax
 %   [c2030data, c2030std, dates] = gracedeg2(Rlevel)
@@ -61,8 +60,8 @@
 %       https://archive.podaac.earthdata.nasa.gov/podaac-ops-cumulus-docs/gracefo/open/docs/TN-14_C30_C20_GSFC_SLR.txt
 %
 % Last modified by
-%   2025/05/20, williameclee@arizona.edu (@williameclee)
-%   2021/11/11, charig@arizona.edu
+%   2026/11/09, En-Chi Lee (williameclee@gmail.com)
+%   2021/11/11, Chris Harig (charig@arizona.edu)
 
 function varargout = gracedeg2(varargin)
     %% Initialisation
@@ -81,8 +80,8 @@ function varargout = gracedeg2(varargin)
         data = load(outputPath, 'c2030data', 'c2030std', 'dates');
 
         if ~beQuiet
-            fprintf('[ULMO>%s] Loaded <a href="matlab: fprintf(''%s\\n'');open(''%s'')">C20/C30 data</a>.\n', ...
-                callchaintext(callChain), outputPath, outputPath);
+            fprintf('[ULMO>%s] Loaded %s.\n', ...
+                callchaintext(callChain), filehref(outputPath, 'C20/C30 data'));
         end
 
         [data.c2030data, data.c2030std, data.dates] = ...
@@ -116,8 +115,8 @@ function varargout = gracedeg2(varargin)
         save(outputPath, vars{:}, '-v7.3')
 
         if ~beQuiet
-            fprintf('[ULMO>%s] Saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">processed C20/C30 data</a>.\n', ...
-                callchaintext(callChain), outputPath, outputPath);
+            fprintf('[ULMO>%s] Saved %s.\n', ...
+                callchaintext(callChain), filehref(outputPath, 'processed C20/C30 data'));
         end
 
     end

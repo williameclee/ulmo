@@ -1,6 +1,4 @@
-%% GRACEDEG1
-% This function reads and formats the degree-1 spherical harmonic
-% correction from GRACE/GRACE-FO Technical Note 13.
+%% GRACEDEG1 - Reads and formats the degree-1 spherical harmonic correction from GRACE TN-13.
 %
 % Syntax
 %   [deg1Plmt, deg1StdPlmt, dates] = GRACEDEG1(Pcenter, Rlevel)
@@ -76,9 +74,9 @@
 %       https://archive.podaac.earthdata.nasa.gov/podaac-ops-cumulus-docs/gracefo/open/docs/TN-13_GEOC_JPL_RL0601.txt
 %       More recent versions of the JPL may be available after the time of this documentation.
 %
-% Last modified by
-%   2025/10/16, williameclee@arizona.edu (@williameclee)
-%   2021/11/18, charig@arizona.edu (@harig00)
+% Last modified
+%   2026/11/09, En-Chi Lee (williameclee@gmail.com)
+%   2021/11/18, Chris Harig (charig@arizona.edu)
 
 function varargout = gracedeg1(varargin)
     %% Initialisation
@@ -99,8 +97,8 @@ function varargout = gracedeg1(varargin)
         data = load(outputPath, vars{:});
 
         if ~beQuiet
-            fprintf('[ULMO>%s] Loaded <a href="matlab: fprintf(''%s\\n'');open(''%s'')">degree-1 data</a>.\n', ...
-                callchaintext(callChain), outputPath, outputPath);
+            fprintf('[ULMO>%s] Loaded %s.\n', ...
+                callchaintext(callChain), filehref(outputPath, 'degree-1 data'));
         end
 
         [deg1Plmt, deg1StdPlmt, dates] = ...
@@ -148,8 +146,8 @@ function varargout = gracedeg1(varargin)
         save(outputPath, 'deg1Plmt', 'deg1StdPlmt', 'dates')
 
         if ~beQuiet
-            fprintf('[ULMO>%s] Saved <a href="matlab: fprintf(''%s\\n'');open(''%s'')">degree-1 data</a>.\n', ...
-                callchaintext(callChain), outputPath, outputPath);
+            fprintf('[ULMO>%s] Saved %s.\n', ...
+                callchaintext(callChain), filehref(outputPath, 'degree-1 data'));
         end
 
     end
