@@ -1,6 +1,4 @@
-%% GRACEDEG1
-% This function reads and formats the degree-1 spherical harmonic
-% correction from GRACE/GRACE-FO Technical Note 13.
+%% GRACEDEG1 - Reads and formats the degree-1 spherical harmonic correction from GRACE TN-13.
 %
 % Syntax
 %   [deg1Plmt, deg1StdPlmt, dates] = GRACEDEG1(Pcenter, Rlevel)
@@ -76,9 +74,9 @@
 %       https://archive.podaac.earthdata.nasa.gov/podaac-ops-cumulus-docs/gracefo/open/docs/TN-13_GEOC_JPL_RL0601.txt
 %       More recent versions of the JPL may be available after the time of this documentation.
 %
-% Last modified by
-%   2026/11/09, williameclee@arizona.edu (@williameclee)
-%   2021/11/18, charig@arizona.edu (@harig00)
+% Last modified
+%   2026/11/09, En-Chi Lee (williameclee@gmail.com)
+%   2021/11/18, Chris Harig (charig@arizona.edu)
 
 function varargout = gracedeg1(varargin)
     %% Initialisation

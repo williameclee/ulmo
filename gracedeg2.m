@@ -1,5 +1,4 @@
-%% GRACEDEG2
-% Reads and formats the C20 and C30 spherical harmonic corrections from GRACE/GRACE-FO Technical Note 14.
+%% GRACEDEG2 - Reads and formats the C20 and C30 spherical harmonic corrections from GRACE TN-14.
 %
 % Syntax
 %   [c2030data, c2030std, dates] = gracedeg2(Rlevel)
@@ -61,8 +60,8 @@
 %       https://archive.podaac.earthdata.nasa.gov/podaac-ops-cumulus-docs/gracefo/open/docs/TN-14_C30_C20_GSFC_SLR.txt
 %
 % Last modified by
-%   2026/11/09, williameclee@arizona.edu (@williameclee)
-%   2021/11/11, charig@arizona.edu
+%   2026/11/09, En-Chi Lee (williameclee@gmail.com)
+%   2021/11/11, Chris Harig (charig@arizona.edu)
 
 function varargout = gracedeg2(varargin)
     %% Initialisation

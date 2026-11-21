@@ -1,5 +1,4 @@
-%% PLM2XYZ
-% Inverses (4*pi-normalized real) spherical harmonic transform.
+%% PLM2XYZ - Inverses (4*pi-normalized real) spherical harmonic transform.
 %
 % Compute a spatial field from spherical harmonic coefficients given as
 % [l m Ccos Csin] (not necessarily starting from zero, but sorted), with
@@ -58,9 +57,9 @@
 %
 % Special thanks to kwlewis@princeton.edu for spotting a bug.
 %
-% Last modified by
-%   2026/11/09, williameclee@arizona.edu (@williameclee)
-%   2023/11/20, fjsimons@alum.mit.edu (@fjsimons)
+% Last modified
+%   2026/11/09, En-Chi Lee (williameclee@gmail.com)
+%   2023/11/20, F J Simons (fjsimons@alum.mit.edu)
 
 function varargout = plm2xyz(varargin)
     %% Initialisation

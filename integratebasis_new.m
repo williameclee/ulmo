@@ -1,5 +1,4 @@
-%% INTEGRATEBASIS
-% Accepts a Slepian basis and integrates the functions within a region.
+%% INTEGRATEBASIS - Accepts a Slepian basis and integrates the functions within a region.
 % The integrals reported are in fractional sphere area. You may want to
 % convert this to real sphere area via x(4*pi*R^2).
 %
@@ -29,10 +28,9 @@
 % Note
 %   The function is not properly tested yet.
 %
-% Last modified by
-%   2026/11/09, williameclee@arizona.edu (@williameclee)
-%   2024/08/15, williameclee@arizona.edu (@williameclee)
-%   2016/11/01, charig@email.arizona.edu (@harig00)
+% Last modified
+%   2026/11/09, En-Chi Lee (williameclee@arizona.edu)
+%   2016/11/01, Chris Harig (charig@email.arizona.edu)
 
 function varargout = integratebasis_new(varargin)
     [eigfun, domain, J, phi, theta, forceNew, saveData, beQuiet, callChain] = ...

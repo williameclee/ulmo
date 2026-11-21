@@ -1,5 +1,4 @@
-%% GIA2PLMT
-% Reads a GIA model and converts it to the spheircal harmonic format.
+%% GIA2PLMT - Reads a GIA model and converts it to the spheircal harmonic format.
 %
 % Syntax
 %   Plmt = gia2plmt(model)
@@ -95,8 +94,8 @@
 %       land motion model of glacial isostatic adjustment [dataset].
 %       PANGAEA, doi: 10.1594/PANGAEA.932462
 %
-% Last modified by
-%   2026/11/09, williameclee@arizona.edu (@williameclee)
+% Last modified
+%   2026/11/09, En-Chi Lee (williameclee@gmail.com)
 
 function varargout = gia2plmt(varargin)
     %% Initialisation
@@ -227,12 +226,14 @@ function varargout = gia2plmt(varargin)
 
     % Resize the model and any supplied bounds to the requested degree.
     if ~isempty(L)
+
         if ~beQuiet && size(data.lmcosiM, 1) < addmup(L)
             warning('ULMO:LoadData:InsufficientResolution', ...
                 'Model %s resolution lower than the requested degree %d', model, L);
         end
 
         fields = "lmcosiM";
+
         if hasBounds
             fields = [fields, "lmcosiU", "lmcosiL"];
         end
@@ -241,6 +242,7 @@ function varargout = gia2plmt(varargin)
             source = data.(field);
             data.(field) = cast(ensureplmdegree(source, L, 'traditional'), 'like', source);
         end
+
     end
 
     % Time

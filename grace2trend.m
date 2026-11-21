@@ -1,6 +1,4 @@
-%% GRACE2TREND
-% Reads GRACE data and computes the mass trend projected onto a set of
-% Slepian functions, with optional corrections applied.
+%% GRACE2TREND - Reads GRACE data and computes the mass trend projected onto a set of Slepian functions, with optional corrections applied.
 %
 % Syntax
 %   [date, total] = grace2trend(domain)
@@ -71,8 +69,8 @@
 %       coefficient evaluated at those months in the same format
 %   sleptRes - Residual time series for each Slepian coefficient
 %
-% Last modified by
-%   2026/11/09, williameclee@arizona.edu (@williameclee)
+% Last modified
+%   2026/11/09, En-Chi Lee (williameclee@gmail.com)
 
 function varargout = grace2trend(domain, varargin)
     %% Initialisation

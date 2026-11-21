@@ -1,8 +1,7 @@
-%% GSHHSSTRUCT Retrieves the GSHHS coastline data and formats it into a struct
+%% GSHHSSTRUCT - Retrieves the GSHHS coastline data and formats it into a struct.
 %
 % Last modified
-%   2026/11/09, williameclee@arizona.edu (@williameclee)
-%     - Added variable check before loading and some other minor refactor
+%   2026/11/09, En-Chi Lee (williameclee@gmail.com)
 
 function varargout = gshhsstruct(varargin)
     %% Initialisation

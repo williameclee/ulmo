@@ -1,5 +1,4 @@
-%% AOD1B2PLMT
-% Fetch the AOD1B modelled GRACE geoid (or surface mass density) coefficient time series
+%% AOD1B2PLMT - Fetches the AOD1B modelled GRACE geoid (or surface mass density) coefficient time series.
 %
 % Syntax
 %   [plmt, stdPlmt, dates] = aod1b2plmt(Pcenter, Rlevel, product, L, unit)
@@ -80,10 +79,10 @@
 % See also
 %   GRACEDEG1, GRACEDEG2, PLM2POT, GRACE2PLMT (GRACE2PLMT_NEW)
 %
-% Last modified by
-%   2026/11/09, williameclee@arizona.edu (@williameclee)
-%   2014/02/27, charig@princeton.edu
-%   2011/05/17, fjsimons@alum.mit.edu
+% Last modified
+%   2026/11/09, En-Chi Lee (williameclee@gmail.com)
+%   2014/02/27, Chris Harig (charig@princeton.edu)
+%   2011/05/17, F J Simons (fjsimons@alum.mit.edu)
 
 function varargout = aod1b2plmt(varargin)
     %% Initialisation
