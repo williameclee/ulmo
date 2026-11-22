@@ -501,7 +501,7 @@ end
 function mustBeVectorOrEmpty(value)
 
     if ~isempty(value) && ~isvector(value)
-        error('fittimeseries:InvalidShape', 'Input must be a vector or empty.');
+        error('ULMO:fittimeseries:InvalidShape', 'Input must be a vector or empty.');
     end
 
 end
