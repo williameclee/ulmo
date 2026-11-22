@@ -53,6 +53,7 @@ The ultimate goal is to drop the `_new` suffixes and replace the original functi
 | Function name | Description | Package dependencies | Data dependencies | Notes |
 | :--- | :--- | :--- | :--- | :--- |
 | `processGfzNormalEquations` | Converts monthly GFZ SINEX normal equations to a NetCDF series of formal covariance factors. | | [GFZ GRACE](https://isdc-data.gfz.de/grace/Level-2/GFZ/RL06_NEQs_SINEX/), [GFZ GRACE-FO](https://isdc-data.gfz.de/grace-fo/Level-2/GFZ/RL06.3_NEQs_SINEX/) | |
+| `randomgracenoise` | Draws monthly correlated GFZ Stokes coefficient noise through the requested degree. | [slepian_alpha](https://github.com/csdms-contrib/slepian_alpha.git) | Processed GFZ normal equations | |
 | `gracedeg1` | Reads and converts GRACE TN-13 degree-1 data to appropriate field and format. | | GRACE | Replacement for `gracedeg1` in [slepian_delta](https://github.com/csdms-contrib/slepian_delta.git). |
 | `gracedeg2` | Reads and converts GRACE TN-14 $\Delta C_{2,0}$/$\Delta C_{3,0}$ data to appropriate field and format. | | GRACE | Replacement for `gracedeg2` in [slepian_delta](https://github.com/csdms-contrib/slepian_delta.git). |
 | `aod1b2plmt` | Reads and converts GRACE GAC/GAD data to `lmcosi`-format spherical harmonic fields. | | GRACE | |
