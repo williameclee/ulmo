@@ -182,26 +182,28 @@ function [stericSlept, dates, GVN, haloGmsl, constSlept] = steric2slept( ...
     haloName = schema.meanNames(3, iDepth);
     isCustomGVN = ~isempty(options.GVN);
 
-    dataPath = getoutputfile(product, domain, L, timestep, ...
-        options.Interpolation, options.truncation);
+    if ~options.ForceNew && ~isCustomGVN
+        dataPath = getoutputfile(product, domain, L, timestep, ...
+            options.Interpolation, options.truncation);
 
-    if ~options.ForceNew && isfile(dataPath) && ~isCustomGVN
+        if isfile(dataPath)
+            [stericSlept, dates, haloGmsl, constSlept] = loadCache( ...
+                dataPath, field, haloName, timelim, nargout);
 
-        [stericSlept, dates, haloGmsl, constSlept] = loadCache( ...
-            dataPath, field, haloName, timelim, nargout);
+            if options.BeQuiet < 1
+                fprintf('[ULMO>%s] Loaded %s.\n', mfilename, dataPath);
+            end
 
-        if options.BeQuiet < 1
-            fprintf('[ULMO>%s] Loaded %s.\n', mfilename, dataPath);
+            if nargout >= 3
+                GVN = prepareslepianbasis(domain, L, size(stericSlept, 2), {}, ...
+                    RequireOrthonormal = true, SaveData = options.SaveData);
+            end
+
+            [stericSlept, haloGmsl, dates] = formatoutput( ...
+                stericSlept, haloGmsl, dates, options.Unit, options.OutputFormat, options.TimeFormat);
+            return
         end
 
-        if nargout >= 3
-            GVN = prepareslepianbasis(domain, L, size(stericSlept, 2), {}, ...
-                RequireOrthonormal = true, SaveData = options.SaveData);
-        end
-
-        [stericSlept, haloGmsl, dates] = formatoutput( ...
-            stericSlept, haloGmsl, dates, options.Unit, options.OutputFormat, options.TimeFormat);
-        return
     end
 
     [stericSlept, dates, GVN, haloGmsl, constSlept] = steric2slept_core( ...
@@ -240,7 +242,7 @@ function [stericSlept, dates, GVN, haloGmsl, constSlept] = steric2slept_core( ..
     constSlept = GVN{1}(1, :).';
 
     % Fit every supported field before selecting the requested output.
-    [coeffs, fits, buffer, wghtMthd] = fitgriddedslepian( ...
+    [coeffs, fits, buf, wghtMthd] = fitgriddedslepian( ...
         fields, dates, lon, lat, domain, L, GVN, ...
         RequireGlobalLongitude = true, ...
         SaveData = options.SaveData, ForceNew = options.ForceNew);
@@ -251,7 +253,7 @@ function [stericSlept, dates, GVN, haloGmsl, constSlept] = steric2slept_core( ..
         [path, domainId, config] = getoutputfile(product, domain, L, ...
             timestep, options.Interpolation, size(GVN{1}, 2));
         saveCache(path, coeffs, means, dates, fits, constSlept, ...
-            product, domainId, L, defaultJ, buffer, wghtMthd, config);
+            product, domainId, L, defaultJ, buf, wghtMthd, config);
     end
 
     rows = selectDates(dates, timeRange);
@@ -266,7 +268,8 @@ function [stericSlept, dates, GVN, haloGmsl, constSlept] = steric2slept_core( ..
 end
 
 %% LOADFIELDS - Reads processed grids and halosteric means from STERIC2LONLATT.
-function [fields, means, dates, lon, lat] = loadFields(product, timestep, options, schema, needMeans)
+function [fields, means, dates, lon, lat] = loadFields( ...
+        product, timestep, options, schema, needMeans)
     fields = struct();
     means = struct();
     dates = NaT(0, 1);
