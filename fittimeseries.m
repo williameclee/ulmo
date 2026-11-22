@@ -119,16 +119,6 @@
 %   jumpSigmas - Standard errors of jumps from the joint coefficient covariance.
 %       The units and dimensions are the same as jumps.
 %
-%   jumps - Signed permanent step amplitudes
-%       Rows follow JumpTimes order; columns follow the input series order,
-%       independently of x orientation. With no jumps, has zero event rows.
-%       Unit: same as x
-%       Data type: DOUBLE
-%       Dimension: [E x M]
-%   jumpSigmas - Standard errors of jumps from the joint coefficient covariance
-%       The units and dimensions are the same as jumps.
-%       Data type: DOUBLE
-%
 % Notes
 %   N is the number of input times, M the number of series, K the number
 %   of harmonic periods, and E the number of events. Invalid times and
