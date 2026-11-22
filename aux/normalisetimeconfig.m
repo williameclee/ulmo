@@ -1,4 +1,4 @@
-%% NORMALISETIMECONFIG - Normalises a time step and generates its projection cache token.
+%% NORMALISETIMECONFIG - Normalises a time step and generates its temporal cache key.
 %
 % Syntax
 %   [tstep, mthd, useMean, config] = NORMALISETIMECONFIG(tstep, mthd)
@@ -10,10 +10,11 @@
 %
 % Output arguments
 %   tstep - Normalised time step.
+%       Empty inputs become [].
 %       Numeric days become a duration and named steps become lower-case scalar strings.
 %   mthd - Input method in lower case.
 %   useMean - Whether to average over named epochs or fixed-step windows.
-%   config - Projection cache name.
+%   config - Temporal cache key.
 %       Native sampling gives 'native'. Named epochs use their lower-case
 %       name. Fixed steps use 'T<seconds>seconds-<method>', with seconds
 %       written to 17 significant digits.
@@ -23,6 +24,9 @@
 %
 % Created by
 %   2026/11/08, En-Chi Lee (williameclee@gmail.com)
+%
+% Last modified
+%   2026/11/22, En-Chi Lee (williameclee@gmail.com)
 
 function [tstep, mthd, useMean, config] = normalisetimeconfig(tstep, mthd)
 
@@ -33,7 +37,9 @@ function [tstep, mthd, useMean, config] = normalisetimeconfig(tstep, mthd)
 
     mthd = lower(mthd);
 
-    if ~isempty(tstep) && isnumeric(tstep)
+    if isempty(tstep)
+        tstep = [];
+    elseif isnumeric(tstep)
         tstep = days(tstep);
     elseif ischar(tstep) || isstring(tstep)
         tstep = lower(string(tstep));
