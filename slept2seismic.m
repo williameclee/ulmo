@@ -76,25 +76,29 @@ function [seis, seisSigma] = slept2seismic(slept, dates, eventDates, sigma, opti
 
     if size(slept, 1) ~= numel(dates)
         error('ULMO:slept2seismic:SizeMismatch', ...
-            'slept must have one row per observation date.');
+        'slept must have one row per observation date.');
     end
+
     if ~isempty(sigma) && (size(sigma, 1) ~= numel(dates) ...
             || (size(sigma, 2) ~= 1 && size(sigma, 2) ~= size(slept, 2)))
         error('ULMO:slept2seismic:SizeMismatch', ...
-            'sigma must be empty, a column per date, or the same size as slept.');
+        'sigma must be empty, a column per date, or the same size as slept.');
     end
 
     dates = convertdates(dates);
     eventDates = convertdates(eventDates);
     fitRange = convertdates(options.FitRange);
+
     [~, ~, ~, ~, ~, ~, seis, seisSigma] = fittimeseries( ...
         dates, slept, sigma, options.polynomialDegree, options.periods, ...
         JumpTimes = eventDates, FitRange = fitRange);
 end
 
 function dates = convertdates(dates)
+
     if isnumeric(dates)
         mustBeReal(dates);
         dates = datetime(double(dates), 'ConvertFrom', 'datenum');
     end
+
 end
