@@ -1,4 +1,4 @@
-%% STERIC2LONLATT - Loads and interpolates prepared steric sea level grids.
+%% STERIC2LONLATT - Loads and interpolates gridded steric sea-level fields.
 %
 % Syntax
 %   [steric, stericSigma, dates] = STERIC2LONLATT(product)
@@ -12,10 +12,10 @@
 %       JAMSTEC, ISAS, IPRC or IAPv4.
 %       Default product: EN4c14.
 %   timestep (optional) - Temporal interpolation step or averaging convention.
-%       Positive numeric scalar or duration for fixed steps, 'midmonth' for
-%       calendar-month means, or 'GRACE' for CSR RL06 degree-60 solution
-%       windows. Both conventions average native samples and return window
-%       midpoints.
+%       - Positive numeric scalar or duration for fixed steps
+%       - 'midmonth' for calendar-month means, or 'GRACE' for CSR RL06 degree-60
+%         solution windows. Both conventions average native samples and return
+%         window midpoints.
 %       Unit: days for numeric values.
 %       Default step: [] (native timestamps).
 %   meshsize (optional) - Spatial interpolation spacing.
@@ -159,10 +159,8 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
         options.TimeFormat (1, 1) DateFormat = "datetime"
         options.OutputFormat (1, 1) MeshFormat = "meshgrid"
         options.Unit (1, 1) string {mustBeMember(options.Unit, ["mm", "m"])} = "m"
-        options.Depth (1, 1) string ...
-            {mustBeMember(options.Depth, ["native", "full-depth", "shallow", "deep"])} = "native"
-        options.Component (1, 1) string ...
-            {mustBeMember(options.Component, ["total", "thermosteric", "halosteric", "non-thermosteric", "non-halosteric"])} = "total"
+        options.Component (1, 1) string {mustBeStericComponent} = "total"
+        options.Depth (1, 1) string {mustBeStericDepth} = "native"
         options.ForceNew (1, 1) {mustBeNumericOrLogical} = false
         options.BeQuiet (1, 1) {mustBeNumericOrLogical} = 0.5
         options.SaveData (1, 1) {mustBeNumericOrLogical} = true
@@ -220,9 +218,7 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
         timelim = datetime(timelim, 'ConvertFrom', 'datenum');
     end
 
-    if ~isempty(timestep) && isnumeric(timestep)
-        timestep = days(timestep);
-    end
+    [timestep, intpMthd, useMean] = normalisetimeconfig(timestep, intpMthd);
 
     % 'default' and 'no halosteric drift' are deprecated Component values.
     schema = stericfieldschema(struct('name', {}, 'size', {}), nativeDepth);
@@ -239,7 +235,6 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
         sourceComponents = [1, iComp - 2];
     end
 
-    useMean = ~isempty(timestep) && (ischar(timestep) || isstring(timestep) || strcmpi(intpMthd, 'mean'));
     spatialIntpMthd = intpMthd;
 
     if spatialIntpMthd == "mean"
@@ -335,26 +330,16 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
         if regrid
 
             if ~useMean
-                [data, coord.dates] = processtime(data, coord.dates, timestep, intpMthd);
+                [data, coord.dates] = processfieldtime(data, coord.dates, timestep, intpMthd, []);
             end
 
             [data, coord] = preparegrid(data, coord, meshsize, lonOrigin, spatialIntpMthd, options.BeQuiet, callChain);
         end
 
-        masks = stericcoverage(data, gridNames, schema.available, numel(coord.dates));
-
-        if any(schema.split)
-
-            for iSplit = find(schema.split)'
-                fields = gridNames(iSplit, :);
-                data.(fields(3)) = fillabsentdeepsteric( ...
-                    data.(fields(1)), data.(fields(2)), data.(fields(3)), masks.oceanMask, masks.deepOceanMask);
-            end
-
-        end
+        [data, masks] = maskstericgrids(data, schema, numel(coord.dates));
 
         if ~regrid || useMean
-            [data, coord.dates] = processtime(data, coord.dates, timestep, intpMthd);
+            [data, coord.dates] = processfieldtime(data, coord.dates, timestep, intpMthd, []);
         end
 
         data = componentfields(data, schema);
@@ -393,7 +378,7 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
                 means.(names{iMean}) = reshape(values(:, iMean), 1, 1, []);
             end
 
-            [means, meanDates] = processtime(means, nativeDates, timestep, intpMthd);
+            [means, meanDates] = processfieldtime(means, nativeDates, timestep, intpMthd, []);
             assert(isequal(meanDates(:), coord.dates(:)), ...
                 'ULMO:steric2lonlatt:MeanDates', 'GMSL and grid dates must agree.');
 
@@ -576,36 +561,6 @@ function processed = componentfields(data, schema)
             selectsteric(data, schema.gridNames, iComp, iDepth);
     end
 
-end
-
-function [data, dates] = processtime(data, dates, timestep, method)
-    % Grids and means enter separately but share temporal conventions. Epoch
-    % averaging uses each array's own finite observations; it deliberately does
-    % not match a GMSL to each individual cell's temporal support.
-    if isempty(timestep)
-        dates = dates(:);
-        return;
-    end
-
-    names = fieldnames(data);
-    useMean = ischar(timestep) || isstring(timestep) || method == "mean";
-
-    if useMean
-        epochs = temporalmeanepochs(dates, timestep, []);
-    end
-
-    for iName = 1:numel(names)
-
-        if useMean
-            [data.(names{iName}), outputDates] = averageepochs(dates, data.(names{iName}), epochs);
-        else
-            [data.(names{iName}), outputDates] = interptemporal(dates, data.(names{iName}), ...
-                timestep, method, BeQuiet = true);
-        end
-
-    end
-
-    dates = outputDates(:);
 end
 
 function [data, coord] = preparegrid(data, coord, meshsize, lonOrigin, intpMthd, beQuiet, callChain)

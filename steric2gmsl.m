@@ -94,8 +94,8 @@ function [gmsl, dates] = steric2gmsl(product, component, depth, options)
 
     arguments (Input)
         product (1, 1) StericProduct
-        component string {mustBeNonempty, mustBeMember(component, ["total", "thermosteric", "halosteric", "non-thermosteric", "non-halosteric"])}
-        depth string {mustBeMember(depth, ["native", "full-depth", "shallow", "deep"])} = repmat("native", size(component))
+        component string {mustBeNonempty, mustBeStericComponent}
+        depth string {mustBeStericDepth} = repmat("native", size(component))
         options.Unit (1, 1) string {mustBeMember(options.Unit, ["m", "mm"])} = "m"
         options.TimeFormat (1, 1) DateFormat = "datetime"
         options.SaveData (1, 1) logical = true
@@ -310,7 +310,8 @@ function [schema, precision] = checkfieldschema(metadata, nativDepth)
         entry = metadata(strcmp({metadata.name}, name));
 
         if ~ismember(entry.class, {'double', 'single'}) || entry.complex || entry.sparse
-            error('ULMO:steric2gmsl:InvalidSchema', '%s must be a real floating-point grid.', name);
+            error('ULMO:steric2gmsl:InvalidSchema', ...
+                '%s must be a real floating-point grid.', name);
         end
 
         precision = max(precision, double(eps(entry.class)));
@@ -319,7 +320,9 @@ function [schema, precision] = checkfieldschema(metadata, nativDepth)
     if schema.incompleteSplit
         error('ULMO:steric2gmsl:InvalidSchema', ...
         'A depth split requires explicit full-depth, shallow and deep grids.');
-    elseif schema.incompatibleSplits
+    end
+
+    if schema.incompatibleSplits
         error('ULMO:steric2gmsl:InvalidSchema', ...
         'Supplied total and halosteric depth splits must agree.');
     end
@@ -327,46 +330,16 @@ function [schema, precision] = checkfieldschema(metadata, nativDepth)
 end
 
 %% COORDINATES - Validate time and spatial coordinates of the field grids
-function [dates, wghts, keepLon, trans] = coordinates(coord, metadata, names)
-    lon = double(coord.lon(:));
-    lat = double(coord.lat(:));
+function [dates, wghts, keepLon, transposeGrid] = coordinates(coord, metadata, names)
+    [~, ~, iLon, iLat, orderedWghts] = preparegridcoordinates( ...
+        coord.lon, coord.lat, RequireGlobalLongitude = true);
 
-    mustBeCoordinateVector = @(x) isreal(x) && all(isfinite(x(:))) && isvector(x) && numel(x) >= 2;
-
-    if ~mustBeCoordinateVector(coord.lon) || ~mustBeCoordinateVector(coord.lat) ...
-            || any(abs(lat) > 90)
-        error('ULMO:steric2gmsl:InvalidGrid', 'Expected finite longitude/latitude coordinate vectors.');
-    end
-
-    tol = 3e-5; % Coordinate tolerance in degrees.
-    latSteps = diff(lat);
-
-    if ~(all(latSteps > 0) || all(latSteps < 0))
-        error('ULMO:steric2gmsl:InvalidGrid', 'Latitude must be strictly increasing or decreasing.');
-    end
-
-    % Both endpoints of an offset can carry single-precision rounding.
-    lonTol = tol;
-
-    if isa(coord.lon, 'single')
-        lonTol = max(lonTol, double(eps(max(abs(coord.lon(:))))));
-    end
-
-    lonTol = min(lonTol, 90 / numel(lon));
-    lonSpan = lon(end) - lon(1);
-
-    % Drop the last longitude slice if it is the same as the first longitude (e.g. 0° and 360°)
-    % to avoid double counting its contribution
-    keepLon = 1:(numel(lon) - (abs(abs(lonSpan) - 360) <= lonTol));
-
-    % Check the longitude vector is equally spaced
-    lonStep = sign(lonSpan) * 360 / numel(keepLon);
-    expdLons = (0:numel(lon) - 1)' * lonStep;
-
-    if lonSpan == 0 || any(abs((lon - lon(1)) - expdLons) > lonTol)
-        error('ULMO:steric2gmsl:InvalidGrid', 'Longitude must cover one complete regular periodic grid.');
-    end
-
+    lon = coord.lon; lat = coord.lat;
+    % Keep the native reader's original traversal and summation order.
+    [keepLon, orderLon] = sort(iLon);
+    keepLon = keepLon.';
+    wghts = zeros(numel(lat), numel(keepLon));
+    wghts(iLat, :) = orderedWghts(orderLon, :).';
     dates = coord.dates;
 
     if isnumeric(dates) && isreal(dates) && all(isfinite(dates(:)))
@@ -375,19 +348,15 @@ function [dates, wghts, keepLon, trans] = coordinates(coord, metadata, names)
 
     if ~isdatetime(dates) || ~isvector(dates) || isempty(dates) || ...
             any(isnat(dates(:))) || any(diff(dates(:)) <= seconds(0))
-        error('ULMO:steric2gmsl:InvalidDates', ...
-        'Native dates must be finite and strictly increasing.');
+        error('ULMO:steric2gmsl:InvalidDates', 'Native dates must be finite and strictly increasing.');
     end
 
     dates = dates(:);
-
-    % Checks the size of the fields, and whether it needs to be transposed
-    % The expected shape is (nLat, nLon, nTime)
-    trans = false;
+    transposeGrid = false;
 
     for iField = 1:numel(names)
-        field = metadata(strcmp({metadata.name}, names(iField)));
-        shape = field.size;
+        entry = metadata(strcmp({metadata.name}, names(iField)));
+        shape = entry.size;
         shape(end + 1:3) = 1;
 
         if numel(shape) ~= 3 || shape(3) ~= numel(dates) || ...
@@ -399,29 +368,13 @@ function [dates, wghts, keepLon, trans] = coordinates(coord, metadata, names)
 
         thisTranspose = ~isequal(shape(1:2), [numel(lat), numel(lon)]);
 
-        if iField > 1 && thisTranspose ~= trans
-            error('ULMO:steric2gmsl:InvalidSchema', ...
-            'All source grids must use the same orientation.');
+        if iField > 1 && thisTranspose ~= transposeGrid
+            error('ULMO:steric2gmsl:InvalidSchema', 'All source grids must use the same orientation.');
         end
 
-        trans = thisTranspose;
+        transposeGrid = thisTranspose;
     end
 
-    % Construct the grid weights for GMSL
-    if all(abs(latSteps - latSteps(1)) <= tol)
-        % Regularly spaced grid
-        latWghts = cosd(lat);
-    else
-        % Irregularly spaced grid: Compute the weighting be differencing cell boundaries
-        bdrys = [lat(1) - latSteps(1) / 2; ...
-                     (lat(1:end - 1) + lat(2:end)) / 2; ...
-                     lat(end) + latSteps(end) / 2];
-        bdrys = max(-90, min(90, bdrys));
-        latWghts = abs(diff(sind(bdrys)));
-    end
-
-    wghts = repmat(latWghts, 1, numel(keepLon));
-    % Don't normalise yet since we haven't check which grids are actually valid yet
 end
 
 %% VALIDCACHE - Validates that the stored cache exists and and has the correct properties
