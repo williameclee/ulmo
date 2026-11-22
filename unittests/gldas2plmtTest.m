@@ -54,7 +54,8 @@ classdef gldas2plmtTest < matlab.unittest.TestCase
     methods (Test)
         function uniformStorageMatchesAnalyticZonalCoefficient(testCase)
             p = testCase.read(testCase.Epochs);
-            testCase.verifyEqual(p(:, 2, 3), [1; 3] * 6 * sqrt(3) / 16, AbsTol=1e-12);
+            % Allow for Simpson integration of the latitude factors.
+            testCase.verifyEqual(p(:, 2, 3), [1; 3] * 6 * sqrt(3) / 16, AbsTol=1e-10);
             testCase.verifyEqual(p(:, 1, 3:4), zeros(2, 1, 2));
             testCase.verifyLessThan(max(abs(p(:, [3, 5, 6], 3:4)), [], 'all'), 1e-12);
             testCase.verifyNumElements(dir(fullfile(testCase.Folder, '*.nc4')), 2);
