@@ -7,7 +7,7 @@
 %   2026/11/05, En-Chi Lee (williameclee@gmail.com)
 %
 % Last modified
-%   2026/11/21, En-Chi Lee (williameclee@gmail.com)
+%   2026/11/22, En-Chi Lee (williameclee@gmail.com)
 
 classdef steric2sleptTest < matlab.unittest.TestCase
 
@@ -489,7 +489,7 @@ classdef steric2sleptTest < matlab.unittest.TestCase
         end
 
         function nativeQuarterlyAndCacheIdentity(t)
-            % Native dates need not be monthly; fractional steps must not collide.
+            % Native dates need not be monthly. Both caches use the same temporal key.
             schema = stericfieldschema(whos('-file', t.NativePath));
             t.Data.dates = datetime(2020, [2; 5; 8; 11], 15);
 
@@ -504,6 +504,19 @@ classdef steric2sleptTest < matlab.unittest.TestCase
             steric2slept('EN4c14', t.Polygon, 0, 90.25, BeQuiet = 1);
             files = dir(fullfile(fileparts(t.NativePath), 'SlepianExpansions', '*.nc'));
             t.verifyNumElements(files, 3);
+
+            for iFile = 1:numel(files)
+                file = files(iFile);
+                timeConfig = ncreadatt(fullfile(file.folder, file.name), '/', 'temporalConfiguration');
+
+                if strcmp(timeConfig, 'native')
+                    continue
+                end
+
+                gridName = sprintf('EN4c14-StericSeaLevel-%s.mat', timeConfig);
+                t.verifyTrue(isfile(fullfile(fileparts(t.NativePath), gridName)));
+            end
+
             steric2slept('EN4c14', t.Polygon, 0, days(90.25), BeQuiet = 1);
             t.verifyNumElements(dir(fullfile(files(1).folder, '*.nc')), 3);
         end
