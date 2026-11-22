@@ -75,9 +75,11 @@
 %   The fixed mask uses the first available unprefixed native field in priority
 %   order: halosteric, total, then thermosteric. A cell must have finite,
 %   nonzero reference values at 80% or more of the native timestamps.
-%   Each timestamp uses cells that also have finite values in every supplied
-%   component and layer. Zero layer values contribute on this common support.
-%   A timestamp with no positive-weight support returns NaN.
+%   Deep-ocean NaNs at shallow-water cells are filled using STERICCOVERAGE
+%   and FILLABSENTDEEPSTERIC before selecting the common finite cells across
+%   supplied components and layers. Shallow-water zeros retain their area
+%   weight. A timestamp with no positive-weight valid cells returns NaN.
+%   Use ForceNew to refresh native means saved under earlier conventions.
 %
 % See also
 %   steric2lonlatt
@@ -86,14 +88,14 @@
 %   2026/11/04, En-Chi Lee (williameclee@gmail.com)
 %
 % Last modified
-%   2026/11/20, En-Chi Lee (williameclee@gmail.com)
+%   2026/11/21, En-Chi Lee (williameclee@gmail.com)
 
 function [gmsl, dates] = steric2gmsl(product, component, depth, options)
 
     arguments (Input)
         product (1, 1) StericProduct
-        component string {mustBeNonempty, mustBeMember(component, ["total", "thermosteric", "halosteric", "non-thermosteric", "non-halosteric"])}
-        depth string {mustBeMember(depth, ["native", "full-depth", "shallow", "deep"])} = repmat("native", size(component))
+        component string {mustBeNonempty, mustBeStericComponent}
+        depth string {mustBeStericDepth} = repmat("native", size(component))
         options.Unit (1, 1) string {mustBeMember(options.Unit, ["m", "mm"])} = "m"
         options.TimeFormat (1, 1) DateFormat = "datetime"
         options.SaveData (1, 1) logical = true
@@ -122,7 +124,7 @@ function [gmsl, dates] = steric2gmsl(product, component, depth, options)
     end
 
     metadata = whos('-file', inPath);
-    [schema, precision] = fieldschema(metadata, nativDepth);
+    [schema, precision] = checkfieldschema(metadata, nativDepth);
     rasterNames = schema.gridNames;
     available = schema.available;
     meanNames = schema.meanNames;
@@ -162,7 +164,7 @@ function [gmsl, dates] = steric2gmsl(product, component, depth, options)
             fprintf('[ULMO>%s] Calculating GMSLs for %s.\n', mfilename, char(product));
         end
 
-        means = steric2gmslCore(inPath, rasterNames, available, meanNames, supported, ...
+        means = steric2gmsl_core(inPath, schema, ...
             numel(dates), wghts, keepLon, transGrid, precision, find(depths == nativDepth));
 
         if options.SaveData
@@ -201,54 +203,83 @@ function [gmsl, dates] = steric2gmsl(product, component, depth, options)
 
 end
 
-function gmslObj = steric2gmslCore(inPath, rasterNames, fieldAvail, meanNames, supported, ...
-        nDates, wghts, keepLon, transGrid, precision, nativDepthIdx)
+function gmslObj = steric2gmsl_core(inPath, schema, ...
+        nEpochs, wghts, keepLon, transGrid, precision, nativDepthIdx)
     inFileObj = matfile(inPath);
-    % First pass uses only the reference field to determine full-record support
+    fieldNames = schema.gridNames;
+    fieldAvail = schema.available;
+    meanNames = schema.meanNames;
+    supported = schema.supported;
+    splitComps = find(schema.split)';
+    fieldIdxs = find(fieldAvail(:))';
+
+    if ~isempty(splitComps)
+        masks = stericcoverage(inFileObj, fieldNames, fieldAvail, nEpochs);
+        oceanMask = masks.oceanMask;
+        deepOceanMask = masks.deepOceanMask;
+
+        if transGrid
+            oceanMask = oceanMask';
+            deepOceanMask = deepOceanMask';
+        end
+
+        oceanMask = oceanMask(:, keepLon);
+        deepOceanMask = deepOceanMask(:, keepLon);
+    end
+
+    % Determine full-record validity from the existing reference field.
     priority = [3, 1, 2];
     refField = find(fieldAvail(priority, nativDepthIdx), 1);
-    refField = rasterNames(priority(refField), nativDepthIdx);
+    refField = fieldNames(priority(refField), nativDepthIdx);
     finiteCnt = zeros(size(wghts));
     nonzeroCnt = zeros(size(wghts));
 
     % Counts which grid points have enough valid points to be used
-    for iDate = 1:nDates
-        field = readtimeslice(inFileObj, refField, iDate, keepLon, transGrid);
+    for iEpoch = 1:nEpochs
+        field = readtimeslice(inFileObj, refField, iEpoch, keepLon, transGrid);
         finiteCnt = finiteCnt + isfinite(field);
         nonzeroCnt = nonzeroCnt + (isfinite(field) & field ~= 0);
     end
 
-    support = (finiteCnt >= 0.8 * nDates) & (nonzeroCnt >= 0.8 * nDates) & wghts > 0;
-    gmsls = nan(3, 3, nDates);
+    validMask = (finiteCnt >= 0.8 * nEpochs) & (nonzeroCnt >= 0.8 * nEpochs) & wghts > 0;
+    gmsls = nan(3, 3, nEpochs);
 
-    for iDate = 1:nDates
+    for iEpoch = 1:nEpochs
         fields = cell(3);
-        valid = support;
+        epochValidMask = validMask;
 
-        for iField = find(fieldAvail(:))'
-            fields{iField} = readtimeslice(inFileObj, rasterNames(iField), iDate, keepLon, transGrid);
-            valid = valid & isfinite(fields{iField});
+        for iField = fieldIdxs
+            fields{iField} = readtimeslice(inFileObj, fieldNames(iField), iEpoch, keepLon, transGrid);
         end
 
-        totalWghts = sum(wghts(valid));
+        for iComp = splitComps
+            fields{iComp, 3} = fillabsentdeepsteric( ...
+                fields{iComp, 1}, fields{iComp, 2}, fields{iComp, 3}, oceanMask, deepOceanMask);
+        end
+
+        for iField = fieldIdxs
+            epochValidMask = epochValidMask & isfinite(fields{iField});
+        end
+
+        totalWghts = sum(wghts(epochValidMask));
 
         if totalWghts == 0
             continue
         end
 
-        w = wghts(valid) / totalWghts;
+        w = wghts(epochValidMask) / totalWghts;
 
         for iComp = 1:3
 
             for iDepth = find(fieldAvail(iComp, :))
                 field = fields{iComp, iDepth};
-                gmsls(iComp, iDepth, iDate) = sum(w .* field(valid));
+                gmsls(iComp, iDepth, iEpoch) = sum(w .* field(epochValidMask));
             end
 
             % If shallow and deep fields are available, make sure they sum to the full-depth value
             if all(fieldAvail(iComp, :))
-                gmsls(iComp, 1, iDate) = checkDepthPartsSumToFullDepth( ...
-                    gmsls, iComp, iDate, fields, w, valid, precision, rasterNames(iComp, 1));
+                gmsls(iComp, 1, iEpoch) = checkDepthPartsSumToFullDepth( ...
+                    gmsls, iComp, iEpoch, fields, w, epochValidMask, precision, fieldNames(iComp, 1));
             end
 
         end
@@ -267,74 +298,48 @@ function gmslObj = steric2gmslCore(inPath, rasterNames, fieldAvail, meanNames, s
 
 end
 
-%% Subfunctions
-function [schema, precision] = fieldschema(metadata, nativeDepth)
-    schema = stericfieldschema(metadata, nativeDepth);
+%% CHECKFIELDSCHEMA - Finds and validates the schema
+function [schema, precision] = checkfieldschema(metadata, nativDepth)
+    schema = stericfieldschema(metadata, nativDepth);
     % Numerical requirements and source precision belong to the estimator.
     precision = eps('double');
 
+    % Check every field
     for iField = find(schema.available(:))'
         name = schema.gridNames(iField);
         entry = metadata(strcmp({metadata.name}, name));
 
         if ~ismember(entry.class, {'double', 'single'}) || entry.complex || entry.sparse
-            error('ULMO:steric2gmsl:InvalidSchema', '%s must be a real floating-point grid.', name);
+            error('ULMO:steric2gmsl:InvalidSchema', ...
+                '%s must be a real floating-point grid.', name);
         end
 
         precision = max(precision, double(eps(entry.class)));
     end
 
     if schema.incompleteSplit
-        error('ULMO:steric2gmsl:InvalidSchema', 'A depth split requires explicit full-depth, shallow and deep grids.');
+        error('ULMO:steric2gmsl:InvalidSchema', ...
+        'A depth split requires explicit full-depth, shallow and deep grids.');
     end
 
     if schema.incompatibleSplits
-        error('ULMO:steric2gmsl:InvalidSchema', 'Supplied total and halosteric depth splits must agree.');
+        error('ULMO:steric2gmsl:InvalidSchema', ...
+        'Supplied total and halosteric depth splits must agree.');
     end
 
 end
 
 %% COORDINATES - Validate time and spatial coordinates of the field grids
-function [dates, wghts, keepLon, trans] = coordinates(coord, metadata, names)
-    lon = double(coord.lon(:));
-    lat = double(coord.lat(:));
+function [dates, wghts, keepLon, transposeGrid] = coordinates(coord, metadata, names)
+    [~, ~, iLon, iLat, orderedWghts] = preparegridcoordinates( ...
+        coord.lon, coord.lat, RequireGlobalLongitude = true);
 
-    mustBeCoordinateVector = @(x) isreal(x) && all(isfinite(x(:))) && isvector(x) && numel(x) >= 2;
-
-    if ~mustBeCoordinateVector(coord.lon) || ~mustBeCoordinateVector(coord.lat) ...
-            || any(abs(lat) > 90)
-        error('ULMO:steric2gmsl:InvalidGrid', 'Expected finite longitude/latitude coordinate vectors.');
-    end
-
-    tol = 3e-5; % Coordinate tolerance in degrees.
-    latSteps = diff(lat);
-
-    if ~(all(latSteps > 0) || all(latSteps < 0))
-        error('ULMO:steric2gmsl:InvalidGrid', 'Latitude must be strictly increasing or decreasing.');
-    end
-
-    % Both endpoints of an offset can carry single-precision rounding.
-    lonTol = tol;
-
-    if isa(coord.lon, 'single')
-        lonTol = max(lonTol, double(eps(max(abs(coord.lon(:))))));
-    end
-
-    lonTol = min(lonTol, 90 / numel(lon));
-    lonSpan = lon(end) - lon(1);
-
-    % Drop the last longitude slice if it is the same as the first longitude (e.g. 0° and 360°)
-    % to avoid double counting its contribution
-    keepLon = 1:(numel(lon) - (abs(abs(lonSpan) - 360) <= lonTol));
-
-    % Check the longitude vector is equally spaced
-    lonStep = sign(lonSpan) * 360 / numel(keepLon);
-    expdLons = (0:numel(lon) - 1)' * lonStep;
-
-    if lonSpan == 0 || any(abs((lon - lon(1)) - expdLons) > lonTol)
-        error('ULMO:steric2gmsl:InvalidGrid', 'Longitude must cover one complete regular periodic grid.');
-    end
-
+    lon = coord.lon; lat = coord.lat;
+    % Keep the native reader's original traversal and summation order.
+    [keepLon, orderLon] = sort(iLon);
+    keepLon = keepLon.';
+    wghts = zeros(numel(lat), numel(keepLon));
+    wghts(iLat, :) = orderedWghts(orderLon, :).';
     dates = coord.dates;
 
     if isnumeric(dates) && isreal(dates) && all(isfinite(dates(:)))
@@ -343,19 +348,15 @@ function [dates, wghts, keepLon, trans] = coordinates(coord, metadata, names)
 
     if ~isdatetime(dates) || ~isvector(dates) || isempty(dates) || ...
             any(isnat(dates(:))) || any(diff(dates(:)) <= seconds(0))
-        error('ULMO:steric2gmsl:InvalidDates', ...
-        'Native dates must be finite and strictly increasing.');
+        error('ULMO:steric2gmsl:InvalidDates', 'Native dates must be finite and strictly increasing.');
     end
 
     dates = dates(:);
-
-    % Checks the size of the fields, and whether it needs to be transposed
-    % The expected shape is (nLat, nLon, nTime)
-    trans = false;
+    transposeGrid = false;
 
     for iField = 1:numel(names)
-        field = metadata(strcmp({metadata.name}, names(iField)));
-        shape = field.size;
+        entry = metadata(strcmp({metadata.name}, names(iField)));
+        shape = entry.size;
         shape(end + 1:3) = 1;
 
         if numel(shape) ~= 3 || shape(3) ~= numel(dates) || ...
@@ -367,29 +368,13 @@ function [dates, wghts, keepLon, trans] = coordinates(coord, metadata, names)
 
         thisTranspose = ~isequal(shape(1:2), [numel(lat), numel(lon)]);
 
-        if iField > 1 && thisTranspose ~= trans
-            error('ULMO:steric2gmsl:InvalidSchema', ...
-            'All source grids must use the same orientation.');
+        if iField > 1 && thisTranspose ~= transposeGrid
+            error('ULMO:steric2gmsl:InvalidSchema', 'All source grids must use the same orientation.');
         end
 
-        trans = thisTranspose;
+        transposeGrid = thisTranspose;
     end
 
-    % Construct the grid weights for GMSL
-    if all(abs(latSteps - latSteps(1)) <= tol)
-        % Regularly spaced grid
-        latWghts = cosd(lat);
-    else
-        % Irregularly spaced grid: Compute the weighting be differencing cell boundaries
-        bdrys = [lat(1) - latSteps(1) / 2; ...
-                     (lat(1:end - 1) + lat(2:end)) / 2; ...
-                     lat(end) + latSteps(end) / 2];
-        bdrys = max(-90, min(90, bdrys));
-        latWghts = abs(diff(sind(bdrys)));
-    end
-
-    wghts = repmat(latWghts, 1, numel(keepLon));
-    % Don't normalise yet since we haven't check which grids are actually valid yet
 end
 
 %% VALIDCACHE - Validates that the stored cache exists and and has the correct properties
@@ -421,13 +406,14 @@ function field = readtimeslice(matObj, field, iDate, keepLon, trans)
 end
 
 %% CHECKDEPTHPARTSSUMTOFULLDEPTH - Checks that the full-depth value agrees with the sum of shallow and deep parts
-function combined = checkDepthPartsSumToFullDepth(values, iComponent, iDate, fields, w, valid, precision, fieldName)
-    direct = values(iComponent, 1, iDate);
-    combined = sum(values(iComponent, 2:3, iDate));
+function combined = checkDepthPartsSumToFullDepth( ...
+        values, iComp, iDate, fields, w, valid, precision, fieldName)
+    direct = values(iComp, 1, iDate);
+    combined = sum(values(iComp, 2:3, iDate));
     scale = 1;
 
     for iDepth = 1:3
-        field = fields{iComponent, iDepth};
+        field = fields{iComp, iDepth};
         scale = max(scale, sum(w .* abs(field(valid))));
     end
 

@@ -9,8 +9,7 @@
 %   product - Prepared product identifier accepted by StericProduct.
 %   timeStep (optional) - Temporal cache selector.
 %       Positive numeric scalar or duration, 'midmonth', or 'GRACE'.
-%       Numeric steps use the MATLAB %d format. Duration steps use their
-%       displayed value and unit with spaces removed.
+%       Uses the same temporal cache key as STERIC2SLEPT.
 %       Unit: days for numeric values.
 %       Default selector: [] (native timestamps).
 %   meshSize (optional) - Spatial grid spacing.
@@ -20,20 +19,20 @@
 %       Unit: degrees east.
 %       Default centre: [] (no origin suffix).
 %   intpMthd (optional) - Interpolation method.
-%       Used only when a temporal or spatial selector is supplied.
-%       Default method: "".
+%       Used for fixed-step temporal processing and spatial interpolation.
+%       Default method: linear.
 %
 % Output arguments
 %   outPath - MAT file path under the product folder in IFILES/STERIC.
 %
 % See also
-%   steric2lonlatt, steric2gmsl
+%   steric2lonlatt, steric2slept, steric2gmsl, normalisetimeconfig
 %
 % Created by
 %   2026/11/08, En-Chi Lee (williameclee@gmail.com)
 %
 % Last modified
-%   2026/11/20, En-Chi Lee (williameclee@gmail.com)
+%   2026/11/22, En-Chi Lee (williameclee@gmail.com)
 
 function outPath = stericfilepath( ...
         product, timeStep, meshSize, lonOrigin, intpMthd)
@@ -43,31 +42,16 @@ function outPath = stericfilepath( ...
         timeStep {mustBeTimeStep} = []
         meshSize {mustBePositive} = []
         lonOrigin {mustBeFinite, mustBeReal} = []
-        intpMthd (1, 1) string = ""
+        intpMthd (1, 1) string = "linear"
     end
 
     outFolder = fullfile(getenv("IFILES"), 'STERIC', char(product));
 
+    [timeStep, intpMthd, ~, timeConfig] = normalisetimeconfig(timeStep, intpMthd);
     timeStepStr = '';
 
     if ~isempty(timeStep)
-
-        if ischar(timeStep) || isstring(timeStep)
-            timeStepStr = sprintf('-T%s', lower(timeStep));
-        elseif isduration(timeStep)
-            timeStepStr = sprintf('-T%s', erase(sprintf('%s', timeStep), ' '));
-        elseif isnumeric(timeStep)
-            timeStepStr = sprintf('-T%d', timeStep);
-        else
-            error(sprintf('ULMO:%s:InvalidTimeStep', upper(mfilename)), ...
-                'Unrecognised time step input for saving: %s', class(timeStep));
-        end
-
-        % Earlier linear fixed-step caches could contain bin averages.
-        if isduration(timeStep) && strcmpi(intpMthd, 'linear')
-            timeStepStr = [timeStepStr, '-interp'];
-        end
-
+        timeStepStr = ['-', timeConfig];
     end
 
     spaceIntpStr = '';
@@ -82,8 +66,9 @@ function outPath = stericfilepath( ...
 
     intpMethodStr = '';
 
-    if ~(isempty(timeStepStr) && isempty(spaceIntpStr))
-        intpMethodStr = sprintf('-%s', lower(intpMthd));
+    if ~isempty(spaceIntpStr) && ~isduration(timeStep)
+        % A fixed-step key already includes the interpolation method.
+        intpMethodStr = sprintf('-%s', intpMthd);
     end
 
     outFile = sprintf('%s-StericSeaLevel%s%s%s.mat', ...

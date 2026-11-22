@@ -1,4 +1,4 @@
-%% STERIC2LONLATT - Loads and interpolates prepared steric sea level grids.
+%% STERIC2LONLATT - Loads and interpolates gridded steric sea-level fields.
 %
 % Syntax
 %   [steric, stericSigma, dates] = STERIC2LONLATT(product)
@@ -12,10 +12,10 @@
 %       JAMSTEC, ISAS, IPRC or IAPv4.
 %       Default product: EN4c14.
 %   timestep (optional) - Temporal interpolation step or averaging convention.
-%       Positive numeric scalar or duration for fixed steps, 'midmonth' for
-%       calendar-month means, or 'GRACE' for CSR RL06 degree-60 solution
-%       windows. Both conventions average native samples and return window
-%       midpoints.
+%       - Positive numeric scalar or duration for fixed steps
+%       - 'midmonth' for calendar-month means, or 'GRACE' for CSR RL06 degree-60
+%         solution windows. Both conventions average native samples and return
+%         window midpoints.
 %       Unit: days for numeric values.
 %       Default step: [] (native timestamps).
 %   meshsize (optional) - Spatial interpolation spacing.
@@ -53,11 +53,11 @@
 %   Component (name-value) - Selected steric component.
 %       total, thermosteric, halosteric, non-thermosteric, or non-halosteric.
 %       Default component: total.
-%   ForceNew (name-value) - Whether to reprocess every supported component grid and
+%   ForceNew (name-value) - Whether to refresh the requested grid cache and
 %       recalculate every native and processed GMSL.
 %       Does not regenerate native grids or other cache configurations.
 %       Default flag: false.
-%   SaveData (name-value) - Whether to save native means and derived grids/means.
+%   SaveData (name-value) - Whether to save processed grids and means.
 %       false allows cache reads and in-memory rebuilds without any writes.
 %       Default flag: true.
 %   BeQuiet (name-value) - Whether to suppress messages.
@@ -111,6 +111,12 @@
 %       Size: as in the input file, with processed spatial/time dimensions.
 %       Unit: m.
 %
+%   oceanMask, deepOceanMask - Static masks from finite values on the grid
+%       used for zero-filling. Derived caches use the saved lon and lat.
+%       The native deep cache stores nativeLon and nativeLat. The deep-ocean
+%       mask is saved for products with depth splits.
+%   creationDate - Datetime when the cached grids were saved.
+%
 %   <component>Gmsl - Processed total, thermosteric and halosteric means when
 %       requested or forced, with the names defined by STERIC2GMSL.
 %       Difference-component means are never saved.
@@ -118,6 +124,14 @@
 %       Unit: m.
 %
 % Notes
+%   A shallow-water cell contributes zero deep-ocean steric sea level where
+%   both its full-depth and upper-ocean values are finite. A deep-ocean
+%   cell with a missing observation remains missing at the zero-filling step.
+%   Derive the masks and fill before temporal processing on the native grid.
+%   For a new spatial grid, derive the masks and fill after spatial
+%   interpolation. See STERICCOVERAGE.
+%   Corrected native deep grids are cached beside the prepared file with the
+%   '-deep' suffix. Native source grids remain unchanged.
 %   Difference components are derived after processing when requested.
 %   Ordinary grid-only requests do not calculate means. GMSL requests reuse
 %   STERIC2GMSL caches and process all applicable series separately from grids.
@@ -130,7 +144,7 @@
 %   2025/07/22, En-Chi Lee (williameclee@arizona.edu)
 %
 % Last modified
-%   2026/11/20, En-Chi Lee (williameclee@gmail.com)
+%   2026/11/21, En-Chi Lee (williameclee@gmail.com)
 
 function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt( ...
         product, timestep, meshsize, timelim, options)
@@ -145,10 +159,8 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
         options.TimeFormat (1, 1) DateFormat = "datetime"
         options.OutputFormat (1, 1) MeshFormat = "meshgrid"
         options.Unit (1, 1) string {mustBeMember(options.Unit, ["mm", "m"])} = "m"
-        options.Depth (1, 1) string ...
-            {mustBeMember(options.Depth, ["native", "full-depth", "shallow", "deep"])} = "native"
-        options.Component (1, 1) string ...
-            {mustBeMember(options.Component, ["total", "thermosteric", "halosteric", "non-thermosteric", "non-halosteric"])} = "total"
+        options.Component (1, 1) string {mustBeStericComponent} = "total"
+        options.Depth (1, 1) string {mustBeStericDepth} = "native"
         options.ForceNew (1, 1) {mustBeNumericOrLogical} = false
         options.BeQuiet (1, 1) {mustBeNumericOrLogical} = 0.5
         options.SaveData (1, 1) {mustBeNumericOrLogical} = true
@@ -206,9 +218,7 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
         timelim = datetime(timelim, 'ConvertFrom', 'datenum');
     end
 
-    if ~isempty(timestep) && isnumeric(timestep)
-        timestep = days(timestep);
-    end
+    [timestep, intpMthd, useMean] = normalisetimeconfig(timestep, intpMthd);
 
     % 'default' and 'no halosteric drift' are deprecated Component values.
     schema = stericfieldschema(struct('name', {}, 'size', {}), nativeDepth);
@@ -225,7 +235,6 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
         sourceComponents = [1, iComp - 2];
     end
 
-    useMean = ~isempty(timestep) && (ischar(timestep) || isstring(timestep) || strcmpi(intpMthd, 'mean'));
     spatialIntpMthd = intpMthd;
 
     if spatialIntpMthd == "mean"
@@ -235,6 +244,7 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
     outPath = stericfilepath(product, timestep, meshsize, lonOrigin, intpMthd);
     nativePath = stericfilepath(product);
     isDerived = ~strcmp(outPath, nativePath);
+    regrid = ~isempty(meshsize) || ~isempty(lonOrigin);
     coordVars = {'lon', 'lat', 'dates'};
     needMeans = nargout >= 6 || options.ForceNew;
     halostericGmsl = zeros(0, 1);
@@ -267,8 +277,14 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
     % Only supplied components belong to this configuration's cache.
     % Completeness depends on required variable names, not a cache version.
     requiredGrids = cellstr(cacheGridNames(supported(1:3, :)));
+    maskVars = {'oceanMask', 'creationDate'};
+
+    if any(schema.available(:, 3))
+        maskVars{end + 1} = 'deepOceanMask';
+    end
+
     cacheHit = isDerived && ~options.ForceNew && isfile(outPath) && ...
-        cachecontains(outPath, [coordVars, requiredGrids(:)']);
+        cachecontains(outPath, [coordVars, maskVars, requiredGrids(:)']);
 
     if cacheHit
         inPath = outPath;
@@ -300,19 +316,30 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
     end
 
     coord.dates = coord.dates(:);
-    data = load(inPath, dataVars{:});
+
+    if ~isDerived && any(schema.split) && (iDepth == 3 || options.ForceNew)
+        data = nativedeepfields(nativePath, schema, coord, sourceComponents, iDepth, options);
+    else
+        data = load(inPath, dataVars{:});
+    end
+
     % Process the complete record. Output time limits are applied only after
     % saving or reading the shared configuration cache.
     if ~cacheHit && isDerived
 
-        if useMean
+        if regrid
+
+            if ~useMean
+                [data, coord.dates] = processfieldtime(data, coord.dates, timestep, intpMthd, []);
+            end
+
             [data, coord] = preparegrid(data, coord, meshsize, lonOrigin, spatialIntpMthd, options.BeQuiet, callChain);
         end
 
-        [data, coord.dates] = processtime(data, coord.dates, timestep, intpMthd);
+        [data, masks] = maskstericgrids(data, schema, numel(coord.dates));
 
-        if ~useMean
-            [data, coord] = preparegrid(data, coord, meshsize, lonOrigin, spatialIntpMthd, options.BeQuiet, callChain);
+        if ~regrid || useMean
+            [data, coord.dates] = processfieldtime(data, coord.dates, timestep, intpMthd, []);
         end
 
         data = componentfields(data, schema);
@@ -341,25 +368,17 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
                 error('ULMO:LoadData:FileNotFound', 'Rebuilding native means requires %s.', nativePath);
             end
 
-            % The first saved forced call refreshes the complete native set.
-            % Subsequent saved calls reuse that complete set. With saving
-            % disabled, every forced call must bypass old native means; repeated
-            % calculation is intentional and keeps the native API unchanged.
-            firstMean = true;
+            [meanComponents, meanDepths] = find(cachedComponents);
+            [values, nativeDates] = steric2gmsl(product, components(meanComponents), depths(meanDepths), ...
+                ForceNew = options.ForceNew, SaveData = saveData, ...
+                BeQuiet = double(options.BeQuiet) / 2);
 
-            for iMean = find(cachedComponents(:))'
-                [meanComponent, meanDepth] = ind2sub(size(supported), iMean);
-                forceMean = options.ForceNew && (firstMean || ~saveData);
-                [values, nativeDates] = steric2gmsl(product, components(meanComponent), depths(meanDepth), ...
-                    ForceNew = forceMean, SaveData = saveData, ...
-                    BeQuiet = double(options.BeQuiet) / 2);
-                % Temporal helpers expect time on axis three. This temporary
-                % shape does not make the scalar series a spatial grid.
-                means.(meanNames(iMean)) = reshape(values, 1, 1, []);
-                firstMean = false;
+            for iMean = 1:numel(names)
+                % Temporal helpers expect time on axis three.
+                means.(names{iMean}) = reshape(values(:, iMean), 1, 1, []);
             end
 
-            [means, meanDates] = processtime(means, nativeDates, timestep, intpMthd);
+            [means, meanDates] = processfieldtime(means, nativeDates, timestep, intpMthd, []);
             assert(isequal(meanDates(:), coord.dates(:)), ...
                 'ULMO:steric2lonlatt:MeanDates', 'GMSL and grid dates must agree.');
 
@@ -405,17 +424,23 @@ function [steric, stericSigma, dates, lon, lat, halostericGmsl] = steric2lonlatt
     if saveData && isDerived
 
         if ~cacheHit
-            stored = data;
+            stored = masks;
             stored.lon = coord.lon;
             stored.lat = coord.lat;
             stored.dates = coord.dates(:);
+            fields = fieldnames(data);
+
+            for iField = 1:numel(fields)
+                stored.(fields{iField}) = data.(fields{iField});
+            end
+
             names = fieldnames(means);
 
             for iMean = 1:numel(names)
                 stored.(names{iMean}) = means.(names{iMean});
             end
 
-            save(outPath, '-struct', 'stored', '-v7.3');
+            savegridcache(outPath, stored);
         elseif saveMeans
             save(outPath, '-struct', 'means', '-append');
         end
@@ -465,6 +490,67 @@ function valid = cachecontains(path, names)
     valid = all(ismember(names, who('-file', path)));
 end
 
+function data = nativedeepfields(nativePath, schema, coord, sourceComponents, iDepth, options)
+    [folder, name, extension] = fileparts(nativePath);
+    cachePath = fullfile(folder, [name, '-deep', extension]);
+    deepNames = cellstr(schema.gridNames(schema.split, 3));
+    requestedFields = cellstr(schema.gridNames(sourceComponents, iDepth));
+    required = [{'oceanMask', 'deepOceanMask', 'nativeLon', 'nativeLat', 'creationDate'}, deepNames'];
+
+    if ~options.ForceNew && isfile(cachePath) && cachecontains(cachePath, required)
+        data = load(cachePath, requestedFields{:});
+        return;
+    end
+
+    if iDepth ~= 3 && ~options.SaveData
+        data = load(nativePath, requestedFields{:});
+        return;
+    end
+
+    masks = stericcoverage(matfile(nativePath), schema.gridNames, schema.available, numel(coord.dates));
+    stored = masks;
+    stored.nativeLon = coord.lon;
+    stored.nativeLat = coord.lat;
+    components = find(schema.split)';
+
+    if ~options.SaveData
+        components = sourceComponents;
+    end
+
+    for iComp = components
+        names = cellstr(schema.gridNames(iComp, :));
+        grids = load(nativePath, names{:});
+        stored.(names{3}) = fillabsentdeepsteric( ...
+            grids.(names{1}), grids.(names{2}), grids.(names{3}), masks.oceanMask, masks.deepOceanMask);
+    end
+
+    if options.SaveData
+        savegridcache(cachePath, stored);
+    end
+
+    if iDepth == 3
+        data = struct();
+
+        for iField = 1:numel(requestedFields)
+            name = requestedFields{iField};
+            data.(name) = stored.(name);
+        end
+
+    else
+        data = load(nativePath, requestedFields{:});
+    end
+
+end
+
+function savegridcache(path, data)
+    % Build the whole grid cache before replacing any previous result.
+    data.creationDate = datetime('now');
+    temporary = [tempname(fileparts(path)), '.mat'];
+    cleanup = onCleanup(@() deletefileifpresent(temporary));
+    save(temporary, '-struct', 'data', '-v7.3');
+    movefile(temporary, path, 'f');
+end
+
 function processed = componentfields(data, schema)
     % Assign explicit depth names to supplied components only.
     processed = struct();
@@ -475,36 +561,6 @@ function processed = componentfields(data, schema)
             selectsteric(data, schema.gridNames, iComp, iDepth);
     end
 
-end
-
-function [data, dates] = processtime(data, dates, timestep, method)
-    % Grids and means enter separately but share temporal conventions. Epoch
-    % averaging uses each array's own finite observations; it deliberately does
-    % not match a GMSL to each individual cell's temporal support.
-    if isempty(timestep)
-        dates = dates(:);
-        return;
-    end
-
-    names = fieldnames(data);
-    useMean = ischar(timestep) || isstring(timestep) || method == "mean";
-
-    if useMean
-        epochs = temporalmeanepochs(dates, timestep, []);
-    end
-
-    for iName = 1:numel(names)
-
-        if useMean
-            [data.(names{iName}), outputDates] = averageepochs(dates, data.(names{iName}), epochs);
-        else
-            [data.(names{iName}), outputDates] = interptemporal(dates, data.(names{iName}), ...
-                timestep, method, BeQuiet = true);
-        end
-
-    end
-
-    dates = outputDates(:);
 end
 
 function [data, coord] = preparegrid(data, coord, meshsize, lonOrigin, intpMthd, beQuiet, callChain)
