@@ -1,7 +1,4 @@
-%% GLMALPHA
-% Returns an lm-by-alpha matrix with unit-normalized spherical harmonic
-% coefficients of the BANDLIMITED or PASSBAND Slepian functions of the
-% SINGLE or DOUBLE polar cap, or of a GEOGRAPHICAL region of interest.
+%% GLMALPHA - Returns the spherical harmonic coefficients of Slepian functions of a polar cap or geographical region.
 % Only in the geographical case are the eigenvalues automatically sorted;
 % if not, the column dimension is always block-ordered by virtue of the
 % construction. The matrix G is orthogonal, G'*G is the identity. In column
@@ -111,11 +108,11 @@
 %   anything works, too. You don't get necessarily the spherical harmonics
 %   back...
 %
-% Last modified by
-%   2026/11/05, En-Chi Lee (williameclee@gmail.com)
-%   2017/12/01, fjsimons@alum.mit.edu (@fjsimons)
-%   2016/06/27, charig@princeton.edu (@harig00)
-%   2016/10/11, plattner@alumni.ethz.ch (@AlainPlattner)
+% Last modified
+%   2026/11/22, En-Chi Lee (williameclee@gmail.com)
+%   2017/12/01, F J Simons (fjsimons@alum.mit.edu)
+%   2016/06/27, Chris Harig (charig@princeton.edu)
+%   2016/10/11, Alain Plattner (plattner@alumni.ethz.ch)
 
 function varargout = glmalpha_new(varargin)
     %% Initialisation & demos
@@ -151,7 +148,8 @@ function varargout = glmalpha_new(varargin)
     % Output file
     vars = {'G', 'V', 'EL', 'EM', 'N'};
 
-    [dataPath, domainType] = ...
+    isCap = isnumeric(domain) && isscalar(domain);
+    dataPath = ...
         getoutputfile(domain, L, sord, blox, upco, resc, ...
         truncation, anti, bp);
 
@@ -161,7 +159,7 @@ function varargout = glmalpha_new(varargin)
     xver = [];
     xver = conddefval(xver, 0);
 
-    if strcmpi(domainType, "cap")
+    if isCap
         sord = conddefval(sord, 1);
         % Initialise ordering matrices
         MTAP = zeros([1, ldim]);
@@ -219,7 +217,7 @@ function varargout = glmalpha_new(varargin)
     [EM, EL, ~, blkm] = addmout(maxL);
 
     % For geographical or lonlat regions
-    if ismatrix(domain) || isa(domain, 'GeoDomain')
+    if ~isCap
         upscale = sord;
         [G, V, N] = glmalpha_geographic( ...
             maxL, domain, upscale, anti, rotb, ldim, bp, EL, EM, xver, ...
@@ -241,9 +239,14 @@ function varargout = glmalpha_new(varargin)
     else
         % For AXISYMMETRIC REGIONS
         [G, V, EL, EM, N, GM2AL, MTAP, IMTAP] = glmalpha_axisymmetric( ...
-            domain, sord, L, lp, bp, EM, EL, blkm, blox, upco, xver);
+            domain, sord, L, lp, bp, EM, EL, blkm, blox, upco, xver, resc);
 
         if ~strcmp(dataPath, 'neveravailable') && saveData
+
+            if ~isfolder(fileparts(dataPath))
+                mkdir(fileparts(dataPath));
+            end
+
             save(dataPath, vars{:}, '-v7.3')
         end
 
@@ -347,7 +350,7 @@ function varargout = parseinputs(Inputs)
          forceNew, saveData, beQuiet, callChain};
 end
 
-function [dataPath, domainType] = ...
+function dataPath = ...
         getoutputfile(domain, L, sord, blox, upco, resc, truncation, ...
         anti, bp)
 
@@ -375,11 +378,11 @@ function [dataPath, domainType] = ...
             sord = conddefval(sord, 1);
 
             if ~bp
-                outputFile = sprintf('glmalpha-%i-%i-%i-%i.mat', ...
-                    domain, L, sord, blox);
+                outputFile = sprintf('glmalpha-%s-%i-%i-%i.mat', ...
+                    num2filename(domain), L, sord, blox);
             else
-                outputFile = sprintf('glmalphabl-%i-%i-%i-%i-%i.mat', ...
-                    domain, L(1), L(2), sord, blox);
+                outputFile = sprintf('glmalphabl-%s-%i-%i-%i-%i.mat', ...
+                    num2filename(domain), L(1), L(2), sord, blox);
             end
 
         case 'GeoDomain'
@@ -405,7 +408,7 @@ function [dataPath, domainType] = ...
         case 'pto'
             % Make a hash, who cares if it's human-readable?
             outputFile = sprintf('%s.mat', ...
-                hash([domain, L, phi, theta, omega], 'sha1'));
+                hash([domain, L(:).', conddefval(sord, 1), blox, upco, resc], 'sha1'));
             % For excessive verification of the upco'd case
     end
 
