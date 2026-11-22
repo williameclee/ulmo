@@ -1,0 +1,10 @@
+function [plmt, sigma, dates] = grace2plmt_new(product, varargin)
+% Synthetic loader; the real source-window parser, basis and fitter remain active.
+    global ULMO_SEISMIC_FIXTURE
+    ULMO_SEISMIC_FIXTURE.calls = ULMO_SEISMIC_FIXTURE.calls + 1;
+    ULMO_SEISMIC_FIXTURE.arguments = varargin;
+    ULMO_SEISMIC_FIXTURE.product = product;
+    plmt = ULMO_SEISMIC_FIXTURE.plmt;
+    sigma = ULMO_SEISMIC_FIXTURE.sigma;
+    dates = ULMO_SEISMIC_FIXTURE.dates;
+end

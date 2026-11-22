@@ -56,6 +56,7 @@ The ultimate goal is to drop the `_new` suffixes and replace the original functi
 | `gracedeg1` | Reads and converts GRACE TN-13 degree-1 data to appropriate field and format. | | GRACE | Replacement for `gracedeg1` in [slepian_delta](https://github.com/csdms-contrib/slepian_delta.git). |
 | `gracedeg2` | Reads and converts GRACE TN-14 $\Delta C_{2,0}$/$\Delta C_{3,0}$ data to appropriate field and format. | | GRACE | Replacement for `gracedeg2` in [slepian_delta](https://github.com/csdms-contrib/slepian_delta.git). |
 | `aod1b2plmt` | Reads and converts GRACE GAC/GAD data to `lmcosi`-format spherical harmonic fields. | | GRACE | |
+| `grace2seismic` | Estimates independent earthquake corrections and uncertainties in spherical harmonics. | Slepian packages | GRACE; optional GLDAS Noah 2.1 monthly files | [API, catalogue and cache guide](grace-seismic.md). |
 
 ### Sea Level Fingerprint/Geocentric Motion Computation
 

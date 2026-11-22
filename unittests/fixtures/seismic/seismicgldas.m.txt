@@ -1,0 +1,8 @@
+function plmt = seismicgldas(epochs, L, unit, loveNumSource, equatorRadius)
+% Known fixed storage correction; real input processing has separate tests.
+    global ULMO_SEISMIC_FIXTURE
+    assert(isequal(mean(epochs, 2), ULMO_SEISMIC_FIXTURE.dates));
+    assert(L == 4 && unit == "SD" && loveNumSource == "ISSM" && equatorRadius == 6378136.3);
+    ULMO_SEISMIC_FIXTURE.gldasCalls = ULMO_SEISMIC_FIXTURE.gldasCalls + 1;
+    plmt = ULMO_SEISMIC_FIXTURE.storage;
+end
