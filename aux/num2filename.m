@@ -31,7 +31,10 @@ function text = num2filename(value)
     end
     if abs(value) >= 1e-6 && abs(value) < 1e15
         decimalPlaces = max(0, precision - 1 - floor(log10(abs(value))));
-        text = sprintf('%.*f', decimalPlaces, value);
+        decimalText = sprintf('%.*f', decimalPlaces, value);
+        if str2double(decimalText) == value
+            text = decimalText;
+        end
     end
     text = strrep(strrep(strrep(text, '.', 'p'), '-', 'n'), '+', '');
 end

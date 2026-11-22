@@ -1,13 +1,13 @@
 %% GLMALPHA_AXISYMMETRIC
 % Is an auxiliary function separated from GLMALPHA. 
 % It finds G, V, and N for the given axisymmetric region.
-% Uses the fixed-order polar-cap routines from the Slepian package.
+% Uses fixed-order polar-cap routines and direct bandpass quadrature.
 %
 % Created by
 % 	2024/07/12, En-Chi Lee (williameclee@arizona.edu)
 %
 % Last modified
-%   2026/11/12, En-Chi Lee (williameclee@gmail.com)
+%   2026/11/22, En-Chi Lee (williameclee@gmail.com)
 
 function [G, V, EL, EM, N, GM2AL, MTAP, IMTAP] = ...
         glmalpha_axisymmetric(TH, sord, L, lp, bp, EM, EL, blkm, ...
@@ -46,10 +46,7 @@ function [G, V, EL, EM, N, GM2AL, MTAP, IMTAP] = ...
             if lp
                 [~, ~, ~, C, ~, Vp] = grunbaum(TH, L, m, 0);
             elseif bp
-                % Note that the small-eigenvalue eigenfunctions might be
-                % numerically degenerate and thus not as using Grunbaum - if
-                % you need to compare, compare where the eigenvalues are "big"
-                [~, Vp, ~, ~, C] = sdwcap(TH, L, m, 0, -1);
+                [C, Vp] = bandpasscap(TH, L, m);
             end
 
         elseif sord == 2
@@ -164,8 +161,10 @@ function [G, V, EL, EM, N, GM2AL, MTAP, IMTAP] = ...
         GM2AL(:, l + 1) = sum(G(b:e, :) .^ 2, 1)';
     end
 
-    % Make sure that the sum over all degrees is 1 - but I forgot why
-    difer(sum(GM2AL, 2) - 1, [], [], mesg)
+    % Uncontinued eigenfunctions have unit global energy.
+    if upco == 0
+        difer(sum(GM2AL, 2) - 1, [], [], mesg)
+    end
 
     % This is not blockdiagonal, unless you make it thus
     if blox == 1
@@ -174,4 +173,32 @@ function [G, V, EL, EM, N, GM2AL, MTAP, IMTAP] = ...
         EL = EL(blkm);
     end
 
+end
+
+%% BANDPASSCAP - Solves a fixed-order cap problem in the allowed degrees.
+% Gauss-Legendre quadrature integrates products of degree at most 2*L(2)
+% exactly. The concentration kernel uses harmonics normalised to unit
+% global energy; integrating longitude supplies the factor 2*pi.
+%
+% Input arguments
+%   radius - Polar-cap radius in degrees.
+%   L - Minimum and maximum harmonic degrees.
+%   order - Nonnegative harmonic order.
+%
+% Output arguments
+%   C - Orthonormal eigenvectors, padded with zeros below the minimum degree.
+%       Rows correspond to degrees order:L(2).
+%   V - Concentration eigenvalues in descending order.
+%
+% Created by
+%   2026/11/13, En-Chi Lee (williameclee@arizona.edu)
+
+function [C, V] = bandpasscap(radius, L, order)
+    firstDegree = max(order, L(1));
+    [weights, nodes] = gausslegendrecof(2 * L(2), [], [cosd(radius), 1]);
+    harmonics = xlm(firstDegree:L(2), order, acos(nodes(:).'));
+    kernel = 2 * pi * (harmonics .* weights(:).') * harmonics.';
+    [vectors, values] = eig((kernel + kernel.') / 2, 'vector');
+    [V, indices] = sort(values, 'descend');
+    C = [zeros(firstDegree - order, numel(V)); vectors(:, indices)];
 end
