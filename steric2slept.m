@@ -180,49 +180,34 @@ function [stericSlept, dates, GVN, haloGmsl, constSlept] = steric2slept( ...
     iDepth = find(schema.depths == options.Depth);
     field = replace(schema.meanNames(iType, iDepth), 'Gmsl', 'Slept');
     haloName = schema.meanNames(3, iDepth);
-    supplied = ~isempty(options.GVN);
-    [cache.stem, cache.config, cache.domainId] = ...
-        cacheStem(product, domain, L, timestep, options.Interpolation);
-    path = '';
+    isCustomGVN = ~isempty(options.GVN);
 
-    if ~options.ForceNew && ~supplied
-        path = findCache(cache.stem, options.truncation);
-    end
+    dataPath = getoutputfile(product, domain, L, timestep, ...
+        options.Interpolation, options.truncation);
 
-    if ~isempty(path) && isfile(path)
-
-        if options.BeQuiet < 1
-            fprintf('[ULMO>%s] Loading %s.\n', mfilename, path);
-        end
+    if ~options.ForceNew && isfile(dataPath) && ~isCustomGVN
 
         [stericSlept, dates, haloGmsl, constSlept] = loadCache( ...
-            path, field, haloName, timelim, nargout);
+            dataPath, field, haloName, timelim, nargout);
+
+        if options.BeQuiet < 1
+            fprintf('[ULMO>%s] Loaded %s.\n', mfilename, dataPath);
+        end
 
         if nargout >= 3
             GVN = prepareslepianbasis(domain, L, size(stericSlept, 2), {}, ...
                 RequireOrthonormal = true, SaveData = options.SaveData);
         end
 
-    else
-        [stericSlept, dates, GVN, haloGmsl, constSlept] = steric2slept_core( ...
-            product, domain, L, timestep, timelim, options, cache, schema, field, haloName, nargout >= 4);
+        [stericSlept, haloGmsl, dates] = formatoutput( ...
+            stericSlept, haloGmsl, dates, options.Unit, options.OutputFormat, options.TimeFormat);
+        return
     end
 
-    if options.Unit == "mm"
-        stericSlept = 1000 * stericSlept;
-        haloGmsl = 1000 * haloGmsl;
-
-    end
-
-    if options.OutputFormat == "traditional"
-        stericSlept = stericSlept.';
-        haloGmsl = haloGmsl.';
-    end
-
-    if options.TimeFormat == "datenum"
-        dates = datenum(dates); %#ok<DATNM>
-    end
-
+    [stericSlept, dates, GVN, haloGmsl, constSlept] = steric2slept_core( ...
+        product, domain, L, timestep, timelim, options, schema, field, haloName, nargout >= 4);
+    [stericSlept, haloGmsl, dates] = formatoutput( ...
+        stericSlept, haloGmsl, dates, options.Unit, options.OutputFormat, options.TimeFormat);
 end
 
 %% STERIC2SLEPT_CORE - Computes and optionally caches all supported steric projections.
@@ -230,15 +215,15 @@ end
 % Output dates remain datetime values until the public function formats them.
 % needHaloGmsl records whether the caller requested the halosteric output.
 function [stericSlept, dates, GVN, haloGmsl, constSlept] = steric2slept_core( ...
-        product, domain, L, timestep, timeRange, options, cache, schema, field, haloName, needHaloGmsl)
+        product, domain, L, timestep, timeRange, options, schema, field, haloName, needHaloGmsl)
 
     if options.BeQuiet < 1
         fprintf('[ULMO>%s] Fitting all fields for %s.\n', mfilename, char(product));
     end
 
-    saveProjection = options.SaveData && isempty(options.GVN);
+    saveData = options.SaveData && isempty(options.GVN);
     [fields, means, dates, lon, lat] = loadFields( ...
-        product, timestep, options, schema, needHaloGmsl || saveProjection);
+        product, timestep, options, schema, needHaloGmsl || saveData);
     assert(isfield(fields, field), 'ULMO:steric2slept:UnsupportedField', ...
         'Product %s does not supply Component=%s, Depth=%s.', ...
         char(product), options.Component, options.Depth);
@@ -261,11 +246,12 @@ function [stericSlept, dates, GVN, haloGmsl, constSlept] = steric2slept_core( ..
         SaveData = options.SaveData, ForceNew = options.ForceNew);
 
     % Save the complete record before selecting the requested dates.
-    if saveProjection
+    if saveData
         defaultJ = min((L + 1) ^ 2, max(1, round(GVN{3})));
-        path = sprintf('%s-%d-m.nc', cache.stem, size(GVN{1}, 2));
+        [path, domainId, config] = getoutputfile(product, domain, L, ...
+            timestep, options.Interpolation, size(GVN{1}, 2));
         saveCache(path, coeffs, means, dates, fits, constSlept, ...
-            product, cache.domainId, L, defaultJ, buffer, wghtMthd, cache.config);
+            product, domainId, L, defaultJ, buffer, wghtMthd, config);
     end
 
     rows = selectDates(dates, timeRange);
@@ -286,7 +272,7 @@ function [fields, means, dates, lon, lat] = loadFields(product, timestep, option
     dates = NaT(0, 1);
     lon = [];
     lat = [];
-    firstField = true;
+    isFirstField = true;
     forceNew = options.ForceNew;
     depths = schema.depths;
 
@@ -321,11 +307,11 @@ function [fields, means, dates, lon, lat] = loadFields(product, timestep, option
                 rethrow(exception);
             end
 
-            if firstField
+            if isFirstField
                 dates = fieldDates;
                 lon = fieldLon(:);
                 lat = fieldLat(:);
-                firstField = false;
+                isFirstField = false;
             else
                 assert(isequal(fieldDates, dates) && isequal(fieldLon(:), lon) && isequal(fieldLat(:), lat), ...
                     'ULMO:steric2slept:GridAxes', 'The loaded steric fields must share dates and coordinates.');
@@ -348,8 +334,8 @@ function [fields, means, dates, lon, lat] = loadFields(product, timestep, option
 
 end
 
-%% cacheStem
-function [stem, config, domainId] = cacheStem(product, domain, L, timestep, mthd)
+%% GETOUTPUTFILE - Builds the cache path and resolves the default truncation if needed.
+function [path, domainId, config] = getoutputfile(product, domain, L, timestep, mthd, J)
     root = getenv('IFILES');
     assert(isfolder(root), 'ULMO:steric2slept:MissingRoot', 'Set IFILES to the data directory.');
 
@@ -365,26 +351,43 @@ function [stem, config, domainId] = cacheStem(product, domain, L, timestep, mthd
     end
 
     [~, ~, ~, config] = normalisetimeconfig(timestep, mthd);
-    stem = fullfile(root, 'STERIC', char(product), 'SlepianExpansions', ...
-        sprintf('steric2slept-%s-%s-%s-%d', char(product), config, domainId, L));
-end
-
-%% findCache
-function path = findCache(stem, J)
-    path = '';
+    folder = fullfile(root, 'STERIC', char(product), 'SlepianExpansions');
+    stem = sprintf('steric2slept-%s-%s-%s-%d', char(product), config, domainId, L);
 
     if isempty(J)
-        files = dir([stem, '-*-m.nc']);
-        % The extensionless stem can contain decimal points in the domain ID.
-        [~, name, extension] = fileparts(stem);
-        name = [name, extension];
+        files = dir(fullfile(folder, [stem, '-*-m.nc']));
         names = string({files.name});
-        first = find(matches(names, name + "-" + digitsPattern + "-m.nc"), 1);
-        if isempty(first), return; end
+        first = find(matches(names, stem + "-" + digitsPattern + "-m.nc"), 1);
+
+        if isempty(first)
+            path = '';
+            return
+        end
+
         J = ncreadatt(fullfile(files(first).folder, files(first).name), '/', 'defaultTruncation');
     end
 
-    path = sprintf('%s-%d-m.nc', stem, J);
+    path = fullfile(folder, sprintf('%s-%d-m.nc', stem, J));
+end
+
+%% FORMATOUTPUT - Formats output to the requested formats
+function [stericSlept, haloGmsl, dates] = formatoutput( ...
+        stericSlept, haloGmsl, dates, unit, outFmt, timeFmt)
+
+    if unit == "mm"
+        stericSlept = 1000 * stericSlept;
+        haloGmsl = 1000 * haloGmsl;
+    end
+
+    if outFmt == "traditional"
+        stericSlept = stericSlept.';
+        haloGmsl = haloGmsl.';
+    end
+
+    if timeFmt == "datenum"
+        dates = datenum(dates); %#ok<DATNM>
+    end
+
 end
 
 %% SAVECACHE - Saves the computation results into the cache file.
