@@ -1,40 +1,49 @@
 %% NUM2FILENAME - Formats a finite number for a readable filename.
 % Uses the shortest significant-digit precision that round-trips through
 % STR2DOUBLE. Decimal points become p and minus signs become n, including
-% negative exponents. Zero has no sign; positive exponents omit the plus.
+% exponents.
 %
 % Syntax
-%   text = num2filename(value)
+%   txt = num2filename(val)
 %
 % Input arguments
-%   value - Finite real numeric scalar, converted to double.
+%   val - Finite real numeric scalar, converted to double.
 %
 % Output arguments
-%   text - Character vector, for example 'n30p72' or '1en8'.
+%   txt - Character vector, for example 'n30p72' or '1en8'.
 %
 % Created by
 %   2026/11/12, En-Chi Lee (williameclee@arizona.edu)
 
-function text = num2filename(value)
+function txt = num2filename(val)
+
     arguments (Input)
-        value (1, 1) double {mustBeReal, mustBeFinite}
+        val (1, 1) double {mustBeReal, mustBeFinite}
     end
-    if value == 0
-        text = '0';
+
+    if val == 0
+        txt = '0';
         return
     end
+
     for precision = 1:17
-        text = sprintf('%.*g', precision, value);
-        if str2double(text) == value
+        txt = sprintf('%.*g', precision, val);
+
+        if str2double(txt) == val
             break
         end
+
     end
-    if abs(value) >= 1e-6 && abs(value) < 1e15
-        decimalPlaces = max(0, precision - 1 - floor(log10(abs(value))));
-        decimalText = sprintf('%.*f', decimalPlaces, value);
-        if str2double(decimalText) == value
-            text = decimalText;
+
+    if abs(val) >= 1e-6 && abs(val) < 1e15
+        decimalPlaces = max(0, precision - 1 - floor(log10(abs(val))));
+        decimalText = sprintf('%.*f', decimalPlaces, val);
+
+        if str2double(decimalText) == val
+            txt = decimalText;
         end
+
     end
-    text = strrep(strrep(strrep(text, '.', 'p'), '-', 'n'), '+', '');
+
+    txt = strrep(strrep(strrep(txt, '.', 'p'), '-', 'n'), '+', '');
 end

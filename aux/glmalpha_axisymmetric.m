@@ -1,5 +1,5 @@
 %% GLMALPHA_AXISYMMETRIC
-% Is an auxiliary function separated from GLMALPHA. 
+% Is an auxiliary function separated from GLMALPHA.
 % It finds G, V, and N for the given axisymmetric region.
 % Uses fixed-order polar-cap routines and direct bandpass quadrature.
 %
@@ -198,7 +198,7 @@ function [C, V] = bandpasscap(radius, L, order)
     [weights, nodes] = gausslegendrecof(2 * L(2), [], [cosd(radius), 1]);
     harmonics = xlm(firstDegree:L(2), order, acos(nodes(:).'));
     kernel = 2 * pi * (harmonics .* weights(:).') * harmonics.';
-    [vectors, values] = eig((kernel + kernel.') / 2, 'vector');
-    [V, indices] = sort(values, 'descend');
-    C = [zeros(firstDegree - order, numel(V)); vectors(:, indices)];
+    [eigvecs, eigvals] = eig((kernel + kernel.') / 2, 'vector');
+    [V, idxs] = sort(eigvals, 'descend');
+    C = [zeros(firstDegree - order, numel(V)); eigvecs(:, idxs)];
 end

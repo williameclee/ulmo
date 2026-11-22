@@ -1,7 +1,4 @@
-%% GLMALPHA
-% Returns an lm-by-alpha matrix with unit-normalized spherical harmonic
-% coefficients of the BANDLIMITED or PASSBAND Slepian functions of the
-% SINGLE or DOUBLE polar cap, or of a GEOGRAPHICAL region of interest.
+%% GLMALPHA - Returns the spherical harmonic coefficients of Slepian functions of a polar cap or geographical region.
 % Only in the geographical case are the eigenvalues automatically sorted;
 % if not, the column dimension is always block-ordered by virtue of the
 % construction. The matrix G is orthogonal, G'*G is the identity. In column
@@ -111,11 +108,11 @@
 %   anything works, too. You don't get necessarily the spherical harmonics
 %   back...
 %
-% Last modified by
+% Last modified
 %   2026/11/22, En-Chi Lee (williameclee@gmail.com)
-%   2017/12/01, fjsimons@alum.mit.edu (@fjsimons)
-%   2016/06/27, charig@princeton.edu (@harig00)
-%   2016/10/11, plattner@alumni.ethz.ch (@AlainPlattner)
+%   2017/12/01, F J Simons (fjsimons@alum.mit.edu)
+%   2016/06/27, Chris Harig (charig@princeton.edu)
+%   2016/10/11, Alain Plattner (plattner@alumni.ethz.ch)
 
 function varargout = glmalpha_new(varargin)
     %% Initialisation & demos
@@ -245,9 +242,11 @@ function varargout = glmalpha_new(varargin)
             domain, sord, L, lp, bp, EM, EL, blkm, blox, upco, xver, resc);
 
         if ~strcmp(dataPath, 'neveravailable') && saveData
+
             if ~isfolder(fileparts(dataPath))
                 mkdir(fileparts(dataPath));
             end
+
             save(dataPath, vars{:}, '-v7.3')
         end
 
