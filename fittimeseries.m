@@ -170,8 +170,8 @@
 % Last modified by
 %   2026/11/12, En-Chi Lee (williameclee@arizona.edu)
 
-function [polys, harmons, xFit, polySigmas, harmonSigmas, polyCovs, jumps, jumpSigmas] = ...
-        fittimeseries(t, x, sigma, p, periods, options)
+function [polys, harmons, xFit, polySigmas, harmonSigmas, polyCovs, jumps, jumpSigmas] = fittimeseries( ...
+        t, x, sigma, p, periods, options)
 
     arguments (Input)
         t {mustBeA(t, {'numeric', 'datetime', 'duration'}), mustBeVector, mustBeNonempty}
@@ -235,7 +235,10 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas, polyCovs, jumps, jumpS
     fitRange = options.FitRange(:);
     avgRange = options.AverageRange(:);
     jumpTimes = options.JumpTimes(:).';
-    if isempty(jumpTimes), jumpTimes = []; end
+
+    if isempty(jumpTimes)
+        jumpTimes = [];
+    end
 
     isTime = isdatetime(t);
 
@@ -250,12 +253,20 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas, polyCovs, jumps, jumpS
         t = years(t - tRef);
         fitRange = years(fitRange - tRef);
         avgRange = years(avgRange - tRef);
-        if ~isempty(jumpTimes), jumpTimes = years(jumpTimes - tRef); end
+
+        if ~isempty(jumpTimes)
+            jumpTimes = years(jumpTimes - tRef);
+        end
+
     elseif isduration(t)
         t = years(t);
         fitRange = years(fitRange);
         avgRange = years(avgRange);
-        if ~isempty(jumpTimes), jumpTimes = years(jumpTimes); end
+
+        if ~isempty(jumpTimes)
+            jumpTimes = years(jumpTimes);
+        end
+
     else
 
         if ~isreal(t)
@@ -271,7 +282,7 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas, polyCovs, jumps, jumpS
 
     if any(~isfinite(jumpTimes)) || numel(unique(jumpTimes)) ~= numel(jumpTimes)
         error('ULMO:fittimeseries:InvalidJumpTimes', ...
-            'JumpTimes must contain finite, distinct event times.');
+        'JumpTimes must contain finite, distinct event times.');
     end
 
     if isduration(periods)
@@ -327,8 +338,7 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas, polyCovs, jumps, jumpS
 
         [polys(:, iSeries), harmons(:, :, iSeries), xFit(:, iSeries), ...
              polySigmas(:, iSeries), harmonSigmas(:, :, iSeries), polyCovs(:, :, iSeries), ...
-             jumps(:, iSeries), jumpSigmas(:, iSeries)] = ...
-            fitsingleseries( ...
+             jumps(:, iSeries), jumpSigmas(:, iSeries)] = fitsingleseries( ...
             t(isValid), x(isValid, iSeries), sigma_tofit, p, periods, ...
             options.PeriodicFormat, isTime, t, options.Reconstruction, polyTrans, jumpTimes, iSeries);
     end
@@ -355,15 +365,15 @@ function [data, transposed] = normalisedata(data, nTimes, name)
 
 end
 
-function [polys, harmons, xFit, polySigmas, harmonSigmas, polyCov, jumps, jumpSigmas] = ...
-        fitsingleseries(t, x, sigma, p, periods, harmonFmt, isTime, tFit, fitMethod, polyTrans, jumpTimes, iSeries)
+function [polys, harmons, xFit, polySigmas, harmonSigmas, polyCov, jumps, jumpSigmas] = fitsingleseries( ...
+        t, x, sigma, p, periods, harmonFmt, isTime, tFit, fitMethod, polyTrans, jumpTimes, iSeries)
     %% Fitting
     N = numel(t);
-    polyIndices = 1:p + 1;
+    polyIdxs = 1:p + 1;
     harmonIndices = p + 1 + (1:2 * numel(periods));
-    jumpIndices = p + 1 + 2 * numel(periods) + (1:numel(jumpTimes));
+    jumpIndxs = p + 1 + 2 * numel(periods) + (1:numel(jumpTimes));
     X = zeros([N, p + 1 + 2 * numel(periods) + numel(jumpTimes)]);
-    X(:, polyIndices) = t .^ (0:p);
+    X(:, polyIdxs) = t .^ (0:p);
 
     for iPeriod = 1:numel(periods)
         X(:, p + 1 + (iPeriod - 1) * 2 + [1, 2]) = ...
@@ -371,7 +381,7 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas, polyCov, jumps, jumpSi
     end
 
     if ~isempty(jumpTimes)
-        X(:, jumpIndices) = double(t >= jumpTimes);
+        X(:, jumpIndxs) = double(t >= jumpTimes);
         % Scale columns so differing polynomial units do not dominate rank.
         columnScales = max(abs(X), [], 1);
         columnScales(columnScales == 0) = 1;
@@ -379,31 +389,32 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas, polyCov, jumps, jumpSi
         if rank(X ./ columnScales) < size(X, 2)
             error('ULMO:fittimeseries:RankDeficient', ...
                 ['Series %d has an unidentifiable design after data selection. ', ...
-                 'Jumps need observations on both sides and independent model columns.'], iSeries);
+             'Jumps need observations on both sides and independent model columns.'], iSeries);
         end
+
     end
 
     if ~isempty(sigma)
         W = diag(1 ./ sigma .^ 2);
         coeffs = (X' * W * X) \ (X' * W * x);
         res = x - X * coeffs;
-        wght_res_var = sum((res ./ sigma) .^ 2) / (N - size(X, 2));
-        cov_matrix = wght_res_var * inv(X' * W * X);
-        coeffSigmas = sqrt(diag(cov_matrix));
+        wghtResVar = sum((res ./ sigma) .^ 2) / (N - size(X, 2));
+        covMtx = wghtResVar * inv(X' * W * X);
+        coeffSigmas = sqrt(diag(covMtx));
     else
         coeffs = X \ x;
         % Estimate uncertainties of coeffs when sigma is not provided
         res = x - X * coeffs;
         res_var = sum(res .^ 2) / (N - size(X, 2));
-        cov_matrix = res_var * inv(X' * X);
-        coeffSigmas = sqrt(diag(cov_matrix));
+        covMtx = res_var * inv(X' * X);
+        coeffSigmas = sqrt(diag(covMtx));
     end
 
-    polyCov = cov_matrix(polyIndices, polyIndices);
-    polys = coeffs(polyIndices);
-    polySigmas = coeffSigmas(polyIndices);
-    jumps = coeffs(jumpIndices);
-    jumpSigmas = coeffSigmas(jumpIndices);
+    polyCov = covMtx(polyIdxs, polyIdxs);
+    polys = coeffs(polyIdxs);
+    polySigmas = coeffSigmas(polyIdxs);
+    jumps = coeffs(jumpIndxs);
+    jumpSigmas = coeffSigmas(jumpIndxs);
 
     if ~isempty(polyTrans)
         polys = polyTrans * polys;
@@ -432,7 +443,7 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas, polyCov, jumps, jumpSi
             idx = harmonIndices(2 * (iPeriod - 1) + [1, 2]);
             c = coeffs(idx(1));
             s = coeffs(idx(2));
-            Ccs = cov_matrix(idx, idx);
+            Ccs = covMtx(idx, idx);
 
             A = hypot(c, s);
             harmons(iPeriod, 1) = A;
@@ -484,7 +495,7 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas, polyCov, jumps, jumpSi
     elseif strcmpi(fitMethod, "omitharmonics")
         X = zeros([N, p + 1]);
         X(:, 1:p + 1) = tFit .^ (0:p);
-        reconstructionIndices = polyIndices;
+        reconIdxs = polyIdxs;
     else
         X = zeros([N, p + 1 + 2 * numel(periods)]);
         X(:, 1:p + 1) = tFit .^ (0:p);
@@ -494,13 +505,14 @@ function [polys, harmons, xFit, polySigmas, harmonSigmas, polyCov, jumps, jumpSi
                 [cos(2 * pi * tFit / periods(iPeriod)), sin(2 * pi * tFit / periods(iPeriod))];
         end
 
-        reconstructionIndices = [polyIndices, harmonIndices];
+        reconIdxs = [polyIdxs, harmonIndices];
     end
 
     if ~isempty(jumpTimes)
         X = [X, double(tFit >= jumpTimes)];
     end
-    xFit = X * coeffs([reconstructionIndices, jumpIndices]);
+
+    xFit = X * coeffs([reconIdxs, jumpIndxs]);
 end
 
 function mustBeCompatibleJumpTimes(value, t)
@@ -512,7 +524,7 @@ function mustBeCompatibleJumpTimes(value, t)
     if ~validType || (~isempty(value) && (~sameType || ~isvector(value))) ...
             || (isnumeric(value) && ~isreal(value))
         error('ULMO:fittimeseries:InvalidJumpTimes', ...
-            'JumpTimes must be a real vector of the same time type as t, or empty.');
+        'JumpTimes must be a real vector of the same time type as t, or empty.');
     end
 
 end
