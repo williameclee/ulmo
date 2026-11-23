@@ -42,9 +42,9 @@
 %   convertgravity, xyz2plm
 %
 % Created by
-%   2026/11/12, En-Chi Lee (williameclee@arizona.edu)
+%   2026/11/23, En-Chi Lee (williameclee@arizona.edu)
 
-function plmt = gldas2plmt(epochs, L, unit, loveNumSrc, eqRad)
+function gldasPlmt = gldas2plmt(epochs, L, unit, loveNumSrc, eqRad)
 
     arguments (Input)
         epochs (:, 2) datetime
@@ -54,6 +54,29 @@ function plmt = gldas2plmt(epochs, L, unit, loveNumSrc, eqRad)
         eqRad (1, 1) double {mustBeFinite, mustBePositive}
     end
 
+    [files, wghts] = selectgldasmonths(epochs);
+    [~, ~, ~, template] = addmon(L);
+    nRows = size(template, 1);
+    gldasCosit = zeros(numel(files), nRows, 2);
+    grid = preparegldasgrid(template(:, 2));
+    nativMask = [];
+
+    for iMonth = 1:numel(files)
+        path = fullfile(files(iMonth).folder, files(iMonth).name);
+        [gldasGrid, nativMask] = readgldasmonth(path, nativMask);
+        gldasLmcosi = gldasgrid2plm(gldasGrid, L, grid);
+        gldasLmcosi(1, 3:4) = 0;
+        gldasLmcosi = convertgravity(gldasLmcosi, "SD", unit, ...
+            "InputFormat", 'lmcosi', "EquatorRadius", eqRad, "LoveNumSource", loveNumSrc);
+        gldasCosit(iMonth, :, :) = gldasLmcosi(:, 3:4);
+    end
+
+    gldasPlmt = cat(3, repmat(reshape(template(:, 1:2), 1, nRows, 2), size(epochs, 1), 1, 1), ...
+        reshape(wghts * reshape(gldasCosit, numel(files), []), size(epochs, 1), nRows, 2));
+end
+
+%% SELECTGLDASMONTHS - Selects the source months and compute overlap weights for each window.
+function [files, weights] = selectgldasmonths(epochs)
     root = getenv('GLDASDATA');
 
     if isempty(root)
@@ -85,76 +108,71 @@ function plmt = gldas2plmt(epochs, L, unit, loveNumSrc, eqRad)
     assert(all(abs(sum(overlap, 2) - lengths) < 1e-6), ...
         'ULMO:gldas2plmt:Coverage', 'GLDAS does not cover every observation window.');
     weights = overlap ./ lengths;
-    [~, ~, ~, template] = addmon(L);
-    nRows = size(template, 1);
-    monthly = zeros(numel(files), nRows, 2);
+end
+
+%% READGLDASMONTH - Sums the storage components and check the mask against earlier months.
+function [field, nativeMask] = readgldasmonth(path, nativeMask)
     vars = {'SoilMoi0_10cm_inst', 'SoilMoi10_40cm_inst', ...
                 'SoilMoi40_100cm_inst', 'SoilMoi100_200cm_inst', 'CanopInt_inst', 'SWE_inst'};
-    nativeMask = [];
-    intervalsPerDegree = 4;
-    latSamples = 90 : -1 / intervalsPerDegree : -90;
-    cellIndices = min(floor((0 : numel(latSamples) - 1) / intervalsPerDegree) + 1, 180);
-    boundaryRows = 1 + intervalsPerDegree : intervalsPerDegree : numel(latSamples) - 1;
-    boundaryCells = cellIndices(boundaryRows);
-    orders = template(:, 2);
-    lonCorrection = exp(-1i * orders * deg2rad(0.5)) .* sinc(orders / 360);
+    lon = double(ncread(path, 'lon'));
+    lat = double(ncread(path, 'lat'));
+    assert(numel(lon) == 360 && numel(lat) == 150 && ...
+        max(abs(lon(:) - (-179.5:179.5).')) < 1e-6 && ...
+        max(abs(lat(:) - (-59.5:89.5).')) < 1e-6, ...
+        'ULMO:gldas2plmt:Grid', 'GLDAS requires the complete native 1-degree grid.');
+    field = zeros(360, 150);
 
-    for iMonth = 1:numel(files)
-        path = fullfile(files(iMonth).folder, files(iMonth).name);
-        lon = double(ncread(path, 'lon'));
-        lat = double(ncread(path, 'lat'));
-        assert(numel(lon) == 360 && numel(lat) == 150 && ...
-            max(abs(lon(:) - (-179.5:179.5).')) < 1e-6 && ...
-            max(abs(lat(:) - (-59.5:89.5).')) < 1e-6, ...
-            'ULMO:gldas2plmt:Grid', 'GLDAS requires the complete native 1-degree grid.');
-        field = zeros(360, 150);
+    for iVar = 1:numel(vars)
+        name = vars{iVar};
+        info = ncinfo(path, name);
+        dims = string({info.Dimensions.Name});
+        assert(isequal(dims, ["lon", "lat", "time"]) && ...
+            isequal(info.Size, [360, 150, 1]), ...
+            'ULMO:gldas2plmt:Dimensions', '%s must have lon, lat and one monthly time.', name);
+        units = regexprep(string(ncreadatt(path, name, 'units')), '\s', '');
+        assert(ismember(units, ["kgm-2", "kg/m^2", "kgm^-2"]), ...
+            'ULMO:gldas2plmt:Unit', '%s must use kg/m^2.', name);
+        values = double(ncread(path, name));
+        names = {info.Attributes.Name};
 
-        for iVar = 1:numel(vars)
-            name = vars{iVar};
-            info = ncinfo(path, name);
-            dims = string({info.Dimensions.Name});
-            assert(isequal(dims, ["lon", "lat", "time"]) && ...
-                isequal(info.Size, [360, 150, 1]), ...
-                'ULMO:gldas2plmt:Dimensions', '%s must have lon, lat and one monthly time.', name);
-            units = regexprep(string(ncreadatt(path, name, 'units')), '\s', '');
-            assert(ismember(units, ["kgm-2", "kg/m^2", "kgm^-2"]), ...
-                'ULMO:gldas2plmt:Unit', '%s must use kg/m^2.', name);
-            values = double(ncread(path, name));
-            names = {info.Attributes.Name};
-
-            if ismember('missing_value', names)
-                missingValue = double(ncreadatt(path, name, 'missing_value'));
-                values(values == missingValue) = NaN;
-            end
-
-            missing = ~isfinite(values);
-
-            if isempty(nativeMask)
-                nativeMask = missing;
-            end
-
-            assert(isequal(missing, nativeMask) && any(~missing, 'all') && ~any(isinf(values), 'all'), ...
-                'ULMO:gldas2plmt:MissingValues', ...
-            'GLDAS storage components must share a time-invariant native missing-data mask.');
-            values(missing) = 0;
-            field = field + values;
+        if ismember('missing_value', names)
+            missingValue = double(ncreadatt(path, name, 'missing_value'));
+            values(values == missingValue) = NaN;
         end
 
-        % Start at 0.5 E, repeat the first longitude, and pad south of 60 S.
-        nativeCells = field([181:360, 1:181], end:-1:1).';
-        globalCells = [nativeCells; zeros(30, size(nativeCells, 2))];
-        samples = globalCells(cellIndices, :);
-        samples(boundaryRows, :) = (globalCells(boundaryCells - 1, :) + globalCells(boundaryCells, :)) / 2;
-        harmonics = xyz2plm(samples, L, 'simpson', latSamples);
-        corrected = complex(harmonics(:, 3), -harmonics(:, 4)) .* lonCorrection;
-        harmonics(:, 3:4) = [real(corrected), -imag(corrected)];
+        missing = ~isfinite(values);
 
-        harmonics(1, 3:4) = 0;
-        harmonics = convertgravity(harmonics, 'SD', char(unit), ...
-            'InputFormat', 'lmcosi', 'EquatorRadius', eqRad, 'LoveNumSource', char(loveNumSrc));
-        monthly(iMonth, :, :) = harmonics(:, 3:4);
+        if isempty(nativeMask)
+            nativeMask = missing;
+        end
+
+        assert(isequal(missing, nativeMask) && any(~missing, 'all') && ~any(isinf(values), 'all'), ...
+            'ULMO:gldas2plmt:MissingValues', ...
+        'GLDAS storage components must share a time-invariant native missing-data mask.');
+        values(missing) = 0;
+        field = field + values;
     end
 
-    plmt = cat(3, repmat(reshape(template(:, 1:2), 1, nRows, 2), size(epochs, 1), 1, 1), ...
-        reshape(weights * reshape(monthly, numel(files), []), size(epochs, 1), nRows, 2));
+end
+
+%% PREPAREGLDASGRID - Precomputes the latitude sampling and longitude corrections.
+function grid = preparegldasgrid(orders)
+    intervalsPerDegree = 4;
+    grid.latSamples = 90:-1 / intervalsPerDegree:-90;
+    grid.cellIdxs = min(floor((0:numel(grid.latSamples) - 1) / intervalsPerDegree) + 1, 180);
+    grid.boundaryRows = 1 + intervalsPerDegree:intervalsPerDegree:numel(grid.latSamples) - 1;
+    grid.boundaryCells = grid.cellIdxs(grid.boundaryRows);
+    grid.lonCorrection = exp(-1i * orders * deg2rad(0.5)) .* sinc(orders / 360);
+end
+
+%% GLFASGRID2PLM - Starts at 0.5 E, repeat the first longitude, and pad south of 60 S.
+function lmcosi = gldasgrid2plm(field, L, grid)
+    nativeCells = field([181:360, 1:181], end:-1:1).';
+    globalCells = [nativeCells; zeros(30, size(nativeCells, 2))];
+    samples = globalCells(grid.cellIdxs, :);
+    boundaryCells = grid.boundaryCells;
+    samples(grid.boundaryRows, :) = (globalCells(boundaryCells - 1, :) + globalCells(boundaryCells, :)) / 2;
+    lmcosi = xyz2plm(samples, L, 'simpson', grid.latSamples);
+    corrected = complex(lmcosi(:, 3), -lmcosi(:, 4)) .* grid.lonCorrection;
+    lmcosi(:, 3:4) = [real(corrected), -imag(corrected)];
 end
