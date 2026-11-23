@@ -7,90 +7,88 @@
 %   supported.
 %
 % Authored by
-%   2025/05/22, williameclee@arizona.edu (@williameclee)
+%   2025/05/22, En-Chi Lee (williameclee@arizona.edu)
 %
-% Last modified by
-%   2026/02/12, williameclee@arizona.edu (@williameclee)
-%     - Added support for ALMA3 love numbers
+% Last modified
+%   2026/11/23, En-Chi Lee (williameclee@gmail.com)
 
 function output = convertgravity(varargin)
     %% Initialisation
-    [input, inputUnit, outputUnit, ~, equatorRadius, ...
-         inputFmt, timeDim, L, avgDensity, lovenumSrc] = parseinputs(varargin{:});
+    [input, inUnit, outUnit, ~, eqRad, fmt, timeDim, L, avgDensity, lovenumSrc] = parseinputs(varargin{:});
 
-    if strcmpi(inputUnit, outputUnit)
+    if strcmpi(inUnit, outUnit)
         output = input;
         return
     end
 
-    switch strjoin({inputUnit, outputUnit})
+    switch strjoin({inUnit, outUnit})
         case strjoin({'GRAV', 'POT'})
-            output = grav2pot(input, equatorRadius, inputFmt, timeDim);
+            output = grav2pot(input, eqRad, fmt, timeDim);
         case strjoin({'GRAV', 'SD'})
-            output = grav2pot(input, equatorRadius, inputFmt, timeDim);
-            output = pot2sd(output, L, avgDensity, inputFmt, timeDim, lovenumSrc);
+            output = grav2pot(input, eqRad, fmt, timeDim);
+            output = pot2sd(output, L, avgDensity, fmt, timeDim, lovenumSrc);
         case strjoin({'POT', 'GRAV'})
-            output = pot2grav(input, equatorRadius, inputFmt, timeDim);
+            output = pot2grav(input, eqRad, fmt, timeDim);
         case strjoin({'POT', 'SD'})
-            output = pot2sd(input, L, avgDensity, inputFmt, timeDim, lovenumSrc);
+            output = pot2sd(input, L, avgDensity, fmt, timeDim, lovenumSrc);
         case strjoin({'SD', 'POT'})
-            output = sd2pot(input, L, avgDensity, inputFmt, timeDim, lovenumSrc);
+            output = sd2pot(input, L, avgDensity, fmt, timeDim, lovenumSrc);
         case strjoin({'SD', 'GRAV'})
-            output = sd2pot(input, L, avgDensity, inputFmt, timeDim, lovenumSrc);
-            output = pot2grav(output, equatorRadius, inputFmt, timeDim);
+            output = sd2pot(input, L, avgDensity, fmt, timeDim, lovenumSrc);
+            output = pot2grav(output, eqRad, fmt, timeDim);
     end
 
 end
 
 %% Subfunctions
-function pot = grav2pot(grav, equatorRadius, inputFmt, timeDim)
+function pot = grav2pot(grav, eqRad, inputFmt, timeDim)
 
     switch inputFmt
         case 'lmcosi'
 
             if ismatrix(grav)
                 pot = grav;
-                pot(:, 3:4) = grav(:, 3:4) * equatorRadius;
+                pot(:, 3:4) = grav(:, 3:4) * eqRad;
                 return
             end
 
             switch timeDim
                 case 'timefirst'
                     pot = grav;
-                    pot(:, :, 3:4) = grav(:, :, 3:4) * equatorRadius;
+                    pot(:, :, 3:4) = grav(:, :, 3:4) * eqRad;
                 case 'traditional'
-                    pot = grav * equatorRadius;
-                    pot(:, 3:4, :) = grav(:, 3:4, :) * equatorRadius;
+                    pot = grav * eqRad;
+                    pot(:, 3:4, :) = grav(:, 3:4, :) * eqRad;
             end
 
         case {'cosi', 'L'}
-            pot = grav * equatorRadius;
+            pot = grav * eqRad;
     end
 
 end
 
-function grav = pot2grav(pot, equatorRadius, inputFmt, timeDim)
+function grav = pot2grav(pot, eqRad, inputFmt, timeDim)
 
     switch inputFmt
         case 'lmcosi'
 
             if ismatrix(pot)
                 grav = pot;
-                grav(:, 3:4) = pot(:, 3:4) / equatorRadius;
+                grav(:, 3:4) = pot(:, 3:4) / eqRad;
                 return
             end
 
             switch timeDim
                 case 'timefirst'
                     grav = pot;
-                    grav(:, :, 3:4) = pot(:, :, 3:4) / equatorRadius;
+                    grav(:, :, 3:4) = pot(:, :, 3:4) / eqRad;
                 case 'traditional'
-                    grav = pot * equatorRadius;
-                    grav(:, 3:4, :) = pot(:, 3:4, :) / equatorRadius;
+                    grav = pot * eqRad;
+                    grav(:, 3:4, :) = pot(:, 3:4, :) / eqRad;
             end
 
         case {'cosi', 'L'}
-            grav = pot / equatorRadius;
+            grav = pot / eqRad;
     end
 
 end
@@ -114,8 +112,6 @@ function sd = pot2sd(pot, degree, avgDensity, inputFmt, timeDim, lovenumSrc)
             end
 
             lovenum = lovenumber(degree, 'loadinggravitationalpotential', "Source", lovenumSrc);
-            % lovenum = lovenums('Wahr', degree);
-            % lovenum = reshape(lovenum(:, 2), size(degree));
 
             convFactor = avgDensity / 3 .* (2 * degree + 1) ./ (1 + lovenum);
 
@@ -162,8 +158,6 @@ function pot = sd2pot(sd, degree, avgDensity, inputFmt, timeDim, lovenumSrc)
             end
 
             lovenum = lovenumber(degree, 'loadinggravitationalpotential', "Source", lovenumSrc);
-            % lovenum = lovenums('Wahr', degree);
-            % lovenum = reshape(lovenum(:, 2), size(degree));
 
             convFactor = 3 / avgDensity .* (1 + lovenum) ./ (2 * degree + 1);
 
@@ -185,8 +179,6 @@ function pot = sd2pot(sd, degree, avgDensity, inputFmt, timeDim, lovenumSrc)
         case 'cosi'
         case 'L'
             lovenum = lovenumber(degree, 'loadinggravitationalpotential', "Source", lovenumSrc);
-            % lovenum = lovenums('Wahr', degree);
-            % lovenum = lovenum(:, 2);
             convFactor = 3 / avgDensity .* (1 + lovenum) ./ (2 * degree + 1);
             pot = sd .* convFactor;
     end
@@ -228,12 +220,11 @@ function varargout = parseinputs(varargin)
     lovenumSource = ip.Results.LoveNumSource;
 
     if strcmpi(inputFmt, 'L') && isempty(L)
-        error(sprintf('%s:InvalidInput:DegreeNotSpecified', mfilename), ...
+        error('ULMO:convertgravity:InvalidInput:DegreeNotSpecified', ...
         'Degree not specified for L format');
     end
 
     varargout = ...
         {input, inputUnit, outputUnit, gravityParam, equatorRadius, ...
          inputFmt, timeDim, L, avgDensity, lovenumSource};
-
 end
