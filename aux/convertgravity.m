@@ -14,8 +14,8 @@ function output = convertgravity(input, inUnit, outUnit, options)
 
     arguments (Input)
         input {mustBeNumeric}
-        inUnit (1, 1) string
-        outUnit (1, 1) string
+        inUnit (1, 1) string {mustBeMember(inUnit, ["GRAV", "POT", "SD"])}
+        outUnit (1, 1) string {mustBeMember(outUnit, ["GRAV", "POT", "SD"])}
         options.GravityParam (1, 1) {mustBeNumeric, mustBePositive} = fralmanac('GM_EGM96', 'Earth')
         options.EquatorRadius (1, 1) {mustBeNumeric, mustBePositive} = fralmanac('a_EGM96', 'Earth')
         options.InputFormat (1, 1) string ...
@@ -27,15 +27,11 @@ function output = convertgravity(input, inUnit, outUnit, options)
         options.LoveNumSource (1, 1) string = "ISSM"
     end
 
-    %% Initialisation
-    inUnit = upper(inUnit);
-    outUnit = upper(outUnit);
-    mustBeMember([inUnit, outUnit], ["GRAV", "POT", "SD"]);
     L = round(options.L);
 
     if options.InputFormat == "L" && isempty(L)
         error('ULMO:convertgravity:InvalidInput:DegreeNotSpecified', ...
-            'Degree not specified for L format');
+        'Degree not specified for L format');
     end
 
     if inUnit == outUnit
