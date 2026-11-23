@@ -42,9 +42,9 @@ classdef jointLowDegreeTest < matlab.unittest.TestCase
             Earth = struct('GM_EGM96', 3.986004415e14, 'a_EGM96', 6378136.3);
             save(fullfile(folder, 'EARTHMODELS', 'CONSTANTS', 'Earth.mat'), 'Earth');
             mkdir(fullfile(folder, 'LOVENUMS'));
-            loadinggravitationalpotential = [0; .021; -.3];
+            loadinggravitationalpotential = [0; 0.021; -0.3];
             save(fullfile(folder, 'LOVENUMS', 'lovenumbers-ISSM.mat'), ...
-                'loadinggravitationalpotential');
+            'loadinggravitationalpotential');
             product = {'CSR', 'RL06', 60};
             domain = GeoDomain('alloceans', 'Buffer', 0.5);
             cacheFolder = fullfile(folder, 'Degree1', 'new');
