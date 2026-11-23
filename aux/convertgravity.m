@@ -1,6 +1,4 @@
-%% CONVERTGRAVITY
-% Converts between gravity, potential, and surface mass density spherical
-% harmonic coefficients.
+%% CONVERTGRAVITY - Converts between gravity, potential, and surface mass density spherical harmonic coefficients.
 %
 % Notes
 %	The functionalities are being added as needed. not all conversions are
@@ -12,30 +10,54 @@
 % Last modified
 %   2026/11/23, En-Chi Lee (williameclee@gmail.com)
 
-function output = convertgravity(varargin)
-    %% Initialisation
-    [input, inUnit, outUnit, ~, eqRad, fmt, timeDim, L, avgDensity, lovenumSrc] = parseinputs(varargin{:});
+function output = convertgravity(input, inUnit, outUnit, options)
 
-    if strcmpi(inUnit, outUnit)
+    arguments (Input)
+        input {mustBeNumeric}
+        inUnit (1, 1) string
+        outUnit (1, 1) string
+        options.GravityParam (1, 1) {mustBeNumeric, mustBePositive} = fralmanac('GM_EGM96', 'Earth')
+        options.EquatorRadius (1, 1) {mustBeNumeric, mustBePositive} = fralmanac('a_EGM96', 'Earth')
+        options.InputFormat (1, 1) string ...
+            {mustBeMember(options.InputFormat, ["lmcosi", "cosi", "L"])} = "lmcosi"
+        options.TimeDim (1, 1) string ...
+            {mustBeMember(options.TimeDim, ["timefirst", "traditional"])} = "timefirst"
+        options.L {mustBeNumeric, mustBeScalarOrEmpty, mustBePositive} = []
+        options.EarthDensity (1, 1) {mustBeNumeric, mustBePositive} = 5517
+        options.LoveNumSource (1, 1) string = "ISSM"
+    end
+
+    %% Initialisation
+    inUnit = upper(inUnit);
+    outUnit = upper(outUnit);
+    mustBeMember([inUnit, outUnit], ["GRAV", "POT", "SD"]);
+    L = round(options.L);
+
+    if options.InputFormat == "L" && isempty(L)
+        error('ULMO:convertgravity:InvalidInput:DegreeNotSpecified', ...
+            'Degree not specified for L format');
+    end
+
+    if inUnit == outUnit
         output = input;
         return
     end
 
-    switch strjoin({inUnit, outUnit})
-        case strjoin({'GRAV', 'POT'})
-            output = grav2pot(input, eqRad, fmt, timeDim);
-        case strjoin({'GRAV', 'SD'})
-            output = grav2pot(input, eqRad, fmt, timeDim);
-            output = pot2sd(output, L, avgDensity, fmt, timeDim, lovenumSrc);
-        case strjoin({'POT', 'GRAV'})
-            output = pot2grav(input, eqRad, fmt, timeDim);
-        case strjoin({'POT', 'SD'})
-            output = pot2sd(input, L, avgDensity, fmt, timeDim, lovenumSrc);
-        case strjoin({'SD', 'POT'})
-            output = sd2pot(input, L, avgDensity, fmt, timeDim, lovenumSrc);
-        case strjoin({'SD', 'GRAV'})
-            output = sd2pot(input, L, avgDensity, fmt, timeDim, lovenumSrc);
-            output = pot2grav(output, eqRad, fmt, timeDim);
+    switch inUnit + " " + outUnit
+        case "GRAV POT"
+            output = grav2pot(input, options.EquatorRadius, options.InputFormat, options.TimeDim);
+        case "GRAV SD"
+            output = grav2pot(input, options.EquatorRadius, options.InputFormat, options.TimeDim);
+            output = pot2sd(output, L, options.EarthDensity, options.InputFormat, options.TimeDim, options.LoveNumSource);
+        case "POT GRAV"
+            output = pot2grav(input, options.EquatorRadius, options.InputFormat, options.TimeDim);
+        case "POT SD"
+            output = pot2sd(input, L, options.EarthDensity, options.InputFormat, options.TimeDim, options.LoveNumSource);
+        case "SD POT"
+            output = sd2pot(input, L, options.EarthDensity, options.InputFormat, options.TimeDim, options.LoveNumSource);
+        case "SD GRAV"
+            output = sd2pot(input, L, options.EarthDensity, options.InputFormat, options.TimeDim, options.LoveNumSource);
+            output = pot2grav(output, options.EquatorRadius, options.InputFormat, options.TimeDim);
     end
 
 end
@@ -183,48 +205,4 @@ function pot = sd2pot(sd, degree, avgDensity, inputFmt, timeDim, lovenumSrc)
             pot = sd .* convFactor;
     end
 
-end
-
-% Parse input arguments
-function varargout = parseinputs(varargin)
-    ip = inputParser;
-    addRequired(ip, 'Plm', @isnumeric);
-    addRequired(ip, 'InputUnit', ...
-        @(x) ischar(validatestring(x, {'GRAV', 'POT', 'SD'})));
-    addRequired(ip, 'OutputUnit', ...
-        @(x) ischar(validatestring(x, {'GRAV', 'POT', 'SD'})));
-    addOptional(ip, 'GravityParam', fralmanac('GM_EGM96', 'Earth'), ...
-        @(x) isnumeric(x) && isscalar(x) && x > 0);
-    addOptional(ip, 'EquatorRadius', fralmanac('a_EGM96', 'Earth'), ...
-        @(x) isnumeric(x) && isscalar(x) && x > 0);
-    addParameter(ip, 'InputFormat', 'lmcosi', ...
-        @(x) ischar(validatestring(x, {'lmcosi', 'cosi', 'L'})));
-    addParameter(ip, 'TimeDim', 'timefirst', ...
-        @(x) ischar(validatestring(x, {'timefirst', 'traditional'})));
-    addParameter(ip, 'L', [], ...
-        @(x) isnumeric(x) && isscalar(x) && x > 0);
-    addParameter(ip, 'EarthDensity', 5517, ...
-        @(x) isnumeric(x) && isscalar(x) && x > 0);
-    addParameter(ip, 'LoveNumSource', 'ISSM', @(x) ischar(x) || isstring(x));
-    parse(ip, varargin{:});
-
-    input = ip.Results.Plm;
-    inputUnit = char(upper(ip.Results.InputUnit));
-    outputUnit = char(upper(ip.Results.OutputUnit));
-    gravityParam = ip.Results.GravityParam;
-    equatorRadius = ip.Results.EquatorRadius;
-    inputFmt = ip.Results.InputFormat;
-    timeDim = ip.Results.TimeDim;
-    L = round(ip.Results.L);
-    avgDensity = ip.Results.EarthDensity;
-    lovenumSource = ip.Results.LoveNumSource;
-
-    if strcmpi(inputFmt, 'L') && isempty(L)
-        error('ULMO:convertgravity:InvalidInput:DegreeNotSpecified', ...
-        'Degree not specified for L format');
-    end
-
-    varargout = ...
-        {input, inputUnit, outputUnit, gravityParam, equatorRadius, ...
-         inputFmt, timeDim, L, avgDensity, lovenumSource};
 end
